@@ -1,0 +1,133 @@
+class Corporations extends es.Mod
+
+// Corporations: a stock exchange for human space. About forty companies, the
+// canonical ones from the game's data and invented ones that rise and fall,
+// bid for contracts every day; their profits move their share prices. The
+// player trades at the exchange on any planet with a bank.
+//
+// The market's state is kept with the pilot (Game.data, "state"), apart from
+// the conditions missions share; "world" names the market, so a mod that sees
+// another pilot loaded reads that pilot's market.
+//
+// Shipyard stock (Mod API 9): the market keeps a count of every human hull at
+// every human shipyard and restocks it from the company that owns the design
+// (Market, "Shipyard stock"). On each landing the landed planet's counts go to
+// the game's shipyard; the next day or landing reads them back, which is how
+// the market sees what the player bought or sold there.
+
+import "imports:sdk/es"
+
+Galaxy galaxy = Galaxy()
+Market market = Market()
+Exchange exchange = Exchange()
+// The world in memory: the market of the pilot last read, and the save
+// revision it was read at or last saved as ("rev" in storage, bumped by every
+// save). Loading another pilot changes "world"; loading an older snapshot of
+// the same pilot changes "rev". Either way the market is read again.
+string loaded = ""
+string loaded_rev = ""
+
+string name():
+    return "corporations"
+
+// Read the loaded pilot's market, or open one for a pilot that has none.
+// Every hook calls this (on_load runs only once a session, but a pilot can be
+// loaded any time), so a reloaded pilot's market is read before anything else.
+// False while no pilot is loaded.
+bool prepare(es.Game game):
+    if game.here() == "":
+        return false
+    galaxy.build(game)
+    string world = game.data("world")
+    if world == "":
+        market = Market()
+        market.setup(game, galaxy, game.day())
+        market.seed_stock(game, galaxy)
+        loaded = market.world
+        loaded_rev = ""
+        save(game)
+    else:
+        string rev = game.data("rev")
+        if world != loaded || rev != loaded_rev:
+            market = Market()
+            market.decode(game.data("state"))
+            loaded = world
+            loaded_rev = rev
+            // A save from before shipyard stock: seed the shelves now.
+            if market.shelves.len() == 0:
+                market.seed_stock(game, galaxy)
+                save(game)
+    return true
+
+void save(es.Game game):
+    int n = loaded_rev.to_int() if loaded_rev != "" else 0
+    loaded_rev = string(n + 1)
+    game.set_data("state", market.encode())
+    game.set_data("world", market.world)
+    game.set_data("rev", loaded_rev)
+
+void on_day(es.Game game, int day):
+    if !prepare(game):
+        return
+    market.read_back(game)
+    market.simulate(game, galaxy, day)
+    market.push_stock(game, galaxy)
+    for line in market.player_events:
+        game.message(line)
+    market.player_events = []
+    save(game)
+    draw_map(game)
+
+void on_enter(es.Game game, string system):
+    if !prepare(game):
+        game.planet_button("")
+        return
+    // Loading a pilot switches stock off, and on_enter runs before a shipyard
+    // can open (on landing, and on the first step after a load).
+    game.ship_stock_on(true)
+    bool changed = market.read_back(game)
+    string planet = game.planet()
+    if planet != "":
+        market.push_stock(game, galaxy)
+        changed = true
+    if changed:
+        save(game)
+    game.planet_button("Exchange" if planet != "" && game.planet_service(planet, "bank") else "")
+    // Landed: jobs carrying parts to the companies' running contracts.
+    if planet != "":
+        market.offer_jobs(game, galaxy)
+    draw_map(game)
+
+void on_planet_button(es.Game game):
+    if prepare(game):
+        exchange.open(game, market)
+
+void on_panel(es.Game game, int button):
+    if prepare(game):
+        exchange.press(game, market, button)
+
+void on_panel_row(es.Game game, int row):
+    if prepare(game):
+        exchange.row(game, market, row)
+
+void on_panel_header(es.Game game, int column):
+    if prepare(game):
+        exchange.header(game, market, column)
+
+void on_number(es.Game game, int token, int value):
+    if prepare(game) && exchange.number(game, market, token, value):
+        save(game)
+
+// Each system where companies have their home: a quiet ring, and the side
+// panel lists them with their prices.
+void draw_map(es.Game game):
+    game.map_clear()
+    {string: string} lines = {}
+    for c in market.companies:
+        if !c.listed() || c.system == "":
+            continue
+        string line = c.name + ": " + exchange.fmt.price(c.price) + " (" + exchange.change(c, 30) + ")"
+        lines[c.system] = (lines[c.system] + "\n" + line) if lines.has(c.system) else line
+    for system, text in lines:
+        game.map_marker(system, 0.35, 0.7, 0.8, "")
+        game.map_detail(system, "Corporations", text, 0.35, 0.7, 0.8)

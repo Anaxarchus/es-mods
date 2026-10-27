@@ -1,0 +1,3 @@
+name "Diplomacy Tests"
+version "1"
+about "In-game tests for the Diplomacy mod. Not for players: install only in a test config."

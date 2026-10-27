@@ -1,0 +1,13 @@
+name "Diplomacy Debug"
+version "1"
+authors
+	"Anaxarchus"
+tags
+	"debug"
+dependencies
+	requires
+		"Diplomacy"
+about "Debug mode for the Diplomacy plugin. While this plugin is enabled, Diplomacy runs on any pilot from day 0, without waiting for the Free Worlds campaign to end."
+about "If the Free Worlds hold no systems yet, they are given their wartime territory. The Republic and the Free Worlds go to war at once and stay at war, with three-day truces at most; a flotilla launches whenever a faction has a free slot; and every launch and siege is announced in the message log."
+about "Once per pilot, it also reveals the whole map and adds 100,000,000 credits to your account."
+about "It changes the galaxy of any pilot you play while it is on, and those changes are saved with the pilot. Use a test pilot, and turn the plugin off here (then restart the game) to play normally."

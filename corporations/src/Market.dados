@@ -1,0 +1,1615 @@
+class Market
+
+// The market: companies, the contracts they bid for, their money and their
+// share prices, simulated one day at a time. Everything the market knows is
+// saved as text with the pilot (Game.set_data) after every day and every trade.
+
+import "imports:sdk/es"
+
+// ---- Tuning ----
+// A unit of work: what a client expects to pay for it, and what it costs a
+// company of average efficiency to do.
+float UNIT = 10000.0
+float VARIABLE = 7000.0
+// A unit of capacity (work a day): its upkeep a day, and its book value.
+float UPKEEP = 600.0
+float CAPITAL = 1500000.0
+// New contracts a day, in Normal times.
+float CONTRACTS_A_DAY = 5.2
+// How much of each sector's work clients ask for.
+[]float sector_weight = [0.26, 0.13, 0.07, 0.11, 0.12, 0.07, 0.09, 0.07]
+// The business cycle: Booming, Prosperity, Normal, Recession, Depression.
+[]string cycle_names = ["a boom", "prosperity", "normal times", "a recession", "a depression"]
+[]float demand_by_cycle = [1.35, 1.15, 1.0, 0.82, 0.65]
+[]float budget_by_cycle = [1.15, 1.07, 1.0, 0.94, 0.88]
+[]float pe_by_cycle = [1.3, 1.15, 1.0, 0.8, 0.6]
+[]float rate_by_cycle = [0.04, 0.05, 0.06, 0.09, 0.12]
+// Antitrust: a review opens when a company holds more of its sector's capacity
+// than REVIEW_SHARE, or twice an even split among its sector's companies if
+// that is more; a breakup follows after REVIEW_DAYS. No buyout may leave the
+// buyer within MERGER_MARGIN of that line.
+float REVIEW_SHARE = 0.35
+float MERGER_MARGIN = 0.05
+// A company worth more than this share of the whole exchange is reviewed too.
+float VALUE_SHARE = 0.15
+int REVIEW_DAYS = 60
+// The player's broker: a fee, and a cap on the share of a company they hold.
+float FEE = 0.01
+float MIN_FEE = 100.0
+float MAX_HOLDING = 0.20
+// The player's orders move the price: by IMPACT times the share of the
+// company's shares traded (buying 1% raises it 2%).
+float IMPACT = 2.0
+// The chance a day that a company has a turn of fortune: good more likely
+// near the bottom of its 60-day range, bad near the top.
+float EVENT_CHANCE = 1.0 / 700.0
+// Shipyard restocks: what the owner of a hull's design earns on each one
+// delivered, as a share of its full new price; the work a day one hull of
+// each class (Hulls) takes in the owner's yards while it is built.
+float RESTOCK_MARGIN = 0.12
+[]float restock_load = [0.15, 0.1, 0.3, 0.8]
+
+Rng rng = Rng()
+Names names = Names()
+Fmt fmt = Fmt()
+Hulls hulls = Hulls()
+
+string world = ""
+int day = 0
+int cycle = 2
+int cycle_since = 0
+int next_company = 1
+int next_contract = 1
+int last_listing = 0
+float dividends_paid = 0.0
+[]Company companies = []
+{int: Company} by_id = {}
+[]Contract contracts = []
+// The player's shares by company, and what they paid for them.
+{int: int} holdings = {}
+{int: float} basis = {}
+// "day|text", newest last.
+[]string news = []
+// The exchange's index (1,000 at the start, weighted by value), and the last
+// 60 days of it and of the player's shares' worth.
+float index = 1000.0
+[]float index_history = []
+[]float portfolio_history = []
+[]string used = []
+// The governments at war today (from Diplomacy), and cash events for the player.
+[]string at_war = []
+[]string player_events = []
+// Shipyard stock (Mod API 9): every (planet, model) the market tracks, by
+// "planet|model" and by planet, and the planet whose counts the game's
+// shipyard last received (read back from it on the next day or landing).
+[]Shelf shelves = []
+{string: Shelf} shelf_at = {}
+{string: []Shelf} planet_shelves = {}
+string stock_planet = ""
+// Each planet's "s|" record as last encoded; a change to one of its shelves
+// drops it (touch), so a day's save encodes only the planets that changed.
+{string: string} shelf_text = {}
+// Counts since the mod started, not saved (tools/balance.mjs reads them):
+// shelves that ran out, restock orders, hulls delivered, hulls the player
+// bought and sold back.
+int stockouts = 0
+int restocks_ordered = 0
+int hulls_delivered = 0
+int player_bought = 0
+int player_sold = 0
+// Canonical companies' ids by name, for the hull owners; built on first use.
+{string: int} canon_ids = {}
+
+// ---- Setup ----
+
+void setup(es.Game game, Galaxy galaxy, int today):
+    rng.seed(today * 7919 + 12345)
+    world = string(today) + "-" + string(rng.next())
+    day = today
+    cycle_since = today
+    last_listing = today
+    for i in 0..<names.canon_names.len():
+        string home = names.canon_homes[i]
+        Company c = add_company(names.canon_names[i], true, names.canon_sectors[i], home, galaxy.system_of(game, home), names.canon_capacity[i], today)
+        c.efficiency = rng.between(0.88, 1.0)
+        c.reliability = rng.between(0.86, 0.95)
+        seed_finances(c)
+    for s in 0..<names.invented_start.len():
+        for k in 0..<names.invented_start[s]:
+            Company c = invent_company(game, galaxy, s, rng.between(3.0, 8.0), today)
+            seed_finances(c)
+    say(today, "The exchange opens with " + string(listed_count()) + " listed companies.")
+
+// A new company's books: some cash, a little debt, and four reports of about
+// what a company its size earns, so its first price is a fair one.
+void seed_finances(Company c):
+    c.cash = c.capacity * CAPITAL * rng.between(0.15, 0.3)
+    c.debt = c.capacity * CAPITAL * rng.between(0.05, 0.2)
+    c.shares = shares_for(c.capacity)
+    for q in 0..<4:
+        c.earnings.append(c.capacity * 30.0 * 380.0 * rng.between(0.6, 1.3))
+    c.price = fair(c)
+
+int shares_for(float capacity):
+    int n = globalThis.Math.round(capacity * 100000.0)
+    return n
+
+Company add_company(string name, bool canon, int sector, string home, string system, float capacity, int today):
+    Company c = Company()
+    c.id = next_company
+    next_company += 1
+    c.name = name
+    c.canon = canon
+    c.sector = sector
+    c.home = home
+    c.system = system
+    c.capacity = capacity
+    c.reliability = 0.8
+    c.report_at = rng.range(0, 29)
+    c.payout = rng.between(0.2, 0.5)
+    c.founded = today
+    c.since = today
+    companies.append(c)
+    by_id[c.id] = c
+    used.append(name)
+    return c
+
+Company invent_company(es.Game game, Galaxy galaxy, int sector, float capacity, int today):
+    string home = galaxy.planets[rng.range(0, galaxy.planets.len() - 1)] if galaxy.planets.len() > 0 else "Earth"
+    Company c = add_company(names.invent(rng, sector, used), false, sector, home, galaxy.system_of(game, home), capacity, today)
+    c.efficiency = rng.between(0.85, 1.18)
+    c.reliability = rng.between(0.7, 0.86)
+    return c
+
+// ---- A day ----
+
+// Simulate every day from the last one simulated to `today`, at most 30.
+void simulate(es.Game game, Galaxy galaxy, int today):
+    if today <= day:
+        return
+    int from = day + 1
+    if today - from > 29:
+        from = today - 29
+    for d in from..=today:
+        step(game, galaxy, d)
+    day = today
+
+void step(es.Game game, Galaxy galaxy, int d):
+    read_wars(game)
+    move_cycle(d)
+    refresh_loads()
+    run_contracts(game, d)
+    // Hull demand slots in here, before restocking (Task C3/C4, later):
+    // NPC sales lower shelf counts, driven by regional losses.
+    restock(game, galaxy, d)
+    award_contracts(game, galaxy, d)
+    issue_contracts(game, galaxy, d)
+    for c in companies:
+        if c.listed():
+            finances(game, galaxy, c, d)
+    for c in companies:
+        if c.listed() && d % 30 == c.report_at:
+            report(game, c, d)
+    for c in companies:
+        if c.listed():
+            move_price(c)
+    move_index()
+    random_events(game, d)
+    hauled(game, d)
+    corporate_actions(game, galaxy, d)
+    record_history()
+    prune(d)
+
+void read_wars(es.Game game):
+    at_war = []
+    if game.condition("diplomacy: active") == 0:
+        return
+    int a = game.condition("diplomacy: war a")
+    int b = game.condition("diplomacy: war b")
+    []string powers = ["", "Republic", "Free Worlds", "Syndicate"]
+    if a >= 1 && a <= 3 && b >= 1 && b <= 3:
+        at_war = [powers[a], powers[b]]
+
+// The cycle moves a step about every 120 days, more often back toward normal.
+void move_cycle(int d):
+    if !rng.chance(100.0 / 120.0):
+        return
+    int toward = 1 if cycle < 2 else -1
+    if cycle == 2:
+        toward = 1 if rng.chance(50.0) else -1
+    int stepped = cycle + (toward if rng.chance(65.0) else -toward)
+    if stepped < 0 || stepped > 4:
+        stepped = cycle + toward
+    if stepped == cycle:
+        return
+    cycle = stepped
+    cycle_since = d
+    say(d, "The economy enters " + cycle_names[cycle] + ".")
+
+void refresh_loads():
+    for c in companies:
+        c.load = 0.0
+    for k in contracts:
+        if k.status == k.RUNNING && by_id.has(k.winner):
+            by_id[k.winner].load += k.load
+
+// ---- Contracts ----
+
+void issue_contracts(es.Game game, Galaxy galaxy, int d):
+    if galaxy.served.len() == 0:
+        return
+    float rate = CONTRACTS_A_DAY * demand_by_cycle[cycle]
+    int n = int(rate)
+    if rng.unit() < rate - float(n):
+        n += 1
+    for i in 0..<n:
+        issue_one(game, galaxy, d)
+
+void issue_one(es.Game game, Galaxy galaxy, int d):
+    // Wars raise demand for ships, outfits and security.
+    []float weights = sector_weight.copy()
+    if at_war.len() > 0:
+        weights[0] = weights[0] * 1.6
+        weights[1] = weights[1] * 1.6
+        weights[7] = weights[7] * 2.0
+    int sector = pick(weights)
+    Contract k = Contract()
+    k.id = next_contract
+    next_contract += 1
+    k.sector = sector
+    k.issued = d
+    k.closes = d + 3
+    bool government = rng.chance(60.0 if at_war.len() > 0 else 45.0)
+    if government:
+        string gov = pick_power()
+        string where = government_system(game, galaxy, gov)
+        if where != "":
+            k.kind = k.GOVERNMENT
+            k.client = gov
+            k.system = where
+        else:
+            government = false
+    if !government:
+        string planet = galaxy.planets[rng.range(0, galaxy.planets.len() - 1)]
+        k.kind = k.PLANET
+        k.client = game.planet_name(planet)
+        k.system = galaxy.system_of(game, planet)
+    k.load = rng.between(0.5, 3.0) * (1.2 if sector == 0 else 1.0)
+    k.days = rng.range(10, 60)
+    k.budget = k.load * float(k.days) * UNIT * budget_by_cycle[cycle] * rng.between(0.95, 1.35)
+    if k.kind == k.GOVERNMENT && at_war.contains(k.client):
+        k.budget = k.budget * 1.2
+    contracts.append(k)
+
+// A government that issues contracts: at war, three times as likely.
+string pick_power():
+    []string powers = ["Republic", "Free Worlds", "Syndicate"]
+    []float weights = [3.0, 1.5, 1.2]
+    for i in 0..<3:
+        if at_war.contains(powers[i]):
+            weights[i] = weights[i] * 3.0
+    return powers[pick(weights)]
+
+// A system the government holds that has a bank planet, or "".
+string government_system(es.Game game, Galaxy galaxy, string gov):
+    for attempt in 0..<24:
+        string s = galaxy.served[rng.range(0, galaxy.served.len() - 1)]
+        if game.system_government(s) == gov:
+            return s
+    return ""
+
+int pick([]float weights):
+    float total = 0.0
+    for w in weights:
+        total += w
+    float r = rng.unit() * total
+    for i in 0..<weights.len():
+        r -= weights[i]
+        if r < 0.0:
+            return i
+    return weights.len() - 1
+
+int reach(Company c):
+    int r = 4 + int(c.capacity / 5.0)
+    return r if r < 9 else 9
+
+void award_contracts(es.Game game, Galaxy galaxy, int d):
+    []Contract closing = contracts.filter(bool(Contract k): return k.status == k.OPEN && k.closes <= d)
+    for k in closing:
+        award(game, galaxy, k, d)
+
+// Sealed bids: every company in the sector that reaches the system and has the
+// spare capacity bids its cost plus a margin; the lowest price weighted by
+// reliability wins.
+void award(es.Game game, Galaxy galaxy, Contract k, int d):
+    Company best = Company()
+    Company second = Company()
+    float best_score = -1.0
+    float second_score = -1.0
+    float best_bid = 0.0
+    float best_est = 0.0
+    float second_bid = 0.0
+    int bidders = 0
+    for c in companies:
+        if !c.listed() || c.sector != k.sector || c.capacity <= 0.0:
+            continue
+        if k.kind == k.COMPANY && k.client == string(c.id):
+            continue
+        int j = galaxy.jumps(c.system, k.system)
+        if j < 0 || j > reach(c) || c.load + k.load > c.capacity:
+            continue
+        float est = k.load * float(k.days) * VARIABLE * c.efficiency
+        float margin = 0.06 + 0.28 * (c.load / c.capacity) + rng.between(-0.04, 0.04)
+        if c.canon:
+            margin += 0.02
+        if c.cash < c.capacity * UPKEEP * 30.0:
+            margin -= 0.08
+        if c.status != c.LISTED:
+            margin -= 0.05
+        if margin < -0.05:
+            margin = -0.05
+        float bid = est * (1.0 + margin)
+        bidders += 1
+        if bid > k.budget:
+            continue
+        float score = bid / (0.5 + 0.5 * c.reliability)
+        if best_score < 0.0 || score < best_score:
+            second = best
+            second_score = best_score
+            second_bid = best_bid
+            best = c
+            best_score = score
+            best_bid = bid
+            best_est = est
+        else if second_score < 0.0 || score < second_score:
+            second = c
+            second_score = score
+            second_bid = bid
+    k.bidders = bidders
+    if best_score < 0.0:
+        if !k.reissued:
+            k.reissued = true
+            k.budget = k.budget * 1.25
+            k.closes = d + 3
+        else:
+            k.status = k.LAPSED
+        return
+    k.status = k.RUNNING
+    k.winner = best.id
+    k.price = best_bid
+    k.start = d
+    k.ends = d + k.days
+    float spread = 0.06 + 0.15 * (best.efficiency - 0.8 if best.efficiency > 0.8 else 0.0)
+    float overrun = globalThis.Math.exp(rng.gauss() * spread)
+    k.cost = best_est * overrun
+    if second_score >= 0.0:
+        k.runner_up = second.id
+        k.runner_price = second_bid
+    best.load += k.load
+    // 30% on award; the rest on delivery.
+    float advance = k.price * 0.3
+    best.cash += advance
+    best.revenue += advance
+    charge_client(k, advance)
+    // A shipyard buys engines, outfits and electronics from others.
+    if k.sector == 0 && k.kind != k.COMPANY:
+        for s in [2, 1, 3]:
+            if rng.chance(60.0):
+                subcontract(k, best, s, d)
+    if k.price >= 3000000.0:
+        say(d, best.name + " wins a " + names.sectors[k.sector].to_lower() + " contract from " + client_name(k) + " worth " + fmt.short_credits(k.price) + ".")
+
+void subcontract(Contract parent, Company buyer, int sector, int d):
+    Contract k = Contract()
+    k.id = next_contract
+    next_contract += 1
+    k.kind = k.COMPANY
+    k.client = string(buyer.id)
+    k.sector = sector
+    k.system = buyer.system
+    k.load = parent.load * 0.3
+    int days = parent.days * 7 / 10
+    k.days = days if days > 8 else 8
+    k.budget = parent.price * 0.12
+    k.issued = d
+    k.closes = d + 3
+    k.parent = parent.id
+    // The shipyard no longer builds that part itself.
+    parent.cost = parent.cost - k.budget * 0.8
+    contracts.append(k)
+
+// A company client pays its supplier.
+void charge_client(Contract k, float amount):
+    if k.kind != k.COMPANY:
+        return
+    int id = k.client.to_int()
+    if by_id.has(id) && by_id[id].listed():
+        Company payer = by_id[id]
+        payer.cash -= amount
+        payer.costs += amount
+
+string client_name(Contract k):
+    if k.kind == k.RESTOCK:
+        return k.client + " shipyard"
+    if k.kind == k.COMPANY:
+        int id = k.client.to_int()
+        return by_id[id].name if by_id.has(id) else "a company"
+    return "the " + k.client if k.kind == k.GOVERNMENT else k.client
+
+// Each day the work costs its winner a share of its cost; on its last day it is
+// delivered, or fails and pays 20% less.
+void run_contracts(es.Game game, int d):
+    for k in contracts:
+        if k.status != k.RUNNING || !by_id.has(k.winner):
+            continue
+        Company c = by_id[k.winner]
+        float daily = k.cost / float(k.days)
+        c.cash -= daily
+        c.costs += daily
+        if d >= k.ends:
+            deliver(game, k, c, d)
+
+void deliver(es.Game game, Contract k, Company c, int d):
+    if k.kind == k.RESTOCK:
+        deliver_restock(k, c)
+        return
+    float chance = 3.0 + 12.0 * (1.0 - c.reliability)
+    if c.load > c.capacity:
+        chance += 10.0
+    if k.sector == 6 && at_war.contains(game.system_government(k.system)):
+        chance += 5.0
+    bool failed = rng.chance(chance)
+    float pay = k.price * (0.5 if failed else 0.7)
+    c.cash += pay
+    c.revenue += pay
+    charge_client(k, pay)
+    c.load -= k.load
+    if failed:
+        k.status = k.FAILED
+        c.reliability = c.reliability - 0.1 if c.reliability > 0.1 else 0.0
+        if k.price >= 1000000.0:
+            say(d, c.name + " fails to deliver on a " + names.sectors[k.sector].to_lower() + " contract for " + client_name(k) + ".")
+    else:
+        k.status = k.DELIVERED
+        c.reliability = c.reliability + 0.02 * (1.0 - c.reliability)
+
+// ---- Money ----
+
+float upkeep(Company c):
+    return c.capacity * UPKEEP
+
+float debt_limit(Company c):
+    return 0.6 * (c.capacity * CAPITAL + (c.cash if c.cash > 0.0 else 0.0))
+
+void finances(es.Game game, Galaxy galaxy, Company c, int d):
+    float rate = rate_by_cycle[cycle] + (0.03 if c.status != c.LISTED else 0.0)
+    float daily = upkeep(c) + c.debt * rate / 365.0
+    c.cash -= daily
+    c.costs += daily
+    if c.cash < 0.0:
+        float room = debt_limit(c) - c.debt
+        if room > 0.0:
+            float take = -c.cash + upkeep(c) * 15.0
+            take = take if take < room else room
+            c.debt += take
+            c.cash += take
+    else if c.debt > 0.0 && c.cash > upkeep(c) * 120.0:
+        float repay = c.cash - upkeep(c) * 90.0
+        repay = repay if repay < c.debt else c.debt
+        c.debt -= repay
+        c.cash -= repay
+    if c.cash < 0.0:
+        if c.canon:
+            rescue(game, c, d)
+        else if c.status == c.LISTED:
+            c.status = c.DISTRESSED
+            c.since = d
+            say(d, c.name + " is in distress: out of cash, and at its debt limit.")
+    else if c.status == c.DISTRESSED || (c.status == c.FOR_SALE && c.suitor == 0):
+        bool was_for_sale = c.status == c.FOR_SALE
+        c.status = c.LISTED
+        c.since = d
+        say(d, c.name + (" is no longer for sale: it has recovered." if was_for_sale else " has recovered."))
+    if c.status == c.DISTRESSED && d - c.since >= 30:
+        c.status = c.FOR_SALE
+        c.since = d
+        say(d, c.name + " is offered for sale to its rivals.")
+    if c.status == c.FOR_SALE && c.suitor == 0 && d - c.since >= 30:
+        bankrupt(game, c, d)
+
+// A canonical company never fails: its government lends it what it needs, and
+// once in 90 days it sells 40% new shares at a discount.
+void rescue(es.Game game, Company c, int d):
+    if c.rescued == 0 || d - c.rescued >= 90:
+        int issue = int(float(c.shares) * 0.4)
+        c.cash += float(issue) * c.price * 0.7
+        c.shares += issue
+        c.price = c.price * 0.75
+        c.rescued = d
+        string gov = game.system_government(c.system)
+        say(d, (gov if gov != "" else "Its government") + " rescues " + c.name + " with a state loan and 40% new shares.")
+    float need = upkeep(c) * 60.0 - c.cash
+    if need > 0.0:
+        c.debt += need
+        c.cash += need
+    if c.status != c.LISTED:
+        c.status = c.LISTED
+        c.since = d
+
+void report(es.Game game, Company c, int d):
+    float e = c.revenue - c.costs
+    float prev = c.earnings[c.earnings.len() - 1] if c.earnings.len() > 0 else e
+    c.earnings.append(e)
+    if c.earnings.len() > 4:
+        c.earnings.remove_at(0)
+    c.revenue = 0.0
+    c.costs = 0.0
+    // The surprise against the last report moves the price at once.
+    float scale = (prev if prev > 0.0 else -prev)
+    float floor = upkeep(c) * 15.0
+    float surprise = (e - prev) / (scale if scale > floor else floor)
+    float shock = 0.5 * surprise
+    shock = 0.25 if shock > 0.25 else (-0.25 if shock < -0.25 else shock)
+    float jump = globalThis.Math.exp(shock)
+    c.price = c.price * jump
+    if shock <= -0.15 || shock >= 0.15:
+        say(d, c.name + " reports " + ("a profit" if e >= 0.0 else "a loss") + " of " + fmt.short_credits(e if e >= 0.0 else -e) + "; its shares " + ("jump" if shock > 0.0 else "fall") + ".")
+    // Dividends.
+    c.dividend = 0.0
+    if e > 0.0 && c.status == c.LISTED && c.cash > upkeep(c) * 60.0:
+        float total = e * c.payout
+        c.cash -= total
+        c.dividend = total / float(c.shares)
+        int held = holdings.get(c.id, 0)
+        if held > 0:
+            float paid = c.dividend * float(held)
+            credit(game, paid)
+            dividends_paid += paid
+            player_events.append(c.name + " pays you a dividend of " + fmt.credits(paid) + " credits.")
+    // Grow when busy and flush; shrink when idle.
+    float util = c.load / c.capacity if c.capacity > 0.0 else 0.0
+    // A company near the antitrust line, or losing money, does not grow.
+    bool room = sector_share(c, 0.0) < review_line(peers(c.sector)) - MERGER_MARGIN && value_share(c) < VALUE_SHARE - 0.03
+    if util > 0.8 && c.status == c.LISTED && e > 0.0 && room:
+        float add = c.capacity * 0.08
+        add = add if add > 0.5 else 0.5
+        if add * CAPITAL < c.cash - upkeep(c) * 60.0:
+            c.capacity += add
+            c.cash -= add * CAPITAL
+    else if util < 0.35 && c.capacity > 3.0:
+        float cut = c.capacity * 0.08
+        c.capacity -= cut
+        c.cash += cut * CAPITAL * 0.6
+    float drift = rng.gauss() * 0.01 + (1.0 - c.efficiency) * 0.02
+    c.efficiency = clamp(c.efficiency + drift, 0.75, 1.3)
+
+float clamp(float x, float lo, float hi):
+    return lo if x < lo else (hi if x > hi else x)
+
+// ---- Prices ----
+
+// Earnings over the last four reports, made yearly, times a multiple of about
+// 12 that the cycle and growth move; never below half the book value.
+float fair(Company c):
+    float book = (c.capacity * CAPITAL + c.cash - c.debt) / float(c.shares)
+    if c.earnings.len() == 0:
+        return book if book > 0.05 else 0.05
+    float sum = 0.0
+    for e in c.earnings:
+        sum += e
+    float yearly = sum * 365.0 / (30.0 * float(c.earnings.len()))
+    float eps = yearly / float(c.shares)
+    float growth = 1.0
+    if c.earnings.len() >= 2:
+        growth = 1.15 if c.earnings[c.earnings.len() - 1] > c.earnings[0] else 0.9
+    float pe = 12.0 * pe_by_cycle[cycle] * growth
+    if eps > 0.0:
+        float f = eps * pe
+        f = f if f > 0.5 * book else 0.5 * book
+        return f if f > 0.05 else 0.05
+    float f = 0.6 * book
+    return f if f > 0.05 else 0.05
+
+float book(Company c):
+    return (c.capacity * CAPITAL + c.cash - c.debt) / float(c.shares)
+
+void move_price(Company c):
+    float target = fair(c)
+    if c.status == c.FOR_SALE:
+        target = target * 0.7
+    if c.suitor > 0 && c.offer > target:
+        target = c.offer
+    float sigma = 0.01 if c.canon else (0.03 if c.status == c.FOR_SALE else 0.015)
+    float lp = globalThis.Math.log(c.price)
+    float lf = globalThis.Math.log(target)
+    float next = globalThis.Math.exp(lp + 0.05 * (lf - lp) + sigma * rng.gauss())
+    c.price = next if next > 0.01 else 0.01
+    int cents = globalThis.Math.round(c.price * 100.0)
+    c.history.append(cents)
+    if c.history.len() > 60:
+        c.history.remove_at(0)
+
+// ---- Rise and fall ----
+
+void corporate_actions(es.Game game, Galaxy galaxy, int d):
+    // Buyouts in progress complete after a week.
+    for t in companies:
+        if t.suitor > 0 && d >= t.offer_day:
+            complete_buyout(game, t, d)
+    // A company for sale draws buyers; a cheap healthy one now and then.
+    for t in companies:
+        if t.canon || t.suitor > 0 || !t.listed():
+            continue
+        if t.status == t.FOR_SALE && rng.chance(1.5):
+            seek_buyer(t, d, 1.1)
+        else if t.status == t.LISTED && d % 7 == 0:
+            bool cheap = t.price < book(t)
+            if rng.chance(0.5 if cheap else 0.05):
+                seek_buyer(t, d, 1.3)
+    if d % 7 == 0:
+        antitrust(game, galaxy, d)
+    new_listings(game, galaxy, d)
+
+// The share of a sector's capacity over which a company is reviewed, among
+// `peers` listed companies.
+float review_line(int peers):
+    float even = 2.0 / float(peers if peers > 0 else 1)
+    return even if even > REVIEW_SHARE else REVIEW_SHARE
+
+// The share of the whole exchange's value a company is worth.
+float value_share(Company c):
+    float total = 0.0
+    for o in companies:
+        if o.listed():
+            total += o.market_value()
+    return c.market_value() / total if total > 0.0 else 0.0
+
+int peers(int sector):
+    int n = 0
+    for o in companies:
+        if o.listed() && o.sector == sector:
+            n += 1
+    return n
+
+// The share of its sector's capacity a company holds (listed companies only),
+// with `extra` capacity added to it.
+float sector_share(Company c, float extra):
+    float total = extra
+    for o in companies:
+        if o.listed() && o.sector == c.sector:
+            total += o.capacity
+    return (c.capacity + extra) / total if total > 0.0 else 0.0
+
+bool may_buy(Company b, Company t):
+    return b.sector == t.sector || (b.sector == 0 && t.sector >= 1 && t.sector <= 3)
+
+void seek_buyer(Company t, int d, float premium):
+    float cost = t.price * premium * float(t.shares)
+    Company best = Company()
+    float best_means = -1.0
+    bool blocked = false
+    for b in companies:
+        if b.status != b.LISTED || b.id == t.id || !may_buy(b, t) || b.suitor > 0:
+            continue
+        float means = b.cash + (debt_limit(b) - b.debt)
+        if means < cost * 1.3:
+            continue
+        // Merger review: no buyout leaves the buyer near the review line.
+        int after = peers(b.sector) - (1 if t.sector == b.sector else 0)
+        if sector_share(b, t.capacity) > review_line(after) - MERGER_MARGIN:
+            blocked = true
+            continue
+        if means > best_means:
+            best = b
+            best_means = means
+    if best_means < 0.0:
+        if blocked && t.status == t.FOR_SALE && rng.chance(10.0):
+            say(d, "Regulators block a sale of " + t.name + " to a rival that would grow too large.")
+        return
+    t.suitor = best.id
+    t.offer_day = d + 7
+    t.offer = t.price * premium
+    say(d, best.name + " is building a stake in " + t.name + ", offering " + fmt.price(t.offer) + " a share.")
+
+void complete_buyout(es.Game game, Company t, int d):
+    Company b = by_id.get(t.suitor, Company())
+    float cost = t.offer * float(t.shares)
+    if b.id == 0 || b.status != b.LISTED || b.cash + (debt_limit(b) - b.debt) < cost || !t.listed():
+        if b.id != 0:
+            say(d, b.name + " drops its bid for " + t.name + ".")
+        t.suitor = 0
+        return
+    // The buyer pays every holder, the player among them, and takes on the rest.
+    b.cash -= cost
+    b.cash += t.cash
+    b.debt += t.debt
+    if b.cash < 0.0:
+        b.debt += -b.cash
+        b.cash = 0.0
+    b.capacity += t.capacity
+    t.brought = t.capacity
+    b.acquired.append(t.id)
+    move_contracts(t, b)
+    int held = holdings.get(t.id, 0)
+    if held > 0:
+        float paid = t.offer * float(held)
+        credit(game, paid)
+        player_events.append(b.name + " buys your " + string(held) + " shares of " + t.name + " for " + fmt.credits(paid) + " credits.")
+        holdings.delete(t.id)
+        basis.delete(t.id)
+    say(d, b.name + " buys " + t.name + " for " + fmt.price(t.offer) + " a share (" + fmt.short_credits(cost) + " in all).")
+    t.status = t.MERGED
+    t.parent = b.id
+    t.since = d
+    t.suitor = 0
+    t.capacity = 0.0
+    t.cash = 0.0
+    t.debt = 0.0
+
+// Running contracts pass from one company to another.
+void move_contracts(Company from, Company to):
+    for k in contracts:
+        if k.status == k.RUNNING && k.winner == from.id:
+            k.winner = to.id
+            to.load += k.load
+
+void bankrupt(es.Game game, Company c, int d):
+    // A rival in the sector buys its yards at half their value, or they go for scrap.
+    float value = c.capacity * CAPITAL * 0.5
+    Company buyer = Company()
+    for o in companies:
+        if o.status == o.LISTED && o.id != c.id && o.sector == c.sector && o.cash - upkeep(o) * 60.0 >= value && (buyer.id == 0 || o.cash > buyer.cash):
+            buyer = o
+    if buyer.id != 0 && sector_share(buyer, c.capacity) <= review_line(peers(c.sector) - 1) - MERGER_MARGIN:
+        buyer.cash -= value
+        buyer.capacity += c.capacity
+    else:
+        value = c.capacity * CAPITAL * 0.25
+    float left = value + c.cash - c.debt
+    float per = left / float(c.shares) if left > 0.0 else 0.0
+    // Its running contracts go to the runner-up, or fail.
+    for k in contracts:
+        if k.status != k.RUNNING || k.winner != c.id:
+            continue
+        if k.kind == k.RESTOCK:
+            drop_restock(k)
+            continue
+        Company r = by_id.get(k.runner_up, Company())
+        if r.id != 0 && r.status == r.LISTED && r.load + k.load <= r.capacity:
+            k.winner = r.id
+            k.price = k.price if k.price > k.runner_price else k.runner_price
+            r.load += k.load
+        else:
+            k.status = k.FAILED
+    int held = holdings.get(c.id, 0)
+    if held > 0:
+        float paid = per * float(held)
+        credit(game, paid)
+        player_events.append(c.name + " is bankrupt: your " + string(held) + " shares bring " + fmt.credits(paid) + " credits.")
+        holdings.delete(c.id)
+        basis.delete(c.id)
+    say(d, c.name + " is bankrupt and delisted. Shareholders get " + fmt.price(per) + " a share.")
+    c.status = c.BANKRUPT
+    c.since = d
+    c.capacity = 0.0
+    c.cash = 0.0
+    c.debt = 0.0
+    c.price = per
+
+// Antitrust: over its review line opens a review; still over after
+// REVIEW_DAYS, the company is broken up. Canonical companies too.
+void antitrust(es.Game game, Galaxy galaxy, int d):
+    for c in companies:
+        if !c.listed():
+            continue
+        float share = sector_share(c, 0.0)
+        float line = review_line(peers(c.sector))
+        float worth = value_share(c)
+        if share > line || worth > VALUE_SHARE:
+            if c.review == 0:
+                c.review = d
+                if share > line:
+                    say(d, "Regulators open an antitrust review of " + c.name + ", which holds " + fmt.whole_percent(share) + " of " + names.sectors[c.sector].to_lower() + ".")
+                else:
+                    say(d, "Regulators open an antitrust review of " + c.name + ", now worth " + fmt.whole_percent(worth) + " of the whole exchange.")
+            else if d - c.review >= REVIEW_DAYS:
+                breakup(game, galaxy, c, d)
+                // Still too large: the next breakup in 30 days.
+                c.review = d - REVIEW_DAYS + 30
+        else if c.review > 0 && share <= line - MERGER_MARGIN && worth <= VALUE_SHARE - 0.03:
+            c.review = 0
+            say(d, "Regulators close their review of " + c.name + ".")
+
+// Break a company up: its latest acquisition is spun off again, or, with none,
+// a new company is carved out of it. Its holders get one share of the new
+// company for each share they hold.
+void breakup(es.Game game, Galaxy galaxy, Company c, int d):
+    float total = 0.0
+    for o in companies:
+        if o.listed() && o.sector == c.sector:
+            total += o.capacity
+    float shed = c.capacity - (review_line(peers(c.sector) + 1) - 0.1) * total
+    // Worth too much of the exchange: shed enough to come down to 10% of it.
+    float worth = value_share(c)
+    if worth > VALUE_SHARE:
+        float by_value = c.capacity * (1.0 - 0.10 / worth)
+        shed = by_value if by_value > shed else shed
+    float least = c.capacity * 0.15
+    shed = shed if shed > least else least
+    Company spin = Company()
+    if c.acquired.len() > 0:
+        spin = by_id[c.acquired.pop()]
+        // It leaves with what it brought, or with what must go, if that is more.
+        shed = spin.brought if spin.brought > shed else shed
+    else:
+        spin = invent_company(game, galaxy, c.sector, 0.0, d)
+        spin.home = c.home
+        spin.system = c.system
+    float take = shed if shed < c.capacity * 0.6 else c.capacity * 0.6
+    float f = take / c.capacity
+    spin.capacity = take
+    c.capacity -= take
+    if c.cash > 0.0:
+        spin.cash = c.cash * f
+        c.cash -= spin.cash
+    spin.debt = c.debt * f
+    c.debt -= spin.debt
+    spin.shares = c.shares
+    spin.efficiency = c.efficiency
+    spin.reliability = c.reliability
+    spin.status = spin.LISTED
+    spin.parent = 0
+    spin.since = d
+    spin.suitor = 0
+    spin.review = 0
+    spin.brought = 0.0
+    spin.earnings = []
+    for e in c.earnings:
+        spin.earnings.append(e * f)
+    for i in 0..<c.earnings.len():
+        c.earnings[i] = c.earnings[i] * (1.0 - f)
+    spin.history = []
+    spin.report_at = rng.range(0, 29)
+    spin.price = fair(spin)
+    c.price = c.price * (1.0 - f)
+    // The price history is adjusted for the spin-off, as charts are: the value
+    // handed to holders is not a loss.
+    for i in 0..<c.history.len():
+        int adjusted = globalThis.Math.round(float(c.history[i]) * (1.0 - f))
+        c.history[i] = adjusted
+    // Its share of the work goes with it.
+    float moved = 0.0
+    for k in contracts:
+        if k.status == k.RUNNING && k.winner == c.id && k.kind != k.RESTOCK && moved + k.load <= c.load * f:
+            k.winner = spin.id
+            moved += k.load
+    int held = holdings.get(c.id, 0)
+    if held > 0:
+        holdings[spin.id] = holdings.get(spin.id, 0) + held
+        float paid = basis.get(c.id, 0.0)
+        basis[spin.id] = basis.get(spin.id, 0.0) + paid * f
+        basis[c.id] = paid * (1.0 - f)
+        player_events.append("Regulators break up " + c.name + ": you receive " + string(held) + " shares of " + spin.name + ".")
+    say(d, "Regulators break up " + c.name + ": " + spin.name + " is spun off, and holders get one share of it for each share of " + c.name + ".")
+
+int listed_count():
+    int n = 0
+    for c in companies:
+        if c.listed():
+            n += 1
+    return n
+
+// A new company lists at most every 60 days (30 while fewer than 35 are
+// listed): when fewer than 40 are listed, a sector has fewer than 3, or in a
+// boom with fewer than 50.
+void new_listings(es.Game game, Galaxy galaxy, int d):
+    int n_listed = listed_count()
+    if d - last_listing < (30 if n_listed < 35 else 60) || galaxy.planets.len() == 0:
+        return
+    []int per = [0, 0, 0, 0, 0, 0, 0, 0]
+    for c in companies:
+        if c.listed():
+            per[c.sector] = per[c.sector] + 1
+    int thinnest = 0
+    for s in 1..<per.len():
+        if per[s] < per[thinnest]:
+            thinnest = s
+    int n = listed_count()
+    if !(n < 40 || per[thinnest] < 3 || (cycle == 0 && n < 50)):
+        return
+    // A sector short of companies first; otherwise the busiest one.
+    int sector = thinnest if per[thinnest] < 3 else busiest()
+    Company c = invent_company(game, galaxy, sector, rng.between(3.0, 6.0), d)
+    c.cash = c.capacity * CAPITAL * 0.3
+    c.shares = shares_for(c.capacity)
+    c.price = fair(c)
+    last_listing = d
+    say(d, "New listing: " + c.name + " (" + names.sectors[sector].to_lower() + ", " + game.planet_name(c.home) + ") opens at " + fmt.price(c.price) + ".")
+
+// The sector whose companies are busiest: where a newcomer finds work.
+int busiest():
+    []float load = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    []float capacity = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    for c in companies:
+        if c.listed():
+            load[c.sector] = load[c.sector] + c.load
+            capacity[c.sector] = capacity[c.sector] + c.capacity
+    int best = 0
+    float best_util = -1.0
+    for s in 0..<8:
+        float util = load[s] / capacity[s] if capacity[s] > 0.0 else 2.0
+        if util > best_util:
+            best = s
+            best_util = util
+    return best
+
+// Forget finished contracts after 60 days (restocks after 10), companies gone over a year (their names stay used), and old news.
+void prune(int d):
+    if d % 10 != 0:
+        return
+    // Restocks are many and small: kept 10 days once done, for the exchange's summary.
+    contracts = contracts.filter(bool(Contract k): return !k.done() || d - k.ends < (10 if k.kind == k.RESTOCK else 60))
+    []int keep = []
+    for c in companies:
+        if c.status == c.MERGED:
+            keep.append(c.id)
+        for a in c.acquired:
+            keep.append(a)
+    companies = companies.filter(bool(Company c): return c.listed() || d - c.since < 365 || keep.contains(c.id))
+    by_id = {}
+    for c in companies:
+        by_id[c.id] = c
+    if news.len() > 40:
+        news = news[news.len() - 40..<news.len()]
+
+void say(int d, string text):
+    news.append(string(d) + "|" + text.replace_all("|", "/").replace_all("\n", " "))
+
+void credit(es.Game game, float amount):
+    int n = globalThis.Math.round(amount)
+    game.set_condition("credits", game.condition("credits") + n)
+
+// ---- History ----
+
+// The index moves with the day's closing prices against the day before's, each
+// company weighted by its value; companies just listed or gone count from
+// their first full day, as a real index's divisor would have them.
+void move_index():
+    float now = 0.0
+    float then = 0.0
+    for c in companies:
+        int n = c.history.len()
+        if !c.listed() || n < 2:
+            continue
+        now += float(c.shares) * float(c.history[n - 1])
+        then += float(c.shares) * float(c.history[n - 2])
+    if then > 0.0:
+        index = index * now / then
+
+void record_history():
+    index_history.append(index)
+    if index_history.len() > 60:
+        index_history.remove_at(0)
+    float worth = 0.0
+    for id, n in holdings:
+        if by_id.has(id):
+            worth += by_id[id].price * float(n)
+    portfolio_history.append(worth)
+    if portfolio_history.len() > 60:
+        portfolio_history.remove_at(0)
+
+// ---- Turns of fortune ----
+
+// Now and then a company has a turn of fortune. The lower its price stands in
+// its 60-day range, the likelier a good one; the higher, the likelier a bad one.
+void random_events(es.Game game, int d):
+    for c in companies:
+        if !c.listed() || !rng.chance(EVENT_CHANCE * 100.0):
+            continue
+        float position = range_position(c)
+        bool good = rng.chance((0.8 - 0.6 * position) * 100.0)
+        if good:
+            good_turn(game, c, d)
+        else:
+            bad_turn(game, c, d)
+
+// Where the price stands in its 60-day range: 0 at the low, 1 at the high.
+float range_position(Company c):
+    if c.history.len() < 2:
+        return 0.5
+    int lo = c.history[0]
+    int hi = c.history[0]
+    for h in c.history:
+        lo = h if h < lo else lo
+        hi = h if h > hi else hi
+    if hi <= lo:
+        return 0.5
+    float now = c.price * 100.0
+    return clamp((now - float(lo)) / float(hi - lo), 0.0, 1.0)
+
+void good_turn(es.Game game, Company c, int d):
+    int which = rng.range(0, 4)
+    string gov = game.system_government(c.system)
+    gov = gov if gov != "" else "Its government"
+    string text = ""
+    if which == 0:
+        c.efficiency = clamp(c.efficiency - rng.between(0.04, 0.08), 0.75, 1.3)
+        text = c.name + "'s engineers announce a production breakthrough."
+    else if which == 1:
+        float value = c.capacity * UPKEEP * 60.0 * rng.between(1.0, 3.0)
+        c.cash += value
+        c.revenue += value
+        text = c.name + " lands an emergency order from the " + gov + " worth " + fmt.short_credits(value) + "."
+    else if which == 2:
+        c.reliability = clamp(c.reliability + 0.08, 0.0, 0.99)
+        text = c.name + " wins an award for safety and quality."
+    else if which == 3:
+        c.price = c.price * rng.between(1.12, 1.2)
+        c.efficiency = clamp(c.efficiency - 0.02, 0.75, 1.3)
+        text = c.name + " names a celebrated new chief executive; its shares jump."
+    else:
+        float grant = c.capacity * CAPITAL * 0.05
+        c.cash += grant
+        text = "The " + gov + " awards " + c.name + " a development grant of " + fmt.short_credits(grant) + "."
+    fortune(c, d, text)
+
+void bad_turn(es.Game game, Company c, int d):
+    int which = rng.range(0, 4)
+    string text = ""
+    if which == 0:
+        float lost = c.capacity * rng.between(0.08, 0.15)
+        c.capacity -= lost
+        c.cash -= lost * CAPITAL * 0.1
+        text = "An accident shuts part of " + c.name + "'s works on " + game.planet_name(c.home) + "."
+    else if which == 1:
+        c.price = c.price * rng.between(0.78, 0.88)
+        c.reliability = clamp(c.reliability - 0.06, 0.0, 0.99)
+        text = c.name + " is caught in an accounting scandal; its shares slide."
+    else if which == 2:
+        float cost = upkeep(c) * 20.0
+        c.cash -= cost
+        c.costs += cost
+        text = "Workers strike at " + c.name + ", costing it " + fmt.short_credits(cost) + "."
+    else if which == 3:
+        float award = c.capacity * CAPITAL * 0.04
+        c.cash -= award
+        c.costs += award
+        text = c.name + " loses a lawsuit and pays " + fmt.short_credits(award) + " in damages."
+    else:
+        c.reliability = clamp(c.reliability - 0.12, 0.0, 0.99)
+        text = c.name + " recalls a faulty product line."
+    fortune(c, d, text)
+
+void fortune(Company c, int d, string text):
+    say(d, text)
+    if holdings.get(c.id, 0) > 0:
+        player_events.append(text)
+
+// ---- Jobs for the player ----
+
+// Cargo a sector's work needs.
+[]string cargo_names = ["Hull Plating", "Components", "Engine Parts", "Electronics", "Food", "Mining Equipment", "Freight", "Munitions"]
+
+// Offer the player jobs carrying parts to running contracts within reach of
+// the planet they landed on: up to two, the largest first. Completing one
+// helps the company deliver on time.
+void offer_jobs(es.Game game, Galaxy galaxy):
+    string here = game.planet()
+    if here == "":
+        return
+    string from = galaxy.system_of(game, here)
+    []Contract open = []
+    for k in contracts:
+        if k.status != k.RUNNING || k.kind == k.RESTOCK || !by_id.has(k.winner) || !by_id[k.winner].listed() || k.ends - day < 12:
+            continue
+        if !galaxy.system_planet.has(k.system) || k.system == from:
+            continue
+        int j = galaxy.jumps(from, k.system)
+        if j < 1 || j > 6 || game.condition("corporations: hauling " + string(k.id)) != 0:
+            continue
+        open.append(k)
+    open.sort(bool(Contract a, Contract b): return a.price > b.price)
+    int offered = 0
+    for k in open:
+        if offered >= 2:
+            break
+        if offer_job(game, galaxy, k, from):
+            offered += 1
+
+bool offer_job(es.Game game, Galaxy galaxy, Contract k, string from):
+    Company c = by_id[k.winner]
+    string to = galaxy.system_planet[k.system]
+    int j = galaxy.jumps(from, k.system)
+    int tons = 5 + int(k.load * 8.0)
+    int pay = 20000 + tons * j * 900
+    int days = j * 3 + 6
+    int left = k.ends - day - 2
+    days = days if days < left else left
+    string id = string(k.id)
+    string cargo = cargo_names[k.sector]
+    []string lines = []
+    lines.append("name \"Parts for " + c.name + "\"")
+    lines.append("description \"" + c.name + " needs <cargo> at <destination> for its contract with " + client_name(k) + ". Payment is <payment>, by <date>. Parts on time help the company deliver on time.\"")
+    lines.append("cargo \"" + cargo + "\" " + string(tons))
+    lines.append("destination \"" + to + "\"")
+    lines.append("deadline " + string(days))
+    lines.append("on accept")
+    lines.append("\t\"corporations: hauling " + id + "\" = 1")
+    lines.append("on visit")
+    lines.append("\tdialog \"You have reached <planet>, but the parts for " + c.name + " are not all in your hold. Bring the rest before <date>.\"")
+    lines.append("on complete")
+    lines.append("\tpayment " + string(pay))
+    lines.append("\t\"corporations: delivered " + id + "\" = 1")
+    lines.append("\tdialog \"Crews from " + c.name + " unload the <cargo> and pay you <payment>. The work is back on schedule.\"")
+    lines.append("on fail")
+    lines.append("\t\"corporations: late " + id + "\" = 1")
+    return game.offer_job("parts " + id, lines.join("\n"))
+
+// Parts the player carried, or failed to: a delivery makes the work cheaper
+// and the company more reliable; a late one, less reliable.
+void hauled(es.Game game, int d):
+    for k in contracts:
+        if k.kind == k.RESTOCK:
+            continue
+        if game.condition("corporations: hauling " + string(k.id)) != 1:
+            continue
+        string done = "corporations: delivered " + string(k.id)
+        string late = "corporations: late " + string(k.id)
+        Company c = by_id.get(k.winner, Company())
+        if game.condition(done) == 1:
+            game.set_condition(done, 2)
+            game.set_condition("corporations: hauling " + string(k.id), 2)
+            if c.id != 0:
+                c.reliability = clamp(c.reliability + 0.04 * (1.0 - c.reliability), 0.0, 0.99)
+                k.cost = k.cost * 0.97
+                say(d, "Parts carried by an independent captain keep " + c.name + " on schedule.")
+        else if game.condition(late) == 1:
+            game.set_condition(late, 2)
+            game.set_condition("corporations: hauling " + string(k.id), 2)
+            if c.id != 0:
+                c.reliability = clamp(c.reliability - 0.02, 0.0, 0.99)
+
+// ---- Shipyard stock (Task C2, C5) ----
+
+// Seed every human shipyard's shelves at their targets: a new market, or a
+// save from before shipyard stock.
+void seed_stock(es.Game game, Galaxy galaxy):
+    for p in galaxy.yards:
+        add_shelves(game, p)
+
+// A landed planet's shelves against what its shipyard lists now: a model an
+// event removed loses its shelf (and its restocks are cancelled); a new
+// listing gets a shelf at its target, at a human shipyard.
+void sync_shelves(es.Game game, Galaxy galaxy, string planet):
+    []string listed = []
+    int n = game.shipyard_count(planet)
+    for k in 0..<n:
+        listed.append(game.shipyard_model(planet, k))
+    if planet_shelves.has(planet):
+        []Shelf gone = planet_shelves[planet].filter(bool(Shelf s): return !listed.contains(s.model))
+        for s in gone:
+            drop_shelf(s)
+    if galaxy.is_yard.has(planet):
+        add_shelves(game, planet)
+
+// Forget a shelf whose model the shipyard no longer sells, and cancel its
+// restocks: the owner's yards are freed, and nothing is paid.
+void drop_shelf(Shelf s):
+    for k in contracts:
+        if k.kind == k.RESTOCK && k.status == k.RUNNING && k.client == s.planet && k.model == s.model:
+            k.status = k.LAPSED
+            if by_id.has(k.winner):
+                by_id[k.winner].load -= k.load
+    shelves = shelves.filter(bool(Shelf x): return x.planet != s.planet || x.model != s.model)
+    shelf_at.delete(s.planet + "|" + s.model)
+    touch(s)
+    []Shelf left = planet_shelves[s.planet].filter(bool(Shelf x): return x.model != s.model)
+    if left.len() == 0:
+        planet_shelves.delete(s.planet)
+    else:
+        planet_shelves[s.planet] = left
+
+// Shelves for what a planet's shipyard sells that the market does not track
+// yet (new listings from events), at their targets. Models the hull table
+// does not know stay untracked.
+void add_shelves(es.Game game, string planet):
+    int n = game.shipyard_count(planet)
+    for k in 0..<n:
+        string model = game.shipyard_model(planet, k)
+        int row = hulls.find(model)
+        if row < 0 || shelf_at.has(planet + "|" + model):
+            continue
+        add_shelf(planet, model, row, hulls.target(row), 0)
+
+Shelf add_shelf(string planet, string model, int row, int count, int onorder):
+    Shelf s = Shelf()
+    s.planet = planet
+    s.model = model
+    s.row = row
+    s.count = count
+    s.target = hulls.target(row)
+    s.onorder = onorder
+    shelves.append(s)
+    shelf_at[planet + "|" + model] = s
+    touch(s)
+    if !planet_shelves.has(planet):
+        planet_shelves[planet] = []
+    planet_shelves[planet].append(s)
+    return s
+
+void set_count(Shelf s, int n):
+    if n == 0 && s.count > 0:
+        stockouts += 1
+    s.count = n
+    touch(s)
+
+// A shelf's count or orders changed: its planet's record must be encoded again.
+void touch(Shelf s):
+    if shelf_text.has(s.planet):
+        shelf_text.delete(s.planet)
+
+// Read back the counts of the shipyard the game last received: what the
+// player bought there lowered them, hulls they sold there raised them.
+// Once the player has left that planet, its counts can change only here (a
+// delivery), so it is read back once and then forgotten: the game's count is
+// stale from then until the next landing pushes it again. Answers whether
+// anything changed.
+bool read_back(es.Game game):
+    if stock_planet == "":
+        return false
+    string planet = stock_planet
+    if game.planet() != planet:
+        stock_planet = ""
+    if !planet_shelves.has(planet):
+        return stock_planet == ""
+    bool changed = stock_planet == ""
+    for s in planet_shelves[planet]:
+        int now = game.ship_stock(s.planet, s.model)
+        // Untracked in the game (a pilot saved without the mod's counts): keep ours.
+        if now < 0 || now == s.count:
+            continue
+        if now < s.count:
+            player_bought += s.count - now
+        else:
+            player_sold += now - s.count
+        set_count(s, now)
+        changed = true
+    return changed
+
+// Give the shipyard of the planet the player is landed on its counts, and a
+// note on each empty shelf saying when hulls are due. The game reads a count
+// only where the player is landed (its shipyard, and hulls sold there), and
+// keeps the counts with the pilot, so only this planet needs them now. Only
+// human space's shipyards (Galaxy.yards) are stocked; any other stays
+// untracked, so unlimited.
+void push_stock(es.Game game, Galaxy galaxy):
+    string planet = game.planet()
+    if planet == "":
+        return
+    sync_shelves(game, galaxy, planet)
+    if !planet_shelves.has(planet):
+        return
+    stock_planet = planet
+    for s in planet_shelves[planet]:
+        game.set_ship_stock(planet, s.model, s.count if s.count > 0 else 0)
+        if s.count == 0:
+            game.ship_order_note(planet, s.model, order_note(s))
+        else:
+            game.ship_order_note(planet, s.model, "")
+
+string order_note(Shelf s):
+    if hulls.military(s.row):
+        // Task C6 (later): military tenders, and their delivery dates here.
+        return "Military hulls are supplied through government procurement; check back later."
+    int due = -1
+    string owner = ""
+    for k in contracts:
+        if k.kind == k.RESTOCK && k.status == k.RUNNING && k.client == s.planet && k.model == s.model:
+            due = k.ends if due < 0 || k.ends < due else due
+            owner = by_id[k.winner].name if by_id.has(k.winner) else owner
+    if due < 0:
+        return ""
+    int left = due - day
+    return "New hulls are on order from " + owner + "; due " + ("tomorrow." if left <= 1 else "in about " + string(left) + " days.")
+
+// The canonical company that owns a hull's design, or none (id 0).
+Company owner_of(int row):
+    if canon_ids.len() == 0:
+        for c in companies:
+            if c.canon:
+                canon_ids[c.name] = c.id
+    int id = canon_ids.get(hulls.owners[row], 0)
+    return by_id[id] if id != 0 && by_id.has(id) else Company()
+
+// Each day a shipyard short of its target orders the difference from the
+// hull's owner. Military hulls wait for tenders.
+void restock(es.Game game, Galaxy galaxy, int d):
+    for s in shelves:
+        if s.count + s.onorder >= s.target:
+            continue
+        if hulls.military(s.row):
+            // Task C6 (later): a military shortfall feeds the government's tender.
+            continue
+        order_restock(game, galaxy, s, d)
+
+// A restock: awarded to the owner at once. It takes the class's base days,
+// longer as the owner's yards fill (load over capacity) and as its health
+// fails; on delivery the owner earns RESTOCK_MARGIN of the hulls' price.
+void order_restock(es.Game game, Galaxy galaxy, Shelf s, int d):
+    Company c = owner_of(s.row)
+    if c.id == 0 || !c.listed():
+        return
+    int units = s.target - s.count - s.onorder
+    int cls = hulls.classes[s.row]
+    int live = game.model_cost(s.model)
+    float cost = float(live if live > 0 else hulls.costs[s.row])
+    Contract k = Contract()
+    k.id = next_contract
+    next_contract += 1
+    k.kind = k.RESTOCK
+    k.client = s.planet
+    k.sector = 0
+    k.model = s.model
+    k.units = units
+    k.load = restock_load[cls] * float(units)
+    float busy = c.load / c.capacity if c.capacity > 0.0 else 1.0
+    float lead = float(hulls.lead_days[cls]) * (1.0 + busy) * health(c)
+    int days = globalThis.Math.round(lead)
+    k.days = days if days > 3 else 3
+    int price = globalThis.Math.round(cost * float(units) * RESTOCK_MARGIN)
+    k.price = float(price)
+    k.budget = k.price
+    k.cost = 0.0
+    k.issued = d
+    k.closes = d
+    k.status = k.RUNNING
+    k.winner = c.id
+    k.start = d
+    k.ends = d + k.days
+    k.bidders = 1
+    c.load += k.load
+    s.onorder += units
+    touch(s)
+    contracts.append(k)
+    restocks_ordered += 1
+
+// 1 for a sound company; slower when unreliable or in trouble.
+float health(Company c):
+    return 1.0 + 0.5 * (1.0 - c.reliability) + (0.25 if c.status != c.LISTED else 0.0)
+
+// Restocks never fail: the hulls go on the shelf and the owner is paid.
+void deliver_restock(Contract k, Company c):
+    string key = k.client + "|" + k.model
+    if shelf_at.has(key):
+        Shelf s = shelf_at[key]
+        s.onorder = s.onorder - k.units if s.onorder > k.units else 0
+        s.count += k.units
+        touch(s)
+    c.cash += k.price
+    c.revenue += k.price
+    c.load -= k.load
+    k.status = k.DELIVERED
+    hulls_delivered += k.units
+
+// A restock whose builder is gone: the shipyard orders again tomorrow.
+void drop_restock(Contract k):
+    k.status = k.FAILED
+    string key = k.client + "|" + k.model
+    if shelf_at.has(key):
+        Shelf s = shelf_at[key]
+        s.onorder = s.onorder - k.units if s.onorder > k.units else 0
+        touch(s)
+
+// A restock as a short record, "id|planet|model|units|status|winner|start|ends|price"
+// (a full contract line is about three times as long); the rest follows from
+// these: it is RUNNING or done, never bid for, and costs its builder nothing
+// a day.
+string encode_restock(Contract k):
+    int price = globalThis.Math.round(k.price)
+    []string f = [string(k.id), k.client, k.model, string(k.units), string(k.status), string(k.winner), string(k.start), string(k.ends), string(price)]
+    return f.join("|")
+
+Contract decode_restock(string rest):
+    []string f = rest.split("|")
+    Contract k = Contract()
+    k.kind = k.RESTOCK
+    k.id = f[0].to_int()
+    k.client = f[1]
+    k.model = f[2]
+    k.units = f[3].to_int()
+    k.status = f[4].to_int()
+    k.winner = f[5].to_int()
+    k.start = f[6].to_int()
+    k.ends = f[7].to_int()
+    k.price = f[8].to_float()
+    k.budget = k.price
+    k.issued = k.start
+    k.closes = k.start
+    k.days = k.ends - k.start
+    k.bidders = 1
+    k.cost = 0.0
+    int row = hulls.find(k.model)
+    k.load = restock_load[hulls.classes[row]] * float(k.units) if row >= 0 else 0.0
+    return k
+
+// "planet|model,count,onorder|...": one record per planet.
+string encode_shelves(string planet, []Shelf list):
+    []string f = [planet]
+    for s in list:
+        f.append(s.model + "," + string(s.count) + "," + string(s.onorder))
+    return f.join("|")
+
+void decode_shelves(string rest):
+    []string f = rest.split("|")
+    for i in 1..<f.len():
+        []string g = f[i].split(",")
+        if g.len() < 3:
+            continue
+        int row = hulls.find(g[0])
+        if row < 0 || shelf_at.has(f[0] + "|" + g[0]):
+            continue
+        int count = g[1].to_int()
+        int onorder = g[2].to_int()
+        add_shelf(f[0], g[0], row, count if count > 0 else 0, onorder if onorder > 0 else 0)
+
+// ---- The player's trades ----
+
+float fee(float value):
+    float f = value * FEE
+    return f if f > MIN_FEE else MIN_FEE
+
+// How far an order of n shares moves the price, as a share of it.
+float impact(Company c, int n):
+    return IMPACT * float(n) / float(c.shares)
+
+// What n shares cost: the price, moved by the order on the way, plus the fee.
+float buy_cost(Company c, int n):
+    float value = c.price * (1.0 + impact(c, n) / 2.0) * float(n)
+    return value + fee(value)
+
+// The most shares of `c` the player may buy now, for their credits and the cap.
+int can_buy(es.Game game, Company c):
+    if !c.listed() || c.price <= 0.0:
+        return 0
+    float credits = float(game.condition("credits"))
+    int by_cap = int(float(c.shares) * MAX_HOLDING) - holdings.get(c.id, 0)
+    // The largest order the credits cover, found by halving.
+    int lo = 0
+    int hi = by_cap
+    for lo < hi:
+        int mid = (lo + hi + 1) / 2
+        if buy_cost(c, mid) <= credits:
+            lo = mid
+        else:
+            hi = mid - 1
+    return lo if lo > 0 else 0
+
+// Buy n shares: the price plus the fee, and the price rises with the order.
+// Answers what it cost, or 0.
+float buy(es.Game game, Company c, int n):
+    if n <= 0 || n > can_buy(game, c):
+        return 0.0
+    float total = buy_cost(c, n)
+    credit(game, -total)
+    c.price = c.price * (1.0 + impact(c, n))
+    holdings[c.id] = holdings.get(c.id, 0) + n
+    basis[c.id] = basis.get(c.id, 0.0) + total
+    return total
+
+// Sell n shares: the price, moved down by the order, less the fee; the price
+// falls with the order. Answers what it brought, or 0.
+float sell(es.Game game, Company c, int n):
+    int held = holdings.get(c.id, 0)
+    if n <= 0 || n > held || !c.listed():
+        return 0.0
+    float drop = impact(c, n)
+    float value = c.price * (1.0 - drop / 2.0 if drop < 1.8 else 0.1) * float(n)
+    float total = value - fee(value)
+    total = total if total > 0.0 else 0.0
+    c.price = c.price * (1.0 - drop if drop < 0.9 else 0.1)
+    credit(game, total)
+    basis[c.id] = basis.get(c.id, 0.0) * float(held - n) / float(held)
+    if held == n:
+        holdings.delete(c.id)
+        basis.delete(c.id)
+    else:
+        holdings[c.id] = held - n
+    return total
+
+// ---- Saving ----
+
+string encode():
+    []string lines = ["corporations 1"]
+    []string m = [world, string(day), string(rng.state), string(cycle), string(cycle_since), string(next_company), string(next_contract), string(last_listing), string(dividends_paid)]
+    lines.append("m|" + m.join("|"))
+    for c in companies:
+        lines.append("c|" + c.encode())
+    for k in contracts:
+        lines.append(("r|" + encode_restock(k)) if k.kind == k.RESTOCK else ("k|" + k.encode()))
+    for id, n in holdings:
+        lines.append("h|" + string(id) + "|" + string(n) + "|" + string(basis.get(id, 0.0)))
+    for line in news:
+        lines.append("n|" + line)
+    lines.append("x|" + string(index) + "|" + floats(index_history) + "|" + floats(portfolio_history))
+    lines.append("u|" + used.join("|"))
+    for planet, group in planet_shelves:
+        if !shelf_text.has(planet):
+            shelf_text[planet] = "s|" + encode_shelves(planet, group)
+        lines.append(shelf_text[planet])
+    if stock_planet != "":
+        lines.append("y|" + stock_planet)
+    return lines.join("\n")
+
+string floats([]float xs):
+    []string out = []
+    for x in xs:
+        out.append(string(x))
+    return out.join(",")
+
+[]float read_floats(string s):
+    []float out = []
+    if s == "":
+        return out
+    for part in s.split(","):
+        out.append(part.to_float())
+    return out
+
+void decode(string text):
+    companies = []
+    by_id = {}
+    contracts = []
+    holdings = {}
+    basis = {}
+    news = []
+    used = []
+    shelves = []
+    shelf_at = {}
+    planet_shelves = {}
+    shelf_text = {}
+    stock_planet = ""
+    canon_ids = {}
+    for line in text.split("\n"):
+        if line.len() < 2 || line[1] != "|":
+            continue
+        string rest = line[2..<line.len()]
+        string kind = line[0]
+        if kind == "m":
+            []string f = rest.split("|")
+            world = f[0]
+            day = f[1].to_int()
+            rng.state = f[2].to_int()
+            cycle = f[3].to_int()
+            cycle_since = f[4].to_int()
+            next_company = f[5].to_int()
+            next_contract = f[6].to_int()
+            last_listing = f[7].to_int()
+            dividends_paid = f[8].to_float()
+        else if kind == "c":
+            Company c = Company()
+            c.decode(rest)
+            companies.append(c)
+            by_id[c.id] = c
+        else if kind == "k":
+            Contract k = Contract()
+            k.decode(rest)
+            contracts.append(k)
+        else if kind == "r":
+            contracts.append(decode_restock(rest))
+        else if kind == "h":
+            []string f = rest.split("|")
+            holdings[f[0].to_int()] = f[1].to_int()
+            basis[f[0].to_int()] = f[2].to_float()
+        else if kind == "n":
+            news.append(rest)
+        else if kind == "u":
+            used = rest.split("|") if rest != "" else []
+        else if kind == "s":
+            decode_shelves(rest)
+        else if kind == "y":
+            stock_planet = rest
+        else if kind == "x":
+            []string f = rest.split("|")
+            index = f[0].to_float()
+            index_history = read_floats(f[1])
+            portfolio_history = read_floats(f[2])
+    refresh_loads()

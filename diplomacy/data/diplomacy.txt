@@ -1,0 +1,115 @@
+# Copyright (c) 2026 by Anaxarchus
+#
+# Endless Sky is free software: you can redistribute it and/or modify it under the
+# terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later version.
+#
+# Endless Sky is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+# PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+# The data half of the "Diplomacy" plugin. Its Dado mod (scripts/diplomacy.js)
+# runs the wars; this file defines the governments its flotillas fly under and
+# the faction missions offered to members.
+#
+# The flotilla governments look like their faction but are separate, so a war
+# is only hostility between flotilla governments (which the mod sets with
+# event changes) and the game's own politics are never touched.
+
+government "Republic Flotilla"
+	"display name" "Republic"
+	swizzle 0
+	color "governments: Republic"
+	"player reputation" 1
+	"attitude toward"
+		"Republic" 1
+		"Merchant" .3
+		"Militia" .3
+		"Pirate" -.4
+
+government "Free Worlds Flotilla"
+	"display name" "Free Worlds"
+	swizzle 2
+	color "governments: Free"
+	"player reputation" 1
+	"attitude toward"
+		"Free Worlds" 1
+		"Merchant" .3
+		"Militia" .3
+		"Pirate" -.4
+
+government "Syndicate Flotilla"
+	"display name" "Syndicate"
+	swizzle 4
+	color "governments: Syndicate"
+	"player reputation" 1
+	"attitude toward"
+		"Syndicate" 1
+		"Merchant" .3
+		"Militia" .3
+		"Pirate" -.4
+
+# Faction missions: offered on the job board to members of a faction at war.
+# The mod sets "diplomacy: member" (1 Republic, 2 Free Worlds, 3 Syndicate)
+# and "diplomacy: at war <faction>"; completing one adds to "diplomacy: merit",
+# which the mod turns into rank and salary.
+
+mission "Diplomacy: Republic Dispatches"
+	name "Dispatches to <planet>"
+	job
+	repeat
+	description "Carry sealed war dispatches for the Republic Navy to <destination> by <date>. Payment is <payment>, and the run counts toward your merit."
+	deadline
+	cargo "war dispatches" 1
+	to offer
+		"diplomacy: member" == 1
+		"diplomacy: at war 1" == 1
+	source
+		government "Republic"
+	destination
+		distance 2 5
+		government "Republic"
+	on complete
+		payment 20000 150
+		"diplomacy: merit" += 5
+		dialog `A Navy officer signs for the dispatches and pays you <payment>. "Good work, Captain. The fleet won't forget it."`
+
+mission "Diplomacy: Free Worlds Dispatches"
+	name "Dispatches to <planet>"
+	job
+	repeat
+	description "Carry sealed war dispatches for the Free Worlds militia to <destination> by <date>. Payment is <payment>, and the run counts toward your merit."
+	deadline
+	cargo "war dispatches" 1
+	to offer
+		"diplomacy: member" == 2
+		"diplomacy: at war 2" == 1
+	source
+		government "Free Worlds"
+	destination
+		distance 2 5
+		government "Free Worlds"
+	on complete
+		payment 20000 150
+		"diplomacy: merit" += 5
+		dialog `A Free Worlds officer signs for the dispatches and pays you <payment>. "Thanks, Captain. Every run helps."`
+
+mission "Diplomacy: Syndicate Dispatches"
+	name "Dispatches to <planet>"
+	job
+	repeat
+	description "Carry sealed war dispatches for the Syndicate's security forces to <destination> by <date>. Payment is <payment>, and the run counts toward your merit."
+	deadline
+	cargo "war dispatches" 1
+	to offer
+		"diplomacy: member" == 3
+		"diplomacy: at war 3" == 1
+	source
+		government "Syndicate"
+	destination
+		distance 2 5
+		government "Syndicate"
+	on complete
+		payment 20000 150
+		"diplomacy: merit" += 5
+		dialog `A Syndicate security liaison scans the seals, signs for the dispatches and transfers <payment>. "Efficient. The Syndicate notices efficiency."`

@@ -1,0 +1,436 @@
+class Exchange
+
+// The exchange: a full screen of its own over the planet screen (mod API 7),
+// like the outfitter. A table fills the left: the market, the player's
+// portfolio, the contracts, or the news. The sidebar shows the chosen
+// company, or a summary, with the buttons under it. A click on a heading sorts
+// the market; buying and selling go through the game's number dialog.
+
+import "imports:sdk/es"
+
+int MARKET = 0
+int PORTFOLIO = 1
+int CONTRACTS = 2
+int NEWS = 3
+[]string tab_names = ["market", "portfolio", "contracts", "news"]
+
+int BUY = 1
+int SELL = 2
+
+int tab = 0
+// The chosen company's id, or 0.
+int selected = 0
+// The market's sort: a column, and whether it runs high to low.
+int sort_column = 6
+bool descending = true
+// What each table row stands for (a company id, or 0), and each button.
+[]int row_ids = []
+[]string actions = []
+// A line shown once at the top of the sidebar (a trade's result).
+string note = ""
+
+Fmt fmt = Fmt()
+Names names = Names()
+
+void open(es.Game game, Market market):
+    tab = MARKET
+    show(game, market)
+
+// Draw the screen again as it now stands: the open tab's table, the sidebar,
+// the buttons. The title stays the same per tab, so the table keeps its place.
+void show(es.Game game, Market market):
+    row_ids = []
+    actions = []
+    if selected != 0 && !market.by_id.has(selected):
+        selected = 0
+    game.screen_open("Stock exchange: " + tab_names[tab], sidebar(game, market))
+    chart(game, market)
+    if tab == PORTFOLIO:
+        portfolio_table(game, market)
+    else if tab == CONTRACTS:
+        contracts_table(game, market)
+    else if tab == NEWS:
+        news_table(game, market)
+    else:
+        market_table(game, market)
+    int chosen = row_ids.index_of(selected) if selected != 0 && row_ids.contains(selected) else -1
+    game.panel_select(chosen)
+    // Always the same buttons, in the same places, so their keys stay put.
+    button(game, "Market", "market")
+    button(game, "Portfolio", "portfolio")
+    button(game, "Contracts", "contracts")
+    button(game, "News", "news")
+    bool listed = selected != 0 && market.by_id[selected].listed()
+    if listed:
+        button(game, "Buy", "buy")
+        if market.holdings.get(selected, 0) > 0:
+            button(game, "Sell", "sell")
+    button(game, "Leave", "close")
+    note = ""
+
+void button(es.Game game, string label, string action):
+    game.panel_button(label)
+    actions.append(action)
+
+// ---- Tables ----
+
+void market_table(es.Game game, Market market):
+    []Company listed = market.companies.filter(bool(Company c): return c.listed())
+    listed.sort(bool(Company a, Company b): return before(market, a, b))
+    game.panel_columns(heading("Company", 0) + "\t" + heading("Sector", 1) + "\t" + heading("Price", 2) + "\t" + heading("30 days", 3) + "\t" + heading("P/E", 4) + "\t" + heading("Yield", 5) + "\t" + heading("Value", 6) + "\t" + heading("You hold", 7))
+    for c in listed:
+        string name = c.name + (" (for sale)" if c.status == c.FOR_SALE else (" (distressed)" if c.status == c.DISTRESSED else ""))
+        int held = market.holdings.get(c.id, 0)
+        game.panel_row(name + "\t" + names.sector_short[c.sector] + "\t" + fmt.price(c.price) + "\t" + change(c, 30) + "\t" + pe(market, c) + "\t" + yield_of(c) + "\t" + fmt.short_credits(c.market_value()) + "\t" + (fmt.credits(float(held)) if held > 0 else "-"))
+        row_ids.append(c.id)
+
+// A heading, marked when the market is sorted by it.
+string heading(string label, int column):
+    if column != sort_column:
+        return label
+    return label + (" v" if descending else " ^")
+
+// Whether a comes before b in the market's sort.
+bool before(Market market, Company a, Company b):
+    float x = sort_key(market, a)
+    float y = sort_key(market, b)
+    if sort_column == 0:
+        return alphabetical(a.name, b.name) if !descending else alphabetical(b.name, a.name)
+    if x == y:
+        return alphabetical(a.name, b.name)
+    return x > y if descending else x < y
+
+// Whether a comes before b, by code point.
+bool alphabetical(string a, string b):
+    int n = a.len() if a.len() < b.len() else b.len()
+    for i in 0..<n:
+        int x = a.code_point_at(i)
+        int y = b.code_point_at(i)
+        if x != y:
+            return x < y
+    return a.len() < b.len()
+
+float sort_key(Market market, Company c):
+    if sort_column == 1:
+        return float(c.sector)
+    if sort_column == 2:
+        return c.price
+    if sort_column == 3:
+        return change_value(c, 30)
+    if sort_column == 4:
+        return pe_value(c)
+    if sort_column == 5:
+        return c.dividend / c.price if c.price > 0.0 else 0.0
+    if sort_column == 7:
+        return float(market.holdings.get(c.id, 0))
+    return c.market_value()
+
+void portfolio_table(es.Game game, Market market):
+    game.panel_columns("Company\tShares\tPrice\tValue\tPaid\tGain")
+    for id, n in market.holdings:
+        if !market.by_id.has(id):
+            continue
+        Company c = market.by_id[id]
+        float v = c.price * float(n)
+        float p = market.basis.get(id, 0.0)
+        game.panel_row(c.name + "\t" + fmt.credits(float(n)) + "\t" + fmt.price(c.price) + "\t" + fmt.credits(v) + "\t" + fmt.credits(p) + "\t" + fmt.percent(v / p - 1.0 if p > 0.0 else 0.0))
+        row_ids.append(id)
+
+void contracts_table(es.Game game, Market market):
+    game.panel_columns("Client\tSector\tSystem\tValue\tStatus")
+    restock_rows(game, market)
+    []Contract open = market.contracts.filter(bool(Contract k): return k.status == k.OPEN && k.kind != k.RESTOCK)
+    for k in open:
+        int left = k.closes - market.day
+        game.panel_row(market.client_name(k) + "\t" + names.sector_short[k.sector] + "\t" + k.system + "\t" + fmt.short_credits(k.budget) + "\tbids close " + ("today" if left <= 0 else "in " + string(left) + (" day" if left == 1 else " days")))
+        row_ids.append(0)
+    []Contract recent = market.contracts.filter(bool(Contract k): return k.status != k.OPEN && k.status != k.LAPSED && k.kind != k.RESTOCK)
+    recent.sort(bool(Contract a, Contract b): return a.start > b.start)
+    for k in recent:
+        string who = market.by_id[k.winner].name if market.by_id.has(k.winner) else "a company"
+        string state = "running: " + who
+        if k.status == k.DELIVERED:
+            state = "delivered: " + who
+        else if k.status == k.FAILED:
+            state = "failed: " + who
+        game.panel_row(market.client_name(k) + "\t" + names.sector_short[k.sector] + "\t" + k.system + "\t" + fmt.short_credits(k.price) + "\t" + state)
+        row_ids.append(k.winner)
+
+// Shipyard restocks are many and small: one row per company that owns hull
+// designs, summing its restocks running and delivered lately (kept 20 days).
+// Clicking the row chooses the company.
+void restock_rows(es.Game game, Market market):
+    []int owners = []
+    {int: int} on_order = {}
+    {int: int} delivered = {}
+    {int: float} value = {}
+    {int: []string} yards = {}
+    for k in market.contracts:
+        if k.kind != k.RESTOCK || (k.status != k.RUNNING && k.status != k.DELIVERED):
+            continue
+        if !owners.contains(k.winner):
+            owners.append(k.winner)
+            yards[k.winner] = []
+        if k.status == k.RUNNING:
+            on_order[k.winner] = on_order.get(k.winner, 0) + k.units
+            value[k.winner] = value.get(k.winner, 0.0) + k.price
+            if !yards[k.winner].contains(k.client):
+                yards[k.winner].append(k.client)
+        else:
+            delivered[k.winner] = delivered.get(k.winner, 0) + k.units
+    for id in owners:
+        string who = market.by_id[id].name if market.by_id.has(id) else "a company"
+        int n = on_order.get(id, 0)
+        int y = yards[id].len()
+        string where = (string(y) + (" shipyard" if y == 1 else " shipyards")) if y > 0 else "-"
+        game.panel_row("Shipyard restocks\tShips\t" + where + "\t" + fmt.short_credits(value.get(id, 0.0)) + "\t" + string(n) + " hulls on order, " + string(delivered.get(id, 0)) + " delivered: " + who)
+        row_ids.append(id)
+
+void news_table(es.Game game, Market market):
+    game.panel_columns("News\tWhen")
+    for i in 0..<market.news.len():
+        string line = market.news[market.news.len() - 1 - i]
+        []string f = line.split("|")
+        int ago = market.day - f[0].to_int()
+        game.panel_row(f[1] + "\t" + ("today" if ago <= 0 else (string(ago) + (" day ago" if ago == 1 else " days ago"))))
+        row_ids.append(0)
+
+// ---- The sidebar ----
+
+// The chart over the sidebar's text: the chosen company's price, the
+// player's shares' worth on their portfolio, or the exchange's index.
+void chart(es.Game game, Market market):
+    if selected != 0 && market.by_id.has(selected):
+        Company c = market.by_id[selected]
+        if c.history.len() > 1:
+            []string prices = []
+            for h in c.history:
+                prices.append(string(float(h) / 100.0))
+            game.panel_chart(c.name + ", 60 days", prices.join(","))
+        return
+    if tab == PORTFOLIO && market.holdings.len() > 0 && market.portfolio_history.len() > 1:
+        game.panel_chart("Your shares' worth", numbers(market.portfolio_history))
+    else if market.index_history.len() > 1:
+        game.panel_chart("Exchange index", numbers(market.index_history))
+
+string numbers([]float xs):
+    []string out = []
+    for x in xs:
+        int n = globalThis.Math.round(x)
+        out.append(string(n))
+    return out.join(",")
+
+string sidebar(es.Game game, Market market):
+    string top = (note + "\n\n") if note != "" else ""
+    if selected != 0 && market.by_id.has(selected):
+        return top + company_text(game, market, market.by_id[selected])
+    return top + summary(game, market)
+
+string summary(es.Game game, Market market):
+    float value = 0.0
+    float paid = 0.0
+    for id, n in market.holdings:
+        if market.by_id.has(id):
+            value += market.by_id[id].price * float(n)
+            paid += market.basis.get(id, 0.0)
+    string t = "The economy is in " + market.cycle_names[market.cycle] + ".\n"
+    t = t + "The exchange index stands at " + fmt.one_decimal(market.index) + index_change(market) + ".\n\n"
+    t = t + "You have " + fmt.credits(float(game.condition("credits"))) + " credits.\n"
+    if paid > 0.0:
+        t = t + "Your shares are worth " + fmt.credits(value) + " credits, " + fmt.percent(value / paid - 1.0) + " on what you paid.\n"
+    t = t + "Dividends received: " + fmt.credits(market.dividends_paid) + " credits.\n\n"
+    t = t + string(market.listed_count()) + " companies are listed. Click one for its details; click a heading to sort the market. The arrow keys step through the list.\n\n"
+    t = t + "Trades pay a broker 1% (at least 100 credits). You may hold up to " + fmt.whole_percent(market.MAX_HOLDING) + " of a company, and large orders move the price: each 1% of a company's shares you buy or sell moves it about 2%."
+    return t
+
+// The index's change over the last 30 days, as ", +3.4% over 30 days".
+string index_change(Market market):
+    int n = market.index_history.len()
+    if n < 2:
+        return ""
+    float then = market.index_history[(n - 31) if n > 31 else 0]
+    return ", " + fmt.percent(market.index / then - 1.0) + " over 30 days" if then > 0.0 else ""
+
+string company_text(es.Game game, Market market, Company c):
+    string t = c.name + "\n"
+    t = t + names.sectors[c.sector] + (", one of human space's established companies" if c.canon else "") + ".\nHome: " + game.planet_name(c.home) + ", in " + c.system + ".\n"
+    if c.status == c.DISTRESSED:
+        t = t + "In distress: out of cash at its debt limit since day " + string(c.since) + ".\n"
+    else if c.status == c.FOR_SALE:
+        t = t + "For sale to its rivals since day " + string(c.since) + ".\n"
+    else if c.status == c.BANKRUPT:
+        t = t + "Bankrupt and delisted on day " + string(c.since) + ".\n"
+    else if c.status == c.MERGED:
+        t = t + "Bought by " + (market.by_id[c.parent].name if market.by_id.has(c.parent) else "a rival") + " on day " + string(c.since) + ".\n"
+    if c.suitor > 0 && market.by_id.has(c.suitor):
+        t = t + market.by_id[c.suitor].name + " is building a stake, offering " + fmt.price(c.offer) + " a share.\n"
+    if c.review > 0:
+        t = t + "Under antitrust review since day " + string(c.review) + ".\n"
+    t = t + "\nPrice " + fmt.price(c.price) + "\n" + change(c, 30) + " over 30 days, " + change(c, 60) + " over 60" + range_of(c) + ".\n"
+    t = t + "Market value " + fmt.short_credits(c.market_value()) + ", " + fmt.credits(float(c.shares)) + " shares.\n"
+    t = t + "Book value " + fmt.price(market.book(c)) + " a share. P/E " + pe(market, c) + ". Yield " + yield_of(c) + ".\n"
+    t = t + "Last reports: " + reports(c) + ".\n\n"
+    t = t + "Cash " + fmt.short_credits(c.cash) + ", debt " + fmt.short_credits(c.debt) + ".\n"
+    t = t + "Capacity " + fmt.one_decimal(c.capacity) + " units a day, " + fmt.whole_percent(c.load / c.capacity if c.capacity > 0.0 else 0.0) + " busy. Reliability " + fmt.whole_percent(c.reliability) + ".\n"
+    t = t + "Recent contracts: " + recent_contracts(market, c) + "\n"
+    t = t + restocks_text(market, c)
+    int held = market.holdings.get(c.id, 0)
+    if held > 0:
+        float value = c.price * float(held)
+        float paid = market.basis.get(c.id, 0.0)
+        t = t + "\nYou hold " + fmt.credits(float(held)) + " shares (" + fmt.whole_percent(float(held) / float(c.shares)) + "), worth " + fmt.credits(value) + " credits: " + fmt.percent(value / paid - 1.0 if paid > 0.0 else 0.0) + " on what you paid.\n"
+    t = t + "\nYou have " + fmt.credits(float(game.condition("credits"))) + " credits."
+    return t
+
+// ---- What the player does ----
+
+void press(es.Game game, Market market, int index):
+    string action = actions[index] if index >= 0 && index < actions.len() else "close"
+    if action == "close":
+        game.panel_close()
+        return
+    if action == "market":
+        tab = MARKET
+    else if action == "portfolio":
+        tab = PORTFOLIO
+    else if action == "contracts":
+        tab = CONTRACTS
+    else if action == "news":
+        tab = NEWS
+    else if action == "buy" && market.by_id.has(selected):
+        Company c = market.by_id[selected]
+        int most = market.can_buy(game, c)
+        if most >= 1:
+            game.ask_number("Buy shares of " + c.name + " at " + fmt.price(c.price) + " each, plus a 1% fee (at least 100 credits). Your order raises the price as it fills: buying 1% of the company (" + fmt.credits(float(c.shares) / 100.0) + " shares) moves it about 2%. You can buy up to " + fmt.credits(float(most)) + ".", BUY, most)
+            return
+        note = "You can't buy shares of " + c.name + " now: you lack the credits, or you already hold " + fmt.whole_percent(market.MAX_HOLDING) + " of it."
+    else if action == "sell" && market.by_id.has(selected):
+        Company c = market.by_id[selected]
+        int held = market.holdings.get(c.id, 0)
+        if held > 0:
+            game.ask_number("Sell shares of " + c.name + " at " + fmt.price(c.price) + " each, less a 1% fee (at least 100 credits). Your order lowers the price as it fills: selling 1% of the company (" + fmt.credits(float(c.shares) / 100.0) + " shares) moves it about 2%. You hold " + fmt.credits(float(held)) + ".", SELL, held)
+            return
+    show(game, market)
+
+void row(es.Game game, Market market, int index):
+    if index < 0 || index >= row_ids.len() || row_ids[index] == 0:
+        return
+    selected = row_ids[index]
+    show(game, market)
+
+// A click on a heading sorts the market by it, or turns the sort around.
+void header(es.Game game, Market market, int column):
+    if tab != MARKET:
+        return
+    if column == sort_column:
+        descending = !descending
+    else:
+        sort_column = column
+        descending = column != 0 && column != 1
+    show(game, market)
+
+// Answers whether the market changed (and must be saved).
+bool number(es.Game game, Market market, int token, int value):
+    if !market.by_id.has(selected):
+        return false
+    Company c = market.by_id[selected]
+    bool changed = false
+    if token == BUY:
+        float cost = market.buy(game, c, value)
+        changed = cost > 0.0
+        note = ("Bought " + fmt.credits(float(value)) + " shares of " + c.name + " for " + fmt.credits(cost) + " credits.") if changed else "That purchase didn't go through."
+    else if token == SELL:
+        float got = market.sell(game, c, value)
+        changed = got > 0.0
+        note = ("Sold " + fmt.credits(float(value)) + " shares of " + c.name + " for " + fmt.credits(got) + " credits.") if changed else "That sale didn't go through."
+    show(game, market)
+    return changed
+
+// ---- Figures ----
+
+// The price's change over the last n days.
+string change(Company c, int n):
+    if c.history.len() == 0:
+        return "new"
+    int back = c.history.len() - 1 - n
+    int then = c.history[back if back >= 0 else 0]
+    if then <= 0:
+        return "new"
+    return fmt.percent(c.price * 100.0 / float(then) - 1.0)
+
+string range_of(Company c):
+    if c.history.len() < 2:
+        return ""
+    int lo = c.history[0]
+    int hi = c.history[0]
+    for h in c.history:
+        lo = h if h < lo else lo
+        hi = h if h > hi else hi
+    return " (low " + fmt.price(float(lo) / 100.0) + ", high " + fmt.price(float(hi) / 100.0) + ")"
+
+string pe(Market market, Company c):
+    float v = pe_value(c)
+    if c.earnings.len() == 0:
+        return "-"
+    if v <= 0.0:
+        return "loss"
+    return fmt.one_decimal(v)
+
+// The price over a year's earnings at the last four reports' pace; 0 for none or a loss.
+float pe_value(Company c):
+    if c.earnings.len() == 0:
+        return 0.0
+    float sum = 0.0
+    for e in c.earnings:
+        sum += e
+    float eps = sum * 365.0 / (30.0 * float(c.earnings.len())) / float(c.shares)
+    return c.price / eps if eps > 0.0 else 0.0
+
+// The price's change over the last n days, as a share (0 when new).
+float change_value(Company c, int n):
+    if c.history.len() == 0:
+        return 0.0
+    int back = c.history.len() - 1 - n
+    int then = c.history[back if back >= 0 else 0]
+    return c.price * 100.0 / float(then) - 1.0 if then > 0 else 0.0
+
+string yield_of(Company c):
+    if c.dividend <= 0.0 || c.price <= 0.0:
+        return "-"
+    return fmt.one_decimal(c.dividend * 365.0 / 30.0 / c.price * 100.0) + "%"
+
+string reports(Company c):
+    if c.earnings.len() == 0:
+        return "none yet"
+    []string out = []
+    for e in c.earnings:
+        out.append(("" if e >= 0.0 else "loss ") + fmt.short_credits(e if e >= 0.0 else -e))
+    return out.join(", ")
+
+string recent_contracts(Market market, Company c):
+    []Contract mine = market.contracts.filter(bool(Contract k): return k.winner == c.id && k.status != k.OPEN && k.kind != k.RESTOCK)
+    mine.sort(bool(Contract a, Contract b): return a.start > b.start)
+    if mine.len() == 0:
+        return "none lately."
+    []string out = []
+    for k in mine:
+        if out.len() >= 4:
+            break
+        string state = "running" if k.status == k.RUNNING else ("delivered" if k.status == k.DELIVERED else "failed")
+        out.append(market.client_name(k) + " (" + fmt.short_credits(k.price) + ", " + state + ")")
+    return out.join("; ") + "."
+
+// "Hull restocks: 3 on order for shipyards, 5 delivered lately.", or "".
+string restocks_text(Market market, Company c):
+    int running = 0
+    int delivered = 0
+    for k in market.contracts:
+        if k.kind != k.RESTOCK || k.winner != c.id:
+            continue
+        if k.status == k.RUNNING:
+            running += k.units
+        else if k.status == k.DELIVERED:
+            delivered += k.units
+    if running == 0 && delivered == 0:
+        return ""
+    return "Hull restocks: " + string(running) + " on order for shipyards, " + string(delivered) + " delivered lately.\n"

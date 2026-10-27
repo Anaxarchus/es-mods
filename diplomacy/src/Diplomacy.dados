@@ -1,0 +1,240 @@
+class Diplomacy extends es.Mod
+
+// Diplomacy: once the Free Worlds campaign is over, the Republic, the Free
+// Worlds and the Syndicate now and then go to war over their borders. See
+// README.md. This class wires the parts together and routes the game's hooks:
+//   Tuning      every tunable number
+//   Factions    the three factions' names, capitals, fleets and colours
+//   State       the saved state (the player's "diplomacy: " conditions)
+//   Rng         a deterministic random number generator
+//   Galaxy      lanes, distances, ownership and the depth rule
+//   Garrisons   the defenders of besieged systems
+//   Flotilla    one flotilla or raid slot
+//   Admirals    the named commanders and their personalities
+//   Quality     the sim score: what a strength point is worth, from fleet stats
+//   Simulation  one day of wars, raids, flotillas, battles, sieges and captures
+//   Battlefield the ships the player finds in person
+//   Service     the faction panel, membership, merit, rank and salary
+//   MapView     the map overlay
+
+import "imports:sdk/es"
+
+Tuning tune = Tuning()
+Factions factions = Factions()
+State state = State()
+Rng rng = Rng()
+Galaxy galaxy = Galaxy()
+Garrisons garrisons = Garrisons()
+Admirals admirals = Admirals()
+Quality quality = Quality()
+Simulation sim = Simulation()
+Battlefield field = Battlefield()
+Service service = Service()
+MapView overlay = MapView()
+
+// Every part shares the one Tuning, Galaxy, State and so on made above.
+void init():
+    galaxy.wire(tune, factions)
+    garrisons.wire(tune)
+    admirals.wire(tune, factions, state, rng)
+    quality.wire(tune, factions)
+    sim.wire(tune, factions, galaxy, state, rng, garrisons, admirals, quality)
+    field.wire(tune, factions, galaxy, state, garrisons, sim)
+    service.wire(tune, factions, galaxy, state, garrisons, sim)
+    overlay.wire(factions, galaxy, state, garrisons, sim)
+
+string name():
+    return "diplomacy"
+
+// Debug mode: the "Diplomacy Debug" plugin is enabled. It changes the tunables
+// for this session and keeps a Republic-Free Worlds war going.
+bool debug = false
+
+void check_debug(es.Game game):
+    bool on = game.plugin_enabled(tune.debug_plugin)
+    if on == debug:
+        return
+    debug = on
+    if on:
+        tune.launch_chance = tune.debug_launch_chance
+        tune.truce_min_days = tune.debug_truce_days
+        tune.truce_max_days = tune.debug_truce_days
+        tune.raid_chance = tune.debug_raid_chance
+        tune.verbose = true
+        log(game, "debug mode on")
+
+// "Not now": don't open the offer again until the game is restarted.
+bool snoozed = false
+
+// Whether the diplomacy runs for this pilot. It is opt-in: once the Free
+// Worlds campaign is over, the player is offered it (see offer_wanted) and it
+// runs from the day they accept. A test override or debug mode turns it on
+// without asking.
+bool active(es.Game game):
+    // No pilot yet (the main menu's empty player): nothing to run.
+    if game.here() == "":
+        service.offering = false
+        return false
+    check_debug(game)
+    if state.get(game, "active") != 0:
+        service.offering = false
+        sim.ensure_pirate_attitudes(game)
+        if debug:
+            debug_war(game, game.day())
+        return true
+    if state.get(game, "force active") != 0 || debug:
+        activate(game)
+        return true
+    service.offering = offer_wanted(game)
+    return false
+
+// Whether to offer Diplomacy: the campaign is over and the player has not said Never.
+bool offer_wanted(es.Game game):
+    return game.condition("free worlds plot completed") != 0 && state.get(game, "declined") == 0
+
+// Turn the diplomacy on for this pilot from today.
+void activate(es.Game game):
+    int day = game.day()
+    service.offering = false
+    state.put(game, "active", 1)
+    state.put(game, "activated", day)
+    state.put(game, "last day", day)
+    rng.seed(game, day)
+    state.put(game, "next war", day + rng.range(game, tune.first_war_min, tune.first_war_max))
+    log(game, "active from day " + string(day))
+    sim.ensure_pirate_attitudes(game)
+    if debug:
+        game.message("[Diplomacy debug] Debug mode is on: Diplomacy is active from today, and the Republic and the Free Worlds are at war. Open the map to follow their flotillas.")
+        debug_war(game, day)
+
+// The player accepted the offer: Diplomacy runs from today, and a veteran of
+// the Free Worlds campaign serves the Free Worlds at Commodore rank.
+void accept_offer(es.Game game):
+    activate(game)
+    galaxy.build(game)
+    service.join_at(game, 2, tune.veteran_rank)
+    service.apply_reputations(game)
+    service.check_rank(game)
+    game.message("Diplomacy is on. The Free Worlds have kept your commission: you serve them as a " + factions.ranks[tune.veteran_rank] + ".")
+
+// Debug mode: once per pilot, reveal the whole map and hand over a fortune;
+// make sure the Free Worlds hold territory; and keep them at war with the
+// Republic (after a short truce at most).
+void debug_war(es.Game game, int day):
+    if state.get(game, "debug gifts") == 0:
+        state.put(game, "debug gifts", 1)
+        debug_gifts(game)
+    bool held = false
+    for i in 0..<galaxy.count():
+        if galaxy.owner(game, i) == 2:
+            held = true
+    if !held:
+        for name in factions.free_worlds_territory:
+            game.change("system \"" + name + "\"\n\tgovernment \"Free Worlds\"")
+        game.message("[Diplomacy debug] The Free Worlds now hold their wartime territory.")
+    if state.at_war(game):
+        return
+    if day >= state.get(game, "next war") || state.get(game, "stat wars") == 0:
+        sim.start_war(game, 1, 2, day)
+        sim.launch_now(game, day)
+        service.apply_reputations(game)
+
+// Every system visited (so the whole map is known) and 100 million credits.
+void debug_gifts(es.Game game):
+    string visits = ""
+    for i in 0..<galaxy.count():
+        visits = visits + "visit \"" + galaxy.name(i) + "\"\n"
+    game.change(visits)
+    game.set_condition("credits", game.condition("credits") + tune.debug_credits)
+    game.message("[Diplomacy debug] The whole map is revealed, and 100,000,000 credits are in your account.")
+    log(game, "debug gifts: " + string(galaxy.count()) + " systems visited, credits now " + string(game.condition("credits")))
+
+void on_load(es.Game game):
+    galaxy.build(game)
+    field.reset()
+    bool on = active(game)
+    if on:
+        service.apply_reputations(game)
+        service.check_rank(game)
+    overlay.draw(game, on)
+    service.update_button(game, on)
+    log(game, "loaded; " + string(galaxy.count()) + " systems")
+
+void on_day(es.Game game, int day):
+    galaxy.build(game)
+    bool on = active(game)
+    if on:
+        // Simulate each new day once; a day that went backwards (another pilot) only resets the clock.
+        int last = state.get(game, "last day")
+        if day > last:
+            if sim.day(game, day):
+                service.apply_reputations(game)
+            service.check_rank(game)
+        state.put(game, "last day", day)
+        field.dirty = true
+    overlay.draw(game, on)
+    service.update_button(game, on)
+
+void on_enter(es.Game game, string system):
+    galaxy.build(game)
+    bool on = active(game)
+    service.update_button(game, on)
+    if on:
+        // A pilot just loaded (or arrived): bring its standing up to date, since
+        // on_load ran before any pilot was loaded.
+        service.apply_reputations(game)
+        service.check_rank(game)
+        sim.force_flotilla(game, game.day())
+        sim.force_raid(game, game.day())
+        field.enter(game, system)
+    else:
+        field.reset()
+        // A campaign veteran who has not chosen yet: offer Diplomacy. The
+        // game shows the panel only when the player lands (or loads on a
+        // planet); in flight the call does nothing.
+        if service.offering && !snoozed:
+            service.open_offer(game)
+    // After another pilot loads, this is the first hook to run: redraw the map for it.
+    overlay.draw(game, on)
+
+void on_step(es.Game game, int step):
+    if state.get(game, "active") == 0:
+        return
+    // A day passed without an arrival (taking off): respawn what is here.
+    if field.dirty:
+        galaxy.build(game)
+        field.enter(game, game.here())
+    if step % tune.sync_steps == 0:
+        field.sync(game)
+        service.poll_kills(game)
+        // A flotilla destroyed in front of the player: the map shows it at once.
+        if field.redraw:
+            field.redraw = false
+            overlay.draw(game, true)
+
+void on_planet_button(es.Game game):
+    galaxy.build(game)
+    if !active(game) && service.offering:
+        service.open_offer(game)
+        return
+    service.open_panel(game)
+
+void on_panel(es.Game game, int button):
+    string action = service.on_panel(game, button)
+    if action == "activate":
+        accept_offer(game)
+        if service.faction_here(game) != 0:
+            service.open_panel(game)
+        else:
+            game.panel_close()
+    else if action == "snooze":
+        snoozed = true
+        game.panel_close()
+    else if action == "never":
+        state.put(game, "declined", 1)
+        service.offering = false
+        game.panel_close()
+        game.message("Diplomacy is off for this pilot. Its plugin can stay installed.")
+    bool on = active(game)
+    overlay.draw(game, on)
+    service.update_button(game, on)

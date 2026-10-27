@@ -1,0 +1,494 @@
+# Copyright (c) 2026 by Anaxarchus
+#
+# Endless Sky is free software: you can redistribute it and/or modify it under the
+# terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later version.
+#
+# Endless Sky is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+# PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+# In-game tests for the Diplomacy mod, run by test/ingame/run.sh against a game
+# with the Dado mod loader installed (run.sh installs it in the test config). They use the helper tests ("Load First
+# Savegame", "Depart", "Land") of the game's integration-test plugin.
+
+# A pilot at Earth after the Free Worlds war broke out, with fuel for many jumps.
+# The mod is forced active, and the Republic declares war on the Free Worlds on the first day.
+test-data "Diplomacy Test Save"
+	category "savegame"
+	contents
+		pilot Dana Diplomat
+		date 16 11 3016
+		system Sol
+		planet Earth
+		clearance
+		ship "Star Barge"
+			name "Envoy"
+			sprite "ship/star barge"
+			attributes
+				category "Light Freighter"
+				cost 190000
+				mass 70
+				bunks 3
+				"cargo space" 50
+				drag 2.1
+				"engine capacity" 400
+				"fuel capacity" 3000
+				"heat dissipation" 0.8
+				hull 1000
+				"outfit space" 1300
+				"required crew" 1
+				shields 600
+				"weapon capacity" 200
+			outfits
+				"X1700 Ion Thruster"
+				"X1200 Ion Steering"
+				Hyperdrive
+				"D14-RN Shield Generator"
+				"nGVF-BB Fuel Cell"
+				"LP036a Battery Pack"
+			crew 1
+			fuel 3000
+			shields 600
+			hull 1000
+			engine -9 38 1
+			engine 9 38 1
+			leak leak 60 50
+			explode "tiny explosion" 10
+			explode "small explosion" 10
+			system Sol
+			planet Earth
+		account
+			credits 100000
+			score 400
+			history
+		conditions
+			"diplomacy: force active"
+			"diplomacy: force war" 12
+		changes
+			event "war begins"
+		visited Sol
+		"visited planet" Earth
+		visited Vega
+		visited "Alpha Centauri"
+
+
+test "Diplomacy - War Begins"
+	status active
+	description "The mod activates on its own, the forced war starts on the first day, and the Free Worlds hold their capital."
+	sequence
+		inject "Diplomacy Test Save"
+		call "Load First Savegame"
+		assert
+			"diplomacy: active" == 1
+			"diplomacy: war a" == 0
+		call "Depart"
+		apply
+			"test: steps to wait" = 30
+		label "flying"
+		input
+		apply
+			"test: steps to wait" = "test: steps to wait" - 1
+		branch "flying"
+			"test: steps to wait" > 0
+		assert
+			"mod loaders" >= 1
+			"diplomacy: war a" == 1
+			"diplomacy: war b" == 2
+			"diplomacy: at war 1" == 1
+			"diplomacy: at war 2" == 1
+			"diplomacy: stat wars" == 1
+			"diplomacy: last day" > 0
+
+
+test "Diplomacy - Flotilla In Person"
+	status active
+	description "A flotilla launched in the player's system is there as real ships when the player arrives, and the war goes on day by day."
+	sequence
+		inject "Diplomacy Test Save"
+		call "Load First Savegame"
+		navigate
+			travel Vega
+		call "Depart"
+		# The takeoff's day starts the war.
+		label "departing"
+		input
+		branch "departing"
+			"diplomacy: war a" == 0
+		# The jump's day puts a Free Worlds flotilla where the player arrives.
+		apply
+			"diplomacy: force flotilla" = 2
+		input
+			command jump
+		label "toVega"
+		branch "toVega"
+			not "flagship system: Vega"
+		apply
+			"test: steps to wait" = 3
+		label "watching"
+		input
+		apply
+			"test: steps to wait" = "test: steps to wait" - 1
+		branch "watching"
+			"test: steps to wait" > 0
+		assert
+			"diplomacy: war a" == 1
+			"diplomacy: ships here" > 0
+			"diplomacy: stat launches" >= 1
+		# Keep jumping, one leg at a time: days pass and the flotillas move on.
+		navigate
+			travel Sol
+		input
+			command jump
+		label "toSol"
+		branch "toSol"
+			not "flagship system: Sol"
+		navigate
+			travel Vega
+		input
+			command jump
+		label "toVega2"
+		branch "toVega2"
+			not "flagship system: Vega"
+		navigate
+			travel Sol
+		input
+			command jump
+		label "toSol2"
+		branch "toSol2"
+			not "flagship system: Sol"
+		navigate
+			travel Vega
+		input
+			command jump
+		label "toVega3"
+		branch "toVega3"
+			not "flagship system: Vega"
+		assert
+			"diplomacy: last day" >= "diplomacy: activated" + 5
+			"diplomacy: war a" == 1
+
+
+test "Diplomacy - Join And Leave"
+	status active
+	description "On a Republic world the planet screen's Faction button opens the faction panel; Join makes the player a member with a salary and the flotillas' trust, and Leave undoes it."
+	sequence
+		inject "Diplomacy Test Save"
+		call "Load First Savegame"
+		assert
+			"diplomacy: member" == 0
+		# Open the faction panel (the planet button's key) and press its first button, Join.
+		input
+			key k
+		input
+			key 1
+		assert
+			"diplomacy: member" == 1
+			"salary: Republic commission" > 0
+			"reputation: Republic Flotilla" > 0
+		# The panel now offers Leave first.
+		input
+			key 1
+		assert
+			"diplomacy: member" == 0
+			"salary: Republic commission" == 0
+		input
+			key escape
+
+
+# A brand-new pilot at the game's start date: no campaign progress, no overrides.
+# Run with the "Diplomacy Debug" plugin installed (test/ingame/run.sh does that
+# for tests with "Debug" in their name).
+test-data "Diplomacy Fresh Save"
+	category "savegame"
+	contents
+		pilot Fresh Diplomat
+		date 16 11 3013
+		system Sol
+		planet Earth
+		clearance
+		ship "Star Barge"
+			name "Envoy"
+			sprite "ship/star barge"
+			attributes
+				category "Light Freighter"
+				cost 190000
+				mass 70
+				bunks 3
+				"cargo space" 50
+				drag 2.1
+				"engine capacity" 400
+				"fuel capacity" 3000
+				"heat dissipation" 0.8
+				hull 1000
+				"outfit space" 1300
+				"required crew" 1
+				shields 600
+				"weapon capacity" 200
+			outfits
+				"X1700 Ion Thruster"
+				"X1200 Ion Steering"
+				Hyperdrive
+				"D14-RN Shield Generator"
+				"nGVF-BB Fuel Cell"
+				"LP036a Battery Pack"
+			crew 1
+			fuel 3000
+			shields 600
+			hull 1000
+			engine -9 38 1
+			engine 9 38 1
+			leak leak 60 50
+			explode "tiny explosion" 10
+			explode "small explosion" 10
+			system Sol
+			planet Earth
+		account
+			credits 100000
+			score 400
+			history
+		visited Sol
+		"visited planet" Earth
+		visited Vega
+		visited "Alpha Centauri"
+
+
+
+test "Diplomacy - Debug Mode"
+	status active
+	description "With the Diplomacy Debug plugin, a fresh pilot sees the mod active from day 0, the Free Worlds given territory, a Republic-Free Worlds war already on, flotillas launching on the first day, the map revealed and 100 million credits."
+	sequence
+		inject "Diplomacy Fresh Save"
+		call "Load First Savegame"
+		assert
+			"diplomacy: active" == 1
+			"diplomacy: war a" == 1
+			"diplomacy: war b" == 2
+			"diplomacy: at war 2" == 1
+			"diplomacy: debug gifts" == 1
+			"credits" >= 100000000
+			"visited system: Markab" == 1
+			"visited system: Heia Due" == 1
+			"visited system: Waypoint" == 1
+		call "Depart"
+		apply
+			"test: steps to wait" = 10
+		label "flying"
+		input
+		apply
+			"test: steps to wait" = "test: steps to wait" - 1
+		branch "flying"
+			"test: steps to wait" > 0
+		assert
+			"diplomacy: stat launches" >= 2
+			"diplomacy: war a" == 1
+
+# A Republic member with Admiral's merit, on a Republic world (Dancer, in
+# Rastaban) that borders the Free Worlds, while the two are at war.
+test-data "Diplomacy Border Save"
+	category "savegame"
+	contents
+		pilot Dana Diplomat
+		date 16 11 3016
+		system Rastaban
+		planet Dancer
+		clearance
+		ship "Star Barge"
+			name "Envoy"
+			sprite "ship/star barge"
+			attributes
+				category "Light Freighter"
+				cost 190000
+				mass 70
+				bunks 3
+				"cargo space" 50
+				drag 2.1
+				"engine capacity" 400
+				"fuel capacity" 3000
+				"heat dissipation" 0.8
+				hull 1000
+				"outfit space" 1300
+				"required crew" 1
+				shields 600
+				"weapon capacity" 200
+			outfits
+				"X1700 Ion Thruster"
+				"X1200 Ion Steering"
+				Hyperdrive
+				"D14-RN Shield Generator"
+				"nGVF-BB Fuel Cell"
+				"LP036a Battery Pack"
+			crew 1
+			fuel 3000
+			shields 600
+			hull 1000
+			engine -9 38 1
+			engine 9 38 1
+			leak leak 60 50
+			explode "tiny explosion" 10
+			explode "small explosion" 10
+			system Rastaban
+			planet Dancer
+		account
+			credits 100000
+			score 400
+			history
+		conditions
+			"diplomacy: force active"
+			"diplomacy: force war" 12
+			"diplomacy: member" 1
+			"diplomacy: merit" 450
+		changes
+			event "war begins"
+		visited Rastaban
+		"visited planet" Dancer
+		visited Vega
+		visited "Alpha Centauri"
+
+
+test "Diplomacy - Licenses And Jobs"
+	status active
+	description "A Republic member's rank issues the Navy licenses; the mod publishes the faction at war with the member's; and each kind of faction job against the Free Worlds finds its target or waypoints from a border world."
+	sequence
+		inject "Diplomacy Border Save"
+		call "Load First Savegame"
+		assert
+			"diplomacy: member" == 1
+			"diplomacy: rank" == 6
+			"license: Navy" == 1
+			"license: Navy Auxiliary" == 1
+			"license: Navy Cruiser" == 1
+			"license: Navy Carrier" == 1
+		# Take off and land again: the test copies of the jobs are offered on
+		# landing, and accepted at once since they have no conversation. A job
+		# that cannot place its target or waypoints is not offered at all.
+		# The forced war starts with the first day that passes, on taking off.
+		call "Depart"
+		apply
+			"test: steps to wait" = 10
+		label "flying"
+		input
+		apply
+			"test: steps to wait" = "test: steps to wait" - 1
+		branch "flying"
+			"test: steps to wait" > 0
+		assert
+			"diplomacy: enemy" == 2
+		call "Land"
+		assert
+			"Diplomacy Test: Republic Job: Courier vs Free Worlds: active" == 1
+			"Diplomacy Test: Republic Job: Scout Ship vs Free Worlds: active" == 1
+			"Diplomacy Test: Republic Job: Scout System vs Free Worlds: active" == 1
+			"Diplomacy Test: Republic Job: Medium Warship vs Free Worlds: active" == 1
+			"Diplomacy Test: Republic Job: Large Warship vs Free Worlds: active" == 1
+			"Diplomacy Test: Republic Job: Warfleet vs Free Worlds: active" == 1
+
+
+# A pilot who finished the Free Worlds campaign, installing Diplomacy now.
+test-data "Diplomacy Veteran Save"
+	category "savegame"
+	contents
+		pilot Dana Diplomat
+		date 16 11 3016
+		system Sol
+		planet Earth
+		clearance
+		ship "Star Barge"
+			name "Envoy"
+			sprite "ship/star barge"
+			attributes
+				category "Light Freighter"
+				cost 190000
+				mass 70
+				bunks 3
+				"cargo space" 50
+				drag 2.1
+				"engine capacity" 400
+				"fuel capacity" 3000
+				"heat dissipation" 0.8
+				hull 1000
+				"outfit space" 1300
+				"required crew" 1
+				shields 600
+				"weapon capacity" 200
+			outfits
+				"X1700 Ion Thruster"
+				"X1200 Ion Steering"
+				Hyperdrive
+				"D14-RN Shield Generator"
+				"nGVF-BB Fuel Cell"
+				"LP036a Battery Pack"
+			crew 1
+			fuel 3000
+			shields 600
+			hull 1000
+			engine -9 38 1
+			engine 9 38 1
+			leak leak 60 50
+			explode "tiny explosion" 10
+			explode "small explosion" 10
+			system Sol
+			planet Earth
+		account
+			credits 100000
+			score 400
+			history
+		conditions
+			"free worlds plot completed"
+			"salary: Free Worlds" 8900
+		changes
+			event "war begins"
+		visited Sol
+		"visited planet" Earth
+		visited Vega
+		visited "Alpha Centauri"
+
+
+test "Diplomacy - Veteran Offer"
+	status active
+	description "A pilot who finished the Free Worlds campaign is offered Diplomacy on landing, in the planet screen's panel; turning it on makes them a Free Worlds Commodore at the campaign's salary."
+	sequence
+		inject "Diplomacy Veteran Save"
+		call "Load First Savegame"
+		# The offer is open in the planet screen; its first button turns Diplomacy on.
+		assert
+			"diplomacy: active" == 0
+		# Let the planet screen take up the panel the mod opened on landing.
+		input
+		input
+		input
+			key 1
+		assert
+			"diplomacy: active" == 1
+			"diplomacy: member" == 2
+			"diplomacy: rank" == 5
+			"salary: Free Worlds" == 8900
+
+
+test "Diplomacy - Pirate Raid In Person"
+	status active
+	description "A raid forced into the next system the player arrives in is there in person: its pirates are spawned."
+	sequence
+		inject "Diplomacy Test Save"
+		call "Load First Savegame"
+		navigate
+			travel Vega
+		call "Depart"
+		apply
+			"diplomacy: force raid" = 1
+		input
+			command jump
+		label "toVega"
+		branch "toVega"
+			not "flagship system: Vega"
+		apply
+			"test: steps to wait" = 30
+		label "settle"
+		input
+		apply
+			"test: steps to wait" = "test: steps to wait" - 1
+		branch "settle"
+			"test: steps to wait" > 0
+		assert
+			"diplomacy: stat raids" >= 1
+			"diplomacy: ships here" > 0

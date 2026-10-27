@@ -1,0 +1,127 @@
+class Company
+
+// One company: listed, or gone (bankrupt, or merged into another), kept for
+// the record and for breakups. Saved as one line, fields separated by "|".
+
+int LISTED = 0
+int DISTRESSED = 1
+int FOR_SALE = 2
+int BANKRUPT = 3
+int MERGED = 4
+
+int id = 0
+string name = ""
+bool canon = false
+int sector = 0
+string home = ""
+string system = ""
+int status = 0
+// The day the status began.
+int since = 0
+float cash = 0.0
+float debt = 0.0
+// Work it can carry a day, and how cheaply (1.0 = average; lower is cheaper).
+float capacity = 0.0
+float efficiency = 1.0
+float reliability = 0.8
+int shares = 1000000
+// Credits a share.
+float price = 10.0
+// Since the last report.
+float revenue = 0.0
+float costs = 0.0
+// The last four reports' earnings, oldest first.
+[]float earnings = []
+// It reports on the days where day % 30 is this.
+int report_at = 0
+float payout = 0.3
+float dividend = 0.0
+// The last 60 days' prices, in hundredths of a credit.
+[]int history = []
+// Merged into this company (its id), and the companies merged into this one, oldest first.
+int parent = 0
+[]int acquired = []
+// The capacity it brought when it merged, which a breakup gives back.
+float brought = 0.0
+// The day an antitrust review began (0 = none), and the last rescue.
+int review = 0
+int rescued = 0
+// A company building a stake to buy this one: its id, the day it completes, the price a share.
+int suitor = 0
+int offer_day = 0
+float offer = 0.0
+int founded = 0
+// Work a day its running contracts take; rebuilt from the contracts, not saved.
+float load = 0.0
+
+bool listed():
+    return status == LISTED || status == DISTRESSED || status == FOR_SALE
+
+float market_value():
+    return price * float(shares)
+
+string encode():
+    []string f = [string(id), name, "1" if canon else "0", string(sector), home, system, string(status), string(since), string(cash), string(debt), string(capacity), string(efficiency), string(reliability), string(shares), string(price), string(revenue), string(costs), floats(earnings), string(report_at), string(payout), string(dividend), ints(history), string(parent), ints(acquired), string(brought), string(review), string(rescued), string(suitor), string(offer_day), string(offer), string(founded)]
+    return f.join("|")
+
+void decode(string line):
+    []string f = line.split("|")
+    id = f[0].to_int()
+    name = f[1]
+    canon = f[2] == "1"
+    sector = f[3].to_int()
+    home = f[4]
+    system = f[5]
+    status = f[6].to_int()
+    since = f[7].to_int()
+    cash = f[8].to_float()
+    debt = f[9].to_float()
+    capacity = f[10].to_float()
+    efficiency = f[11].to_float()
+    reliability = f[12].to_float()
+    shares = f[13].to_int()
+    price = f[14].to_float()
+    revenue = f[15].to_float()
+    costs = f[16].to_float()
+    earnings = read_floats(f[17])
+    report_at = f[18].to_int()
+    payout = f[19].to_float()
+    dividend = f[20].to_float()
+    history = read_ints(f[21])
+    parent = f[22].to_int()
+    acquired = read_ints(f[23])
+    brought = f[24].to_float()
+    review = f[25].to_int()
+    rescued = f[26].to_int()
+    suitor = f[27].to_int()
+    offer_day = f[28].to_int()
+    offer = f[29].to_float()
+    founded = f[30].to_int()
+
+string floats([]float xs):
+    []string out = []
+    for x in xs:
+        out.append(string(x))
+    return out.join(",")
+
+string ints([]int xs):
+    []string out = []
+    for x in xs:
+        out.append(string(x))
+    return out.join(",")
+
+[]float read_floats(string s):
+    []float out = []
+    if s == "":
+        return out
+    for part in s.split(","):
+        out.append(part.to_float())
+    return out
+
+[]int read_ints(string s):
+    []int out = []
+    if s == "":
+        return out
+    for part in s.split(","):
+        out.append(part.to_int())
+    return out

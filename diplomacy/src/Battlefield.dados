@@ -1,0 +1,187 @@
+class Battlefield
+
+// The battle the player can see. When the player arrives in a system, every
+// flotilla there is spawned as real ships, sized to its strength, and during
+// a siege the system's defense fleets are spawned too. While the player stays,
+// the strength of what is left of each tagged group is read back into the
+// simulation, so what the player sees destroyed is gone for good. The ships
+// exist only while the player is in the system.
+//
+// Tags: "diplomacy:<faction>:f<slot>" for a flotilla, and
+// "diplomacy:<faction>:g<system index>" for a garrison.
+
+import "imports:sdk/es"
+
+Tuning tune = Tuning()
+Factions factions = Factions()
+Galaxy galaxy = Galaxy()
+State state = State()
+Garrisons garrisons = Garrisons()
+Simulation sim = Simulation()
+
+// The system whose ships were spawned, or -1.
+int system = -1
+// How many ships were spawned here on arrival (also kept as "diplomacy: ships here").
+int spawned = 0
+// True when the simulation moved on (a day passed) and the ships here must be respawned.
+bool dirty = false
+// True when a flotilla was destroyed here since the map was last drawn.
+bool redraw = false
+// Per tag: the simulated strength when spawned, and the ships' strength at the first sync.
+{string: int} sim_base = {}
+{string: float} ship_base = {}
+// Per tag: the faction, and the flotilla slot (0 for a garrison).
+{string: int} tag_faction = {}
+{string: int} tag_slot = {}
+
+void wire(Tuning t, Factions f, Galaxy g, State s, Garrisons gs, Simulation sm):
+    tune = t
+    factions = f
+    galaxy = g
+    state = s
+    garrisons = gs
+    sim = sm
+
+void reset():
+    system = -1
+    sim_base = {}
+    ship_base = {}
+    tag_faction = {}
+    tag_slot = {}
+
+// The player arrived in `name` (or the simulation moved on): spawn what is here.
+void enter(es.Game game, string name):
+    reset()
+    dirty = false
+    spawned = 0
+    state.put(game, "ships here", 0)
+    system = galaxy.find(name)
+    if system < 0:
+        return
+    []Flotilla fl = sim.load_all(game)
+    for x in fl:
+        if x.alive() && x.at == system:
+            spawn_flotilla(game, x)
+    // A siege in progress: the defenders are here too.
+    int owner = galaxy.owner(game, system)
+    for x in fl:
+        if x.at == system && sim.besieging(game, x):
+            spawn_garrison(game, owner)
+            break
+    state.put(game, "ships here", spawned)
+
+void spawn_flotilla(es.Game game, Flotilla x):
+    string tag = x.tag()
+    int large = x.strength / tune.large_fleet_points
+    int rest = x.strength - large * tune.large_fleet_points
+    int small = (rest + tune.small_fleet_points / 2) / tune.small_fleet_points
+    if large > tune.max_spawn_fleets:
+        large = tune.max_spawn_fleets
+    if large + small > tune.max_spawn_fleets:
+        small = tune.max_spawn_fleets - large
+    if large + small == 0:
+        small = 1
+    // Factions fly their own fleets under their flotilla government; pirates
+    // fly their home system's pirate fleets as the real pirates.
+    string gov = factions.flotilla_governments[x.faction]
+    []string fleets = sim.fleets_of(game, x)
+    int ships = 0
+    for k in 0..<large:
+        ships += game.spawn(fleets[1], gov, tag, false)
+    for k in 0..<small:
+        ships += game.spawn(fleets[0], gov, tag, false)
+    spawned += ships
+    if ships > 0:
+        track(tag, x.faction, x.slot, x.strength)
+
+void spawn_garrison(es.Game game, int owner):
+    if owner == 0:
+        return
+    string name = galaxy.name(system)
+    string tag = factions.tag_prefix(owner) + "g" + string(system)
+    int full = galaxy.full_garrison(game, system)
+    int hp = garrisons.hp(game, system, full)
+    if hp <= 0:
+        return
+    int n = (tune.max_defense_fleets * hp + full - 1) / full
+    if n < 1:
+        n = 1
+    if n > tune.max_defense_fleets:
+        n = tune.max_defense_fleets
+    string gov = factions.flotilla_governments[owner]
+    int count = game.defense_count(name)
+    int ships = 0
+    for k in 0..<n:
+        if count > 0:
+            // Spread the picks over the list, which repeats a fleet once per copy.
+            ships += game.spawn(game.defense_fleet(name, k * count / n), gov, tag, false)
+        else:
+            ships += game.spawn(factions.small_fleets[owner], gov, tag, false)
+    spawned += ships
+    if ships > 0:
+        track(tag, owner, 0, hp)
+
+void track(string tag, int faction, int slot, int strength):
+    sim_base[tag] = strength
+    tag_faction[tag] = faction
+    tag_slot[tag] = slot
+
+// Read back what is left of every group spawned here.
+void sync(es.Game game):
+    if system < 0 || game.here() != galaxy.name(system):
+        return
+    for tag in sim_base.keys():
+        float now = game.tag_strength(tag)
+        float base = ship_base.get(tag, 0.0)
+        if base <= 0.0:
+            // Ships spawned in one step count from the next; take their strength as the baseline.
+            if now > 0.0:
+                ship_base[tag] = now
+            continue
+        int left = int(float(sim_base[tag]) * now / base)
+        if tag_slot[tag] > 0:
+            sync_flotilla(game, tag, left)
+        else:
+            sync_garrison(game, tag, left)
+
+void sync_flotilla(es.Game game, string tag, int left):
+    Flotilla x = Flotilla(tag_faction[tag], tag_slot[tag])
+    x.load(game)
+    if !x.alive() || x.at != system || left >= x.strength:
+        return
+    x.strength = left
+    if left < tune.destroy_below:
+        x.strength = 0
+        if x.faction == factions.pirates():
+            game.message("The pirate raiders in this system have been destroyed.")
+        else:
+            game.message("The " + factions.adjectives[x.faction] + " flotilla in this system has been destroyed.")
+        state.add(game, "stat destroyed in person", 1)
+        sim_base.delete(tag)
+        sim.lost(game, x)
+        x.save(game)
+        sim.tidy(game)
+        redraw = true
+        return
+    x.save(game)
+
+void sync_garrison(es.Game game, string tag, int left):
+    int owner = tag_faction[tag]
+    if galaxy.owner(game, system) != owner:
+        sim_base.delete(tag)
+        return
+    int full = galaxy.full_garrison(game, system)
+    int hp = garrisons.hp(game, system, full)
+    if left >= hp:
+        return
+    garrisons.set(game, system, left if left > 0 else 0, game.day())
+    if left > tune.destroy_below / 2:
+        return
+    // The defenders are beaten: the besieger takes the system.
+    sim_base.delete(tag)
+    sim.refresh_depth(game)
+    for x in sim.load_all(game):
+        if x.alive() && x.at == system && x.goal == system && sim.can_take(game, x.faction, system):
+            sim.capture(game, game.day(), x.faction, system)
+            redraw = true
+            return

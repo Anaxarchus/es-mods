@@ -1,0 +1,84 @@
+class Contract
+
+// One contract: issued by a government, a planet, or a company (a subcontract),
+// open for sealed bids for a few days, then run by the winner until it is
+// delivered or fails. A restock (kind RESTOCK) is a shipyard's order for
+// hulls from the company that owns their design: no bidding, awarded to the
+// owner at once, never failing; its client is the shipyard's planet. Saved as
+// one line, fields separated by "|".
+
+int OPEN = 0
+int RUNNING = 1
+int DELIVERED = 2
+int FAILED = 3
+int LAPSED = 4
+
+int GOVERNMENT = 0
+int PLANET = 1
+int COMPANY = 2
+int RESTOCK = 3
+
+int id = 0
+// Who issued it: a government's or a planet's name, or a company's id as text.
+string client = ""
+int kind = 0
+int sector = 0
+string system = ""
+// Work a day, days, and the client's budget in credits.
+float load = 1.0
+int days = 30
+float budget = 0.0
+int issued = 0
+// Bids close at the end of this day.
+int closes = 0
+int status = 0
+int winner = 0
+float price = 0.0
+// The winner's real cost, in all.
+float cost = 0.0
+int start = 0
+int ends = 0
+int bidders = 0
+int runner_up = 0
+float runner_price = 0.0
+bool reissued = false
+// The contract this one subcontracts, or 0.
+int parent = 0
+// A restock: the hull model (its true name) and how many.
+string model = ""
+int units = 0
+
+bool done():
+    return status == DELIVERED || status == FAILED || status == LAPSED
+
+string encode():
+    []string f = [string(id), client, string(kind), string(sector), system, string(load), string(days), string(budget), string(issued), string(closes), string(status), string(winner), string(price), string(cost), string(start), string(ends), string(bidders), string(runner_up), string(runner_price), "1" if reissued else "0", string(parent), model, string(units)]
+    return f.join("|")
+
+void decode(string line):
+    []string f = line.split("|")
+    id = f[0].to_int()
+    client = f[1]
+    kind = f[2].to_int()
+    sector = f[3].to_int()
+    system = f[4]
+    load = f[5].to_float()
+    days = f[6].to_int()
+    budget = f[7].to_float()
+    issued = f[8].to_int()
+    closes = f[9].to_int()
+    status = f[10].to_int()
+    winner = f[11].to_int()
+    price = f[12].to_float()
+    cost = f[13].to_float()
+    start = f[14].to_int()
+    ends = f[15].to_int()
+    bidders = f[16].to_int()
+    runner_up = f[17].to_int()
+    runner_price = f[18].to_float()
+    reissued = f[19] == "1"
+    parent = f[20].to_int()
+    // Saves from before restocks have 21 fields.
+    if f.len() > 22:
+        model = f[21]
+        units = f[22].to_int()

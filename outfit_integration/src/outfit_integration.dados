@@ -1,0 +1,137 @@
+class OutfitIntegration extends es.Mod
+
+// Outfit integration: in the outfitter, a shipyard's engineers can integrate an
+// outfit installed on your ship into its hull, for a fee. An integrated outfit
+// is 25% lighter and takes up 25% less outfit space (its weapon or engine
+// capacity, and any hardpoint, stay as they are), and it is there for good: it cannot
+// be uninstalled, sold, moved to cargo or storage, or plundered. Weapons keep
+// their gun port or turret mount.
+// Ammunition cannot be integrated, since it is used up in flight.
+//
+// The game keeps which outfits are integrated with each ship (mod API 5's
+// Game.ship_integrate), so it survives saving and loading. The mod counts
+// what it has done in conditions named "outfit integration: ...".
+
+import "imports:sdk/es"
+
+// An integrated outfit keeps this share of its mass and of the space it takes up.
+float scale = 0.75
+// The engineers' fee, as a share of the outfit's cost.
+float fee_rate = 0.25
+// The dialog token for "go ahead and integrate".
+int integrate_token = 1
+
+// What on_outfitter asked the player to confirm.
+string pending_ship = ""
+string pending_outfit = ""
+int pending_fee = 0
+
+string name():
+    return "outfit integration"
+
+void on_load(es.Game game):
+    game.outfitter_button("Integrate")
+
+void on_enter(es.Game game, string system):
+    game.outfitter_button("Integrate")
+
+// The button is enabled when the ship in focus has this outfit installed and
+// not all of it is integrated yet.
+bool can_outfitter(es.Game game, string outfit):
+    if outfit == "" || game.outfitter_ship_count() == 0:
+        return false
+    if game.outfit_category(outfit) == "Ammunition":
+        return false
+    string ship = game.outfitter_ship(0)
+    return game.ship_outfit_count(ship, outfit) > game.ship_integrated_count(ship, outfit)
+
+void on_outfitter(es.Game game, string outfit):
+    pending_ship = ""
+    pending_outfit = ""
+    if !can_outfitter(game, outfit):
+        return
+    string ship = game.outfitter_ship(0)
+    int cost = fee(game, outfit)
+    string what = game.outfit_name(outfit)
+    string where = game.fleet_ship_name(ship)
+    int credits = game.condition("credits")
+    if credits < cost:
+        // Token 0 asks nothing: OK just closes the dialog.
+        game.confirm("Integrating the " + what + " into the " + where + " costs " + credits_text(cost) + ", and you have " + credits_text(credits) + ".", 0)
+        return
+    pending_ship = ship
+    pending_outfit = outfit
+    pending_fee = cost
+    string text = "Integrate one " + what + " into the " + where + "?\n\n"
+    text = text + "The shipyard's engineers will build it into the hull. It will be " + percent(1.0 - scale) + " lighter and take up " + percent(1.0 - scale) + " less outfit space"
+    string saved = savings(game, outfit)
+    if saved != "":
+        text = text + " (" + saved + ")"
+    text = text + ", but it can never be uninstalled, sold or plundered again.\n\n"
+    text = text + "The engineers' fee is " + credits_text(cost) + "."
+    game.confirm(text, integrate_token)
+
+void on_confirm(es.Game game, int token):
+    if token != integrate_token || pending_ship == "" || pending_outfit == "":
+        return
+    string ship = pending_ship
+    string outfit = pending_outfit
+    int cost = pending_fee
+    pending_ship = ""
+    pending_outfit = ""
+    int credits = game.condition("credits")
+    if credits < cost:
+        return
+    if !game.ship_integrate(ship, outfit, scale):
+        log(game, "could not integrate " + outfit + " into " + game.fleet_ship_name(ship))
+        return
+    game.set_condition("credits", credits - cost)
+    count(game, "integrated", 1)
+    count(game, "fees paid", cost)
+
+// What integrating one outfit saves: "3 tons, 3 outfit space".
+// The game saves whole numbers, rounding a half up, as this does.
+string savings(es.Game game, string outfit):
+    []string parts = []
+    int mass = whole(game.outfit_attribute(outfit, "mass") * (1.0 - scale))
+    if mass > 0:
+        parts.append(string(mass) + (" ton" if mass == 1 else " tons"))
+    float used = game.outfit_attribute(outfit, "outfit space")
+    int space = whole(-used * (1.0 - scale)) if used < 0.0 else 0
+    if space > 0:
+        parts.append(string(space) + " outfit space")
+    string out = ""
+    for i in 0..<parts.len():
+        out = out + (", " if i > 0 else "") + parts[i]
+    return out
+
+// The engineers' fee for one outfit, in whole credits.
+int fee(es.Game game, string outfit):
+    float cost = game.outfit_attribute(outfit, "cost")
+    int whole = globalThis.Math.round(cost * fee_rate)
+    return whole
+
+void count(es.Game game, string what, int n):
+    string key = "outfit integration: " + what
+    game.set_condition(key, game.condition(key) + n)
+
+// "12,345 credits".
+string credits_text(int n):
+    string digits = string(n if n >= 0 else -n)
+    string out = ""
+    int i = digits.len()
+    for i > 3:
+        out = "," + digits[i - 3..<i] + out
+        i -= 3
+    out = digits[0..<i] + out
+    return ("-" if n < 0 else "") + out + " credits"
+
+// "25%".
+string percent(float share):
+    int whole = globalThis.Math.round(share * 100.0)
+    return string(whole) + "%"
+
+// A value rounded to a whole number, a half up.
+int whole(float value):
+    int n = globalThis.Math.round(value)
+    return n

@@ -1,0 +1,2 @@
+# Corporations has no data of its own: the mod keeps its state with the pilot
+# (mod API 6 storage). The game needs a data folder to see the plugin.

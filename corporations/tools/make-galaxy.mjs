@@ -1,0 +1,65 @@
+// Builds test/galaxy.json, the human-space galaxy the simulation test runs on,
+// from the game's data files: systems (government, links) and their planets
+// (government, whether they have a bank, and the ship models their shipyards
+// may ever sell: the map's shipyards plus what events add, as FakeGame's
+// `shipyard` lists).
+//
+//   node mods/corporations/tools/make-galaxy.mjs <endless-sky>/data
+import { writeFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { HUMAN, readAll, readShipyards, planetModels } from "./es-data.mjs";
+
+const root = process.argv[2];
+if (!root) throw new Error("usage: make-galaxy.mjs <game data folder>");
+const all = readAll(root);
+const yards = readShipyards(all);
+
+const systems = {};
+const planets = {};
+for (const [, ls] of all) {
+	let kind = null, name = null;
+	for (const [indent, t] of ls) {
+		if (indent === 0) {
+			kind = t[0]; name = t[1];
+			if (kind === "system" && name && !systems[name]) systems[name] = { government: "", links: [], planets: [] };
+			if (kind === "planet" && name && !planets[name]) planets[name] = { spaceport: false, port: null, government: "" };
+			continue;
+		}
+		if (kind === "system" && indent === 1) {
+			const s = systems[name];
+			if (t[0] === "government") s.government = t[1];
+			if (t[0] === "link") s.links.push(t[1]);
+		}
+		if (kind === "system" && t[0] === "object" && t[1] && planets[t[1]] !== undefined) systems[name].planets.push(t[1]);
+		else if (kind === "system" && t[0] === "object" && t[1]) (systems[name].pending ??= []).push(t[1]);
+		if (kind === "planet" && indent === 1) {
+			const p = planets[name];
+			if (t[0] === "spaceport") p.spaceport = true;
+			if (t[0] === "government") p.government = t[1];
+			if (t[0] === "port") p.port = p.port ?? [];
+		}
+		if (kind === "planet" && indent === 2 && t[0] === "services") planets[name].port = [...(planets[name].port ?? []), ...t.slice(1)];
+		if (kind === "planet" && indent === 3 && planets[name].port) planets[name].port.push(t[0]);
+	}
+}
+// Objects named before their planet was read.
+for (const s of Object.values(systems)) for (const p of s.pending ?? []) if (planets[p] && !s.planets.includes(p)) s.planets.push(p);
+
+const outSystems = {}, outPlanets = {};
+for (const [name, s] of Object.entries(systems)) {
+	if (!HUMAN.has(s.government)) continue;
+	outSystems[name] = { government: s.government, links: s.links.filter((l) => HUMAN.has(systems[l]?.government)) };
+	for (const p of s.planets) {
+		const d = planets[p];
+		if (!d || !(d.spaceport || d.port)) continue;
+		const services = d.port ? d.port : ["bank", "trading", "job board", "hire crew"];
+		const bank = services.includes("all") || services.includes("bank");
+		outPlanets[p] = { system: name, government: d.government || s.government, services: bank ? ["bank", "trading"] : ["trading"] };
+		const sold = planetModels(yards, p);
+		if (sold.length) outPlanets[p].shipyard = sold;
+	}
+}
+const out = join(dirname(fileURLToPath(import.meta.url)), "../test/galaxy.json");
+writeFileSync(out, JSON.stringify({ systems: outSystems, planets: outPlanets }));
+console.log(`wrote ${out}: ${Object.keys(outSystems).length} systems, ${Object.keys(outPlanets).length} planets, ${Object.values(outPlanets).filter((p) => p.services.includes("bank")).length} with a bank, ${Object.values(outPlanets).filter((p) => p.shipyard).length} with a shipyard`);

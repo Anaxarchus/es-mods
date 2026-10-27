@@ -1,0 +1,127 @@
+class Admirals
+
+// The named commanders who lead each side's flotillas and raids. Each side
+// (1..3 the factions, 4 the pirates) keeps a roster of tune.admirals_per_side,
+// saved in conditions "diplomacy: admiral <side>.<k> <field>":
+//   name         1 + the index of their surname in Factions.surnames (0 = vacant)
+//   personality  1 bold, 2 cautious, 3 methodical, 4 reckless
+//   wins         battles they won and raids or hunts they finished
+// A vacant post is filled with a new commander when one is needed. A commander
+// whose flotilla is destroyed may die (tune.admiral_death_chance), and the post
+// falls vacant.
+
+import "imports:sdk/es"
+
+Tuning tune = Tuning()
+Factions factions = Factions()
+State state = State()
+Rng rng = Rng()
+
+void wire(Tuning t, Factions f, State s, Rng r):
+    tune = t
+    factions = f
+    state = s
+    rng = r
+
+string key(int side, int k, string field):
+    return "admiral " + string(side) + "." + string(k) + " " + field
+
+bool filled(es.Game game, int side, int k):
+    return k >= 1 && state.get(game, key(side, k, "name")) != 0
+
+string surname(es.Game game, int side, int k):
+    int n = state.get(game, key(side, k, "name"))
+    if n <= 0 || n > factions.surnames[side].len():
+        return ""
+    return factions.surnames[side][n - 1]
+
+// "Adm. Okafor", for map labels.
+string short_name(es.Game game, int side, int k):
+    if !filled(game, side, k):
+        return ""
+    return factions.commander_short[side] + " " + surname(game, side, k)
+
+// "Admiral Okafor", for messages and panels.
+string full_name(es.Game game, int side, int k):
+    if !filled(game, side, k):
+        return ""
+    return factions.commander_titles[side] + " " + surname(game, side, k)
+
+// 1 bold, 2 cautious, 3 methodical, 4 reckless; 0 for no commander.
+int personality(es.Game game, int side, int k):
+    if !filled(game, side, k):
+        return 0
+    return state.get(game, key(side, k, "personality"))
+
+string personality_name(es.Game game, int side, int k):
+    return factions.personalities[personality(game, side, k)]
+
+int wins(es.Game game, int side, int k):
+    return state.get(game, key(side, k, "wins"))
+
+void add_win(es.Game game, int side, int k):
+    if filled(game, side, k):
+        state.add(game, key(side, k, "wins"), 1)
+
+// A commander for a new flotilla of `side`: a free one from the roster (not
+// leading any of `busy`), filling a vacant post with a new name if need be.
+// Answers 0 if every post is taken.
+int pick(es.Game game, int side, []int busy):
+    []int free = []
+    int vacant = 0
+    for k in 1..=tune.admirals_per_side:
+        if !filled(game, side, k):
+            if vacant == 0:
+                vacant = k
+        else if !busy.contains(k):
+            free.append(k)
+    if free.len() > 0:
+        return free[rng.range(game, 0, free.len() - 1)]
+    if vacant == 0:
+        return 0
+    appoint(game, side, vacant)
+    return vacant
+
+// A new commander in post k: a surname no one on the side's roster has, and a personality.
+void appoint(es.Game game, int side, int k):
+    []int taken = []
+    for j in 1..=tune.admirals_per_side:
+        if j != k:
+            taken.append(state.get(game, key(side, j, "name")))
+    []int choices = []
+    for n in 1..=factions.surnames[side].len():
+        if !taken.contains(n):
+            choices.append(n)
+    int name = choices[rng.range(game, 0, choices.len() - 1)] if choices.len() > 0 else 1
+    state.put(game, key(side, k, "name"), name)
+    state.put(game, key(side, k, "personality"), rng.range(game, 1, 4))
+    state.put(game, key(side, k, "wins"), 0)
+
+// The flotilla commander k led was destroyed. Answers true if they died.
+bool fallen(es.Game game, int side, int k):
+    if !filled(game, side, k) || !rng.chance(game, tune.admiral_death_chance):
+        return false
+    for field in ["name", "personality", "wins"]:
+        state.put(game, key(side, k, field), 0)
+    state.add(game, "stat commanders killed", 1)
+    return true
+
+// Percent multipliers for a commander's personality.
+int attack(es.Game game, int side, int k):
+    int p = personality(game, side, k)
+    if p == 1:
+        return tune.bold_attack
+    if p == 4:
+        return tune.reckless_attack
+    return 100
+
+int damage_taken(es.Game game, int side, int k):
+    int p = personality(game, side, k)
+    if p == 2:
+        return tune.cautious_damage
+    if p == 4:
+        return tune.reckless_damage
+    return 100
+
+int siege(es.Game game, int side, int k):
+    return tune.methodical_siege if personality(game, side, k) == 3 else 100

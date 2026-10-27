@@ -1,0 +1,843 @@
+class Simulation
+
+// One simulated day: wars start and end; factions at war launch flotillas;
+// pirates set out on raids, and factions send relief flotillas after them;
+// everything moves one jump; hostile forces in one system fight; flotillas at
+// their objective besiege its garrison until the system falls; raids plunder
+// the systems they stop in; and flotillas and raids that are home disband.
+//
+// Sides: 1..3 the factions, 4 the pirates. Every fight rolls a winner each day
+// with odds score_a : score_b, where a score is strength * quality (Quality,
+// from the fleets' real stats) * the commander's personality (Admirals).
+
+import "imports:sdk/es"
+
+Tuning tune = Tuning()
+Factions factions = Factions()
+Galaxy galaxy = Galaxy()
+State state = State()
+Rng rng = Rng()
+Garrisons garrisons = Garrisons()
+Admirals admirals = Admirals()
+Quality quality = Quality()
+
+// Jumps from each faction's original territory, computed once per day (index 1..3).
+[][]int origin_dist = [[], [], [], []]
+
+void wire(Tuning t, Factions f, Galaxy g, State s, Rng r, Garrisons gs, Admirals a, Quality q):
+    tune = t
+    factions = f
+    galaxy = g
+    state = s
+    rng = r
+    garrisons = gs
+    admirals = a
+    quality = q
+
+// ---- Flotillas ----
+
+int slots(int side):
+    return tune.max_raids if side == factions.pirates() else tune.max_flotillas
+
+// Every slot, live or empty, side by side.
+[]Flotilla load_all(es.Game game):
+    []Flotilla out = []
+    for f in 1..=factions.sides():
+        for s in 1..=slots(f):
+            Flotilla x = Flotilla(f, s)
+            x.load(game)
+            out.append(x)
+    return out
+
+// Save every slot; a chase whose quarry is gone is called off.
+void save_all(es.Game game, []Flotilla fl):
+    for x in fl:
+        if x.target != 0 && !by_code(fl, x.target).alive():
+            x.target = 0
+        x.save(game)
+
+// Load, tidy and save every slot (after a flotilla was destroyed outside the daily step).
+void tidy(es.Game game):
+    save_all(game, load_all(game))
+
+// The live flotilla with this code, or an empty one.
+Flotilla by_code([]Flotilla fl, int code):
+    for x in fl:
+        if x.code() == code && x.alive():
+            return x
+    return Flotilla(0, 0)
+
+// Whether sides f and g fight: pirates fight everyone, factions only their enemy.
+bool hostile(es.Game game, int f, int g):
+    if f == g || f == 0 || g == 0:
+        return false
+    if f == factions.pirates() || g == factions.pirates():
+        return true
+    return state.hostile(game, f, g)
+
+// Whether a war flotilla is besieging its objective now (there, not chasing, owner hostile).
+bool besieging(es.Game game, Flotilla x):
+    if !x.alive() || x.kind != 0 || x.target != 0 || x.at != x.goal || x.goal < 0:
+        return false
+    return state.hostile(game, x.faction, galaxy.owner(game, x.goal))
+
+// The commanders already leading a live flotilla of `side`.
+[]int busy([]Flotilla fl, int side):
+    []int out = []
+    for x in fl:
+        if x.alive() && x.faction == side && x.admiral != 0:
+            out.append(x.admiral)
+    return out
+
+// A free slot of `side`, or an empty flotilla (side 0) if there is none.
+Flotilla free_slot([]Flotilla fl, int side):
+    for x in fl:
+        if x.faction == side && !x.alive():
+            return x
+    return Flotilla(0, 0)
+
+// Set up a slot for a new flotilla or raid, with a commander.
+void commission(es.Game game, Flotilla x, []Flotilla fl, int kind, int size, int strength, int at, int day):
+    x.kind = kind
+    x.size = size
+    x.strength = strength
+    x.full = strength
+    x.at = at
+    x.home = at
+    x.goal = at
+    x.target = 0
+    x.siege = 0
+    x.launched = day
+    x.stops = [-1, -1, -1]
+    x.leg = 0
+    x.dwell = 0
+    x.plan = 0
+    x.alerted = 0
+    x.admiral = admirals.pick(game, x.faction, busy(fl, x.faction))
+
+// "Adm. Okafor (bold)", or "" with no commander.
+string commander(es.Game game, Flotilla x):
+    if x.admiral == 0 || !admirals.filled(game, x.faction, x.admiral):
+        return ""
+    return admirals.short_name(game, x.faction, x.admiral) + " (" + admirals.personality_name(game, x.faction, x.admiral) + ")"
+
+// "Admiral Okafor's", "the Republic's", for messages.
+string led_by(es.Game game, Flotilla x):
+    if x.admiral != 0 && admirals.filled(game, x.faction, x.admiral):
+        return admirals.full_name(game, x.faction, x.admiral)
+    return "an unnamed commander"
+
+// ---- The sim score ----
+
+// The pirate fleets a raid from `home` flies as: the home system's own pirate
+// fleets ("Small/Large ... Pirates"), else the core pirates'. [small, large].
+[]string pirate_fleets(es.Game game, int home):
+    string small = ""
+    string large = ""
+    if home >= 0:
+        string s = galaxy.name(home)
+        for k in 0..<game.system_fleet_count(s):
+            string f = game.system_fleet(s, k)
+            if f.contains("Pirate"):
+                if f.contains("Large") && large == "":
+                    large = f
+                else if f.contains("Small") && small == "":
+                    small = f
+    if small == "":
+        small = large if large != "" else factions.small_fleets[factions.pirates()]
+    if large == "":
+        large = small if small != "" else factions.large_fleets[factions.pirates()]
+    return [small, large]
+
+[]string fleets_of(es.Game game, Flotilla x):
+    if x.faction == factions.pirates():
+        return pirate_fleets(game, x.home)
+    return [factions.small_fleets[x.faction], factions.large_fleets[x.faction]]
+
+float quality_of(es.Game game, Flotilla x):
+    []string f = fleets_of(game, x)
+    return quality.side_quality(game, f[0], f[1])
+
+// Strength * quality * the commander's attack.
+float score(es.Game game, Flotilla x):
+    return float(x.strength) * quality_of(game, x) * float(admirals.attack(game, x.faction, x.admiral)) / 100.0
+
+// True with probability a / (a + b).
+bool roll(es.Game game, float a, float b):
+    if a + b <= 0.0:
+        return rng.chance(game, 50)
+    return rng.range(game, 0, 9999) < int(10000.0 * a / (a + b))
+
+// ---- The day ----
+
+// Simulate one day. Answers true if a war started or ended.
+bool day(es.Game game, int day):
+    bool changed = manage_war(game, day)
+    refresh_depth(game)
+    []Flotilla fl = load_all(game)
+    if state.at_war(game):
+        launch(game, day, fl)
+    launch_raid(game, day, fl)
+    move(game, day, fl)
+    battles(game, fl)
+    sieges(game, day, fl)
+    raids(game, day, fl)
+    homecomings(game, fl)
+    save_all(game, fl)
+    garrisons.recover(game, galaxy, day)
+    return changed
+
+// Launch flotillas now, outside the daily step (debug mode, when a war starts).
+void launch_now(es.Game game, int day):
+    if !state.at_war(game):
+        return
+    refresh_depth(game)
+    []Flotilla fl = load_all(game)
+    launch(game, day, fl)
+    save_all(game, fl)
+
+void refresh_depth(es.Game game):
+    for f in 1..=3:
+        if state.enemy_of(game, f) != 0:
+            origin_dist[f] = galaxy.original_distances(game, state, f)
+        else:
+            origin_dist[f] = []
+
+// Whether faction f may capture system i, using today's depth table.
+bool can_take(es.Game game, int f, int i):
+    if f < 1 || f > 3 || i < 0 || origin_dist[f].len() == 0:
+        return false
+    int e = galaxy.owner(game, i)
+    if e == 0 || !state.hostile(game, f, e) || factions.is_capital(galaxy.name(i)):
+        return false
+    int d = origin_dist[f][i]
+    return d >= 0 && d <= tune.max_depth
+
+// The pirates must be hostile to the flotillas, as the flotillas are to them.
+void ensure_pirate_attitudes(es.Game game):
+    if state.get(game, "pirate attitudes") != 0:
+        return
+    state.put(game, "pirate attitudes", 1)
+    string body = "government \"Pirate\"\n\t\"attitude toward\""
+    for f in 1..=3:
+        body = body + "\n\t\t\"" + factions.flotilla_governments[f] + "\" -1"
+    game.change(body)
+
+// ---- Wars ----
+
+bool manage_war(es.Game game, int day):
+    if state.get(game, "force peace") != 0:
+        state.put(game, "force peace", 0)
+        if state.at_war(game):
+            end_war(game, day)
+            return true
+    int forced = state.get(game, "force war")
+    if forced != 0:
+        state.put(game, "force war", 0)
+        int a = forced / 10
+        int b = forced % 10
+        if a >= 1 && a <= 3 && b >= 1 && b <= 3 && a != b:
+            if state.at_war(game):
+                end_war(game, day)
+            start_war(game, a, b, day)
+            return true
+    if state.at_war(game):
+        if day >= state.get(game, "war until"):
+            end_war(game, day)
+            return true
+        return false
+    if day < state.get(game, "next war") || !rng.chance(game, tune.war_chance):
+        return false
+    // Only pairs where at least one side has something it may take.
+    []int pairs = []
+    for a in 1..=3:
+        for b in (a + 1)..=3:
+            if galaxy.targets(game, state, a, b).len() > 0 || galaxy.targets(game, state, b, a).len() > 0:
+                pairs.append(a * 10 + b)
+    if pairs.len() == 0:
+        state.put(game, "next war", day + tune.truce_min_days)
+        return false
+    int pick = pairs[rng.range(game, 0, pairs.len() - 1)]
+    // Either side may be the one declaring.
+    if rng.chance(game, 50):
+        start_war(game, pick / 10, pick % 10, day)
+    else:
+        start_war(game, pick % 10, pick / 10, day)
+    return true
+
+string attitude_body(int f, int g, int value):
+    return "government \"" + factions.flotilla_governments[f] + "\"\n\t\"attitude toward\"\n\t\t\"" + factions.flotilla_governments[g] + "\" " + string(value)
+
+void set_hostile(es.Game game, int a, int b, int value):
+    game.change(attitude_body(a, b, value))
+    game.change(attitude_body(b, a, value))
+
+void start_war(es.Game game, int a, int b, int day):
+    int until = day + rng.range(game, tune.war_min_days, tune.war_max_days)
+    state.set_war(game, a, b, day, until)
+    set_hostile(game, a, b, -1)
+    state.add(game, "stat wars", 1)
+    game.message("War! " + factions.titles[a] + " declared war on " + factions.names[b] + ".")
+    game.log("diplomacy: war between " + factions.governments[a] + " and " + factions.governments[b] + " until day " + string(until))
+
+// The war ends: its flotillas go home (relief flotillas and raids carry on).
+void end_war(es.Game game, int day):
+    int a = state.war_a(game)
+    int b = state.war_b(game)
+    if a == 0:
+        return
+    set_hostile(game, a, b, 0)
+    for x in load_all(game):
+        if x.alive() && x.kind == 0 && (x.faction == a || x.faction == b):
+            x.clear(game)
+    garrisons.clear_all(game)
+    state.set_war(game, 0, 0, 0, 0)
+    state.put(game, "next war", day + rng.range(game, tune.truce_min_days, tune.truce_max_days))
+    state.add(game, "stat truces", 1)
+    game.message(factions.titles[a] + " and " + factions.names[b] + " have agreed to a truce. Their flotillas are going home.")
+    game.log("diplomacy: truce between " + factions.governments[a] + " and " + factions.governments[b])
+
+// ---- Launching war flotillas ----
+
+int size_roll(es.Game game, int small_odds, int medium_odds):
+    int roll = rng.range(game, 0, 99)
+    if roll < small_odds:
+        return 1
+    if roll < small_odds + medium_odds:
+        return 2
+    return 3
+
+void launch(es.Game game, int day, []Flotilla fl):
+    for f in [state.war_a(game), state.war_b(game)]:
+        int e = state.enemy_of(game, f)
+        Flotilla slot = free_slot(fl, f)
+        if slot.faction == 0 || !rng.chance(game, tune.launch_chance):
+            continue
+        []int targets = galaxy.targets(game, state, f, e)
+        if targets.len() == 0:
+            continue
+        // Objectives near the faction's present border are likelier.
+        []int near = galaxy.current_distances(game, f)
+        targets.sort(bool(int x, int y): return rank_near(near, x) < rank_near(near, y))
+        int choices = tune.objective_choices
+        if choices > targets.len():
+            choices = targets.len()
+        int goal = targets[rng.range(game, 0, choices - 1)]
+        int start = nearest_owned(game, f, goal, -1)
+        if start < 0:
+            continue
+        int size = size_roll(game, tune.small_odds, tune.medium_odds)
+        commission(game, slot, fl, 0, size, flotilla_strength(game, f, size), start, day)
+        slot.goal = goal
+        state.add(game, "stat launches", 1)
+        if tune.verbose:
+            game.message("[Diplomacy debug] " + factions.adjectives[f] + " " + factions.sizes[size] + " flotilla under " + led_by(game, slot) + " launched from " + galaxy.name(start) + " toward " + galaxy.name(goal) + ".")
+
+// Test override "diplomacy: force flotilla" = f: launch a medium flotilla of
+// faction f (which must be at war) in the system the player arrives in next.
+// Run from on_enter, before the ships there are spawned.
+void force_flotilla(es.Game game, int day):
+    int f = state.get(game, "force flotilla")
+    if f == 0 || !state.at_war(game):
+        return
+    state.put(game, "force flotilla", 0)
+    int here = galaxy.find(game.here())
+    if f < 1 || f > 3 || here < 0 || state.enemy_of(game, f) == 0:
+        return
+    refresh_depth(game)
+    []int targets = galaxy.targets(game, state, f, state.enemy_of(game, f))
+    if targets.len() == 0:
+        return
+    []int dist = galaxy.distances_one(here)
+    int goal = targets[0]
+    for t in targets:
+        if dist[t] >= 0 && (dist[goal] < 0 || dist[t] < dist[goal]):
+            goal = t
+    []Flotilla fl = load_all(game)
+    Flotilla x = free_slot(fl, f)
+    if x.faction == 0:
+        return
+    commission(game, x, fl, 0, 2, flotilla_strength(game, f, 2), here, day)
+    x.goal = goal
+    state.add(game, "stat launches", 1)
+    save_all(game, fl)
+
+// Test override "diplomacy: force raid" = 1: a medium pirate raid in the
+// system the player arrives in next, staying there three days. Run from
+// on_enter, before the ships there are spawned.
+void force_raid(es.Game game, int day):
+    if state.get(game, "force raid") == 0:
+        return
+    state.put(game, "force raid", 0)
+    int here = galaxy.find(game.here())
+    if here < 0:
+        return
+    []Flotilla fl = load_all(game)
+    Flotilla x = free_slot(fl, factions.pirates())
+    if x.faction == 0:
+        return
+    int home = nearest_pirate_home(game, here)
+    commission(game, x, fl, 2, 2, tune.raid_medium, here, day)
+    x.home = home if home >= 0 else here
+    x.stops = [here, -1, -1]
+    x.leg = 1
+    x.goal = here
+    x.plan = tune.raid_max_dwell
+    state.add(game, "stat raids", 1)
+    save_all(game, fl)
+
+int rank_near([]int near, int i):
+    if near[i] < 0:
+        return 1000000
+    return near[i]
+
+int strength_of(int size):
+    if size == 1:
+        return tune.small_strength
+    if size == 2:
+        return tune.medium_strength
+    return tune.large_strength
+
+// A new flotilla of faction f: the usual strength for its size, scaled up for
+// a faction whose ships are weaker (Quality.fleet_scale).
+int flotilla_strength(es.Game game, int f, int size):
+    return strength_of(size) * quality.fleet_scale(game, f) / 100
+
+int raid_strength(int size):
+    if size == 1:
+        return tune.raid_small
+    if size == 2:
+        return tune.raid_medium
+    return tune.raid_large
+
+// The system faction f owns that is fewest jumps from `goal`, other than
+// `except` if it can; -1 if f owns none.
+int nearest_owned(es.Game game, int f, int goal, int except):
+    []int dist = galaxy.distances_one(goal)
+    int best = -1
+    int bd = 1000000
+    for i in 0..<dist.len():
+        if dist[i] >= 0 && dist[i] < bd && galaxy.owner(game, i) == f && i != except:
+            best = i
+            bd = dist[i]
+    if best < 0 && except >= 0 && galaxy.owner(game, except) == f:
+        return except
+    return best
+
+int nearest_pirate_home(es.Game game, int from):
+    []int dist = galaxy.distances_one(from)
+    int best = -1
+    for h in galaxy.pirate_homes(game):
+        if dist[h] >= 0 && (best < 0 || dist[h] < dist[best]):
+            best = h
+    return best
+
+// ---- Raids setting out ----
+
+// The systems a raid from `home` may visit: inhabited, held by a faction, within reach.
+[]int raid_targets(es.Game game, int home):
+    []int out = []
+    []int dist = galaxy.distances_one(home)
+    for i in 0..<dist.len():
+        if dist[i] >= 1 && dist[i] <= tune.raid_range && galaxy.owner(game, i) != 0 && galaxy.inhabited(game, i):
+            out.append(i)
+    return out
+
+void launch_raid(es.Game game, int day, []Flotilla fl):
+    Flotilla slot = free_slot(fl, factions.pirates())
+    if slot.faction == 0 || !rng.chance(game, tune.raid_chance):
+        return
+    []int homes = galaxy.pirate_homes(game)
+    if homes.len() == 0:
+        return
+    // A few tries for a home with somewhere worth raiding.
+    for attempt in 0..<5:
+        int home = homes[rng.range(game, 0, homes.len() - 1)]
+        []int targets = raid_targets(game, home)
+        if targets.len() < 2:
+            continue
+        int n = rng.range(game, 2, 3)
+        if n > targets.len():
+            n = targets.len()
+        []int picked = []
+        for k in 0..<n:
+            []int left = targets.filter(bool(int t): return !picked.contains(t))
+            picked.append(left[rng.range(game, 0, left.len() - 1)])
+        // Visit them nearest-first, each from the last.
+        []int ordered = []
+        int from = home
+        for k in 0..<n:
+            []int dist = galaxy.distances_one(from)
+            int best = -1
+            for t in picked:
+                if !ordered.contains(t) && (best < 0 || dist[t] < dist[best]):
+                    best = t
+            ordered.append(best)
+            from = best
+        int size = size_roll(game, tune.raid_small_odds, tune.raid_medium_odds)
+        commission(game, slot, fl, 2, size, raid_strength(size), home, day)
+        for k in 0..<ordered.len():
+            slot.stops[k] = ordered[k]
+        slot.leg = 1
+        slot.goal = ordered[0]
+        state.add(game, "stat raids", 1)
+        if tune.verbose:
+            game.message("[Diplomacy debug] " + factions.sizes[size] + " pirate raid under " + led_by(game, slot) + " set out from " + galaxy.name(home) + " for " + galaxy.name(ordered[0]) + ".")
+        return
+
+// ---- Moving ----
+
+void move(es.Game game, int day, []Flotilla fl):
+    for x in fl:
+        if !x.alive():
+            continue
+        // A cautious commander, badly hurt, turns for home.
+        if x.faction != factions.pirates() && x.kind != 3 && admirals.personality(game, x.faction, x.admiral) == 2 && x.strength * 100 < x.full * tune.cautious_retreat:
+            go_home(game, x)
+            state.add(game, "stat retreats", 1)
+        if x.kind == 0:
+            move_war(game, x, fl)
+        else if x.kind == 1:
+            move_relief(game, day, x, fl)
+        else if x.kind == 2:
+            move_raid(game, x, fl)
+        else:
+            step_toward(x, x.home)
+
+void step_toward(Flotilla x, int dest):
+    if dest >= 0 && dest != x.at:
+        x.at = galaxy.next_hop(x.at, dest)
+
+// Done: head for home, and disband on arrival.
+void go_home(es.Game game, Flotilla x):
+    x.kind = 3
+    x.target = 0
+    x.siege = 0
+    if x.home < 0:
+        x.home = nearest_owned(game, x.faction, x.at, -1)
+    if x.home < 0:
+        x.home = x.at
+    x.goal = x.home
+
+void move_war(es.Game game, Flotilla x, []Flotilla fl):
+    int e = state.enemy_of(game, x.faction)
+    if e == 0:
+        go_home(game, x)
+        return
+    []int dist = galaxy.distances_one(x.at)
+    // An objective that can no longer be taken is replaced by the nearest one that can.
+    if !can_take(game, x.faction, x.goal):
+        int best = -1
+        int bd = 1000000
+        for i in galaxy.targets(game, state, x.faction, e):
+            if dist[i] >= 0 && dist[i] < bd:
+                best = i
+                bd = dist[i]
+        if best < 0:
+            go_home(game, x)
+            return
+        x.goal = best
+        x.siege = 0
+    int d_goal = dist[x.goal]
+    int p = admirals.personality(game, x.faction, x.admiral)
+    int reach = tune.bold_reach if p == 1 else 0
+    // The nearest enemy flotilla, if it is nearer than the objective (a bold
+    // commander reaches farther; a cautious one leaves stronger enemies be).
+    int chase = 0
+    int chase_at = -1
+    int cd = 1000000
+    float mine = score(game, x)
+    for y in fl:
+        if !y.alive() || y.faction != e || dist[y.at] < 0 || dist[y.at] >= cd:
+            continue
+        if p == 2 && score(game, y) > mine * 1.2:
+            continue
+        chase = y.code()
+        chase_at = y.at
+        cd = dist[y.at]
+    int dest = x.goal
+    if chase != 0 && (cd < d_goal + reach || d_goal < 0):
+        if x.target != chase:
+            state.add(game, "stat intercepts ordered", 1)
+        x.target = chase
+        dest = chase_at
+    else:
+        x.target = 0
+    if dest != x.at:
+        x.at = galaxy.next_hop(x.at, dest)
+        if x.at != x.goal:
+            x.siege = 0
+        if x.target != 0 && by_code(fl, x.target).at == x.at:
+            state.add(game, "stat interceptions", 1)
+
+void move_relief(es.Game game, int day, Flotilla x, []Flotilla fl):
+    Flotilla y = by_code(fl, x.target)
+    // The raid is gone, home, or has outrun the hunt.
+    if !y.alive() || y.kind != 2 || day - x.launched > tune.relief_days || (y.leg > y.route().len() && y.at == y.home):
+        go_home(game, x)
+        step_toward(x, x.home)
+        return
+    x.goal = y.at
+    if y.at != x.at:
+        x.at = galaxy.next_hop(x.at, y.at)
+        if x.at == y.at:
+            state.add(game, "stat interceptions", 1)
+
+void move_raid(es.Game game, Flotilla x, []Flotilla fl):
+    []int r = x.route()
+    // A cautious captain cuts the raid short when a hunter is in the system.
+    if x.leg <= r.len() && admirals.personality(game, x.faction, x.admiral) == 2:
+        for y in fl:
+            if y.alive() && y.at == x.at && y.faction != x.faction:
+                x.leg = r.len() + 1
+                x.dwell = 0
+                x.plan = 0
+                break
+    if x.leg >= 1 && x.leg <= r.len() && x.at == r[x.leg - 1]:
+        // Staying until the plan is done (raids() counts the days), then on to the next stop.
+        if x.plan == 0 || x.dwell < x.plan:
+            return
+        x.leg += 1
+        x.dwell = 0
+        x.plan = 0
+    int dest = r[x.leg - 1] if x.leg >= 1 && x.leg <= r.len() else x.home
+    x.goal = dest
+    step_toward(x, dest)
+
+// ---- Battles ----
+
+void battles(es.Game game, []Flotilla fl):
+    []int seen = []
+    for x in fl:
+        if !x.alive() || seen.contains(x.at):
+            continue
+        int here = x.at
+        seen.append(here)
+        []int present = []
+        for y in fl:
+            if y.alive() && y.at == here && !present.contains(y.faction):
+                present.append(y.faction)
+        for i in 0..<present.len():
+            for j in (i + 1)..<present.len():
+                if hostile(game, present[i], present[j]):
+                    fight(game, fl, here, present[i], present[j])
+
+// One day of fighting between sides a and b in system `here`.
+void fight(es.Game game, []Flotilla fl, int here, int a, int b):
+    float sa = 0.0
+    float sb = 0.0
+    int pa = 0
+    int pb = 0
+    for y in fl:
+        if y.alive() && y.at == here:
+            if y.faction == a:
+                sa += score(game, y)
+                pa += y.strength
+            else if y.faction == b:
+                sb += score(game, y)
+                pb += y.strength
+    if pa == 0 || pb == 0:
+        return
+    bool a_wins = roll(game, sa, sb)
+    float loss_a = sb * float(tune.battle_rate) / 100.0 * float(tune.win_losses if a_wins else tune.lose_losses) / 100.0 * rng.factor(game, 90, 110)
+    float loss_b = sa * float(tune.battle_rate) / 100.0 * float(tune.lose_losses if a_wins else tune.win_losses) / 100.0 * rng.factor(game, 90, 110)
+    []Flotilla fallen = []
+    for y in fl:
+        if !y.alive() || y.at != here || (y.faction != a && y.faction != b):
+            continue
+        float share = loss_a * float(y.strength) / float(pa) if y.faction == a else loss_b * float(y.strength) / float(pb)
+        damage(y, int(share * float(admirals.damage_taken(game, y.faction, y.admiral)) / 100.0))
+        if !y.alive():
+            fallen.append(y)
+    state.add(game, "stat battles", 1)
+    if a == factions.pirates() || b == factions.pirates():
+        state.add(game, "stat pirate battles", 1)
+    // A side wiped out here: the other side's commanders have a victory.
+    for side in [a, b]:
+        bool left = false
+        for y in fl:
+            if y.alive() && y.at == here && y.faction == side:
+                left = true
+        if !left:
+            int winner = b if side == a else a
+            for y in fl:
+                if y.alive() && y.at == here && y.faction == winner:
+                    admirals.add_win(game, y.faction, y.admiral)
+    for y in fallen:
+        lost(game, y)
+    if galaxy.name(here) == game.here():
+        game.message(fight_message(game, a, b))
+
+string side_name(int side):
+    return "pirate raiders" if side == factions.pirates() else factions.adjectives[side] + " flotillas"
+
+string fight_message(es.Game game, int a, int b):
+    return "Battle in this system: " + side_name(a) + " against " + side_name(b) + "."
+
+void damage(Flotilla x, int amount):
+    x.strength -= amount
+    if x.strength < tune.destroy_below:
+        x.strength = 0
+
+// A flotilla or raid was destroyed: its commander may have fallen with it.
+void lost(es.Game game, Flotilla x):
+    string who = led_by(game, x)
+    bool died = x.admiral != 0 && admirals.fallen(game, x.faction, x.admiral)
+    if x.faction == factions.pirates():
+        state.add(game, "stat raids destroyed", 1)
+    else:
+        state.add(game, "stat flotillas destroyed", 1)
+    int m = state.member(game)
+    bool tell = tune.verbose || (m != 0 && (x.faction == m || hostile(game, m, x.faction)))
+    if died && tell && who != "an unnamed commander":
+        game.message(who + " (" + (factions.names[x.faction]) + ") fell with " + ("their raiders" if x.faction == factions.pirates() else "their flotilla") + ".")
+
+// ---- Sieges ----
+
+void sieges(es.Game game, int day, []Flotilla fl):
+    for x in fl:
+        if !x.alive() || x.kind != 0 || x.target != 0 || x.at != x.goal:
+            continue
+        bool contested = false
+        for y in fl:
+            if y.alive() && y.at == x.at && hostile(game, x.faction, y.faction):
+                contested = true
+        if contested || !can_take(game, x.faction, x.goal):
+            continue
+        int owner = galaxy.owner(game, x.goal)
+        int full = galaxy.full_garrison(game, x.goal)
+        int hp = garrisons.hp(game, x.goal, full)
+        if garrisons.find(game, x.goal) == 0:
+            state.add(game, "stat sieges", 1)
+            if tune.verbose:
+                game.message("[Diplomacy debug] " + factions.adjectives[x.faction] + " flotilla under " + led_by(game, x) + " laying siege to " + galaxy.name(x.goal) + ".")
+        // The day's winner, by score: the flotilla's against the garrison's.
+        float qg = quality.garrison_quality(game, galaxy.name(x.goal), owner)
+        float sx = score(game, x)
+        bool wins = roll(game, sx, float(hp) * qg)
+        int hit = int(sx * float(tune.siege_attack) / 100.0 * float(admirals.siege(game, x.faction, x.admiral)) / 100.0 * float(tune.lose_losses if wins else tune.win_losses) / 100.0 * rng.factor(game, 90, 110))
+        int back = int(float(hp) * qg * float(tune.siege_defense) / 100.0 * float(admirals.damage_taken(game, x.faction, x.admiral)) / 100.0 * float(tune.win_losses if wins else tune.lose_losses) / 100.0 * rng.factor(game, 90, 110))
+        if hit > full * tune.siege_max_per_day / 100:
+            hit = full * tune.siege_max_per_day / 100
+        hp -= hit
+        x.siege += 1
+        if hp <= 0 && x.siege < tune.min_siege_days:
+            hp = 1
+        damage(x, back)
+        if !x.alive():
+            lost(game, x)
+            garrisons.set(game, x.goal, hp if hp > 0 else 1, day)
+            continue
+        if hp <= 0:
+            garrisons.set(game, x.goal, 0, day)
+            capture(game, day, x.faction, x.goal)
+            admirals.add_win(game, x.faction, x.admiral)
+            x.siege = 0
+        else:
+            garrisons.set(game, x.goal, hp, day)
+
+// Faction f takes system i: the real government changes, and the original owner is remembered.
+void capture(es.Game game, int day, int f, int i):
+    int loser = galaxy.owner(game, i)
+    string name = galaxy.name(i)
+    int start = garrisons.start(game, i)
+    int origin = state.origin(game, i)
+    if origin == 0:
+        state.set_origin(game, i, loser)
+    else if origin == f:
+        state.set_origin(game, i, 0)
+    game.change("system \"" + name + "\"\n\tgovernment \"" + factions.governments[f] + "\"")
+    garrisons.release(game, i)
+    state.add(game, "stat captures", 1)
+    state.add(game, "stat captured by " + string(f), 1)
+    if start >= 0:
+        state.add(game, "stat siege days", day - start + 1)
+        state.add(game, "stat timed sieges", 1)
+    game.message(factions.titles[f] + " captured " + name + " from " + factions.names[loser] + ".")
+    game.log("diplomacy: " + factions.governments[f] + " captured " + name + " from " + factions.governments[loser])
+
+// ---- Raids at their stops ----
+
+// Raids arriving at a stop make a plan, alert the owner (who may send relief),
+// and plunder the garrison each day they stay unopposed.
+void raids(es.Game game, int day, []Flotilla fl):
+    for x in fl:
+        if !x.alive() || x.kind != 2:
+            continue
+        []int r = x.route()
+        if x.leg < 1 || x.leg > r.len() || x.at != r[x.leg - 1]:
+            continue
+        int stop = x.at
+        int owner = galaxy.owner(game, stop)
+        if x.plan == 0:
+            bool methodical = admirals.personality(game, x.faction, x.admiral) == 3
+            x.plan = tune.raid_max_dwell if methodical else rng.range(game, 1, tune.raid_max_dwell)
+            x.dwell = 0
+            if owner != 0:
+                alert(game, day, x, fl, stop, owner)
+        bool opposed = false
+        for y in fl:
+            if y.alive() && y.at == stop && y.faction != x.faction:
+                opposed = true
+        x.dwell += 1
+        if opposed || owner == 0:
+            continue
+        int full = galaxy.full_garrison(game, stop)
+        int hp = garrisons.hp(game, stop, full)
+        int hit = int(score(game, x) * float(tune.plunder_rate) / 100.0 * float(admirals.siege(game, x.faction, x.admiral)) / 100.0)
+        // Plunder weakens a garrison but never takes the system.
+        hp -= hit
+        if hp < 1:
+            hp = 1
+        garrisons.set(game, stop, hp, day)
+        state.add(game, "stat plunder days", 1)
+        if galaxy.name(stop) == game.here():
+            game.message("Pirates under " + led_by(game, x) + " are raiding this system.")
+
+int bit(int f):
+    if f == 1:
+        return 1
+    if f == 2:
+        return 2
+    return 4
+
+// The raid reached faction f's system: f decides, once per raid, whether to send relief.
+void alert(es.Game game, int day, Flotilla raid, []Flotilla fl, int stop, int f):
+    if (raid.alerted / bit(f)) % 2 == 1:
+        return
+    raid.alerted += bit(f)
+    int m = state.member(game)
+    if m == f:
+        game.message("Pirates under " + led_by(game, raid) + " are raiding " + galaxy.name(stop) + ", in " + factions.names[f] + "'s space.")
+    for y in fl:
+        if y.alive() && y.faction == f && y.kind == 1 && y.target == raid.code():
+            return
+    int chance = tune.relief_chance_war if state.enemy_of(game, f) != 0 else tune.relief_chance
+    if !rng.chance(game, chance):
+        return
+    Flotilla slot = free_slot(fl, f)
+    if slot.faction == 0:
+        return
+    int start = nearest_owned(game, f, stop, stop)
+    if start < 0:
+        return
+    commission(game, slot, fl, 1, raid.size, flotilla_strength(game, f, raid.size), start, day)
+    slot.target = raid.code()
+    slot.goal = stop
+    state.add(game, "stat reliefs", 1)
+    if m == f || tune.verbose:
+        game.message(factions.titles[f] + " sends " + led_by(game, slot) + " with a " + factions.sizes[slot.size] + " flotilla from " + galaxy.name(start) + " to hunt the raiders.")
+
+// ---- Homecomings ----
+
+void homecomings(es.Game game, []Flotilla fl):
+    for x in fl:
+        if !x.alive():
+            continue
+        if x.kind == 3 && x.at == x.home:
+            state.add(game, "stat returned home", 1)
+            x.strength = 0
+        else if x.kind == 2 && x.leg > x.route().len() && x.at == x.home:
+            admirals.add_win(game, x.faction, x.admiral)
+            state.add(game, "stat raids completed", 1)
+            x.strength = 0

@@ -1,0 +1,17 @@
+class Shelf
+
+// One hull model at one planet's shipyard: how many it has, how many it
+// wants (its target, from the hull's class), and how many are on order.
+// The market's count is the truth: it is pushed to the game's shipyard on
+// landing (Game.set_ship_stock) and read back after, to see what the player
+// bought or sold there. Saved in Market's "s|" records (target excepted).
+// Change count and onorder only through Market (set_count, or touch after),
+// which caches each planet's encoded record.
+
+string planet = ""
+string model = ""
+// The model's row in the hull table.
+int row = -1
+int count = 0
+int target = 0
+int onorder = 0

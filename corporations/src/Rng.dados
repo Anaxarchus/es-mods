@@ -1,0 +1,42 @@
+class Rng
+
+// A deterministic random number generator (Park-Miller, the "minimal standard"
+// LCG). DadoScript has no random function; the state is saved with the market,
+// so a reloaded pilot's market plays out the same way.
+
+int modulus = 2147483647
+int state = 1
+
+void seed(int s):
+    state = s % modulus
+    if state <= 0:
+        state = state + modulus - 1
+    if state <= 0:
+        state = 1
+
+int next():
+    state = state * 48271 % modulus
+    return state
+
+// An integer in [lo, hi].
+int range(int lo, int hi):
+    if hi <= lo:
+        return lo
+    return lo + next() % (hi - lo + 1)
+
+// True with the given chance in percent.
+bool chance(float percent):
+    return unit() * 100.0 < percent
+
+// A float in [0, 1).
+float unit():
+    return float(next() - 1) / float(modulus - 1)
+
+// A float in [lo, hi).
+float between(float lo, float hi):
+    return lo + (hi - lo) * unit()
+
+// About a standard normal draw: the sum of four uniform draws, rescaled.
+float gauss():
+    float sum = unit() + unit() + unit() + unit()
+    return (sum - 2.0) * 1.7320508

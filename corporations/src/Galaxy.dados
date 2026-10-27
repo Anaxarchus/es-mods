@@ -1,0 +1,94 @@
+class Galaxy
+
+import "imports:sdk/es"
+
+// Human space as the market sees it, read from the game once a session:
+// systems held by human governments, their lanes, the planets with a bank, and
+// the planets with a shipyard.
+// Who holds a system is read live (system_government), since wars and the
+// story change it.
+
+[]string human = ["Republic", "Free Worlds", "Syndicate", "Pirate", "Independent", "Militia"]
+// The governments that issue contracts, as Diplomacy numbers its factions 1..3.
+[]string powers = ["", "Republic", "Free Worlds", "Syndicate"]
+
+bool built = false
+[]string systems = []
+{string: int} index = {}
+[][]int links = []
+// Planets with a bank, and each one's system.
+[]string planets = []
+{string: string} planet_system = {}
+// Planets in human space (systems held by a human government) whose shipyards
+// sell ships (Mod API 9), as the session began: the only shipyards the market
+// stocks. Any other shipyard, alien or human, stays untracked (unlimited). A
+// planet that gains a shipyard during a session is stocked from the next one.
+[]string yards = []
+{string: bool} is_yard = {}
+// Systems with at least one bank planet, and the first such planet in each.
+[]string served = []
+{string: string} system_planet = {}
+// Jumps from a system to every other (-1 = not reachable), by source.
+{string: []int} distances = {}
+
+void build(es.Game game):
+    if built:
+        return
+    built = true
+    for i in 0..<game.system_count():
+        string s = game.system_at(i)
+        if human.contains(game.system_government(s)):
+            index[s] = systems.len()
+            systems.append(s)
+    for s in systems:
+        []int out = []
+        for k in 0..<game.link_count(s):
+            string l = game.link(s, k)
+            if index.has(l):
+                out.append(index[l])
+        links.append(out)
+        bool any = false
+        for k in 0..<game.planet_count(s):
+            string p = game.planet_at(s, k)
+            if game.shipyard_count(p) > 0:
+                yards.append(p)
+                is_yard[p] = true
+            if game.planet_service(p, "bank"):
+                planets.append(p)
+                planet_system[p] = s
+                if !any:
+                    system_planet[s] = p
+                any = true
+        if any:
+            served.append(s)
+
+// The system a planet is in, from what was read, or from the game.
+string system_of(es.Game game, string planet):
+    if planet_system.has(planet):
+        return planet_system[planet]
+    return game.planet_system(planet)
+
+// Jumps from one system to another, or -1.
+int jumps(string from, string to):
+    if !index.has(from) || !index.has(to):
+        return -1
+    if !distances.has(from):
+        distances[from] = bfs(index[from])
+    []int d = distances[from]
+    return d[index[to]]
+
+[]int bfs(int start):
+    []int dist = []
+    for i in 0..<systems.len():
+        dist.append(-1)
+    dist[start] = 0
+    []int queue = [start]
+    int head = 0
+    for head < queue.len():
+        int at = queue[head]
+        head += 1
+        for next in links[at]:
+            if dist[next] < 0:
+                dist[next] = dist[at] + 1
+                queue.append(next)
+    return dist

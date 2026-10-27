@@ -1,0 +1,33 @@
+class Names
+
+// The sectors, the canonical companies (from the game's own data), and the
+// words invented companies are named from.
+
+[]string sectors = ["Shipbuilding", "Outfits and systems", "Engines", "Electronics", "Consumer goods", "Mining", "Freight", "Security"]
+[]string sector_short = ["Ships", "Outfits", "Engines", "Electr.", "Consumer", "Mining", "Freight", "Security"]
+
+// The canonical companies: name, home planet, sector, and capacity (work a day).
+[]string canon_names = ["Betelgeuse Shipyards", "Gemini Shipyards", "Lionheart Industries", "Southbound Shipyards", "Syndicated Shipyards", "Tarazed Corporation", "Tycho Crater Shipyards", "Deep Sky", "Lovelace Labs", "Syndicated Systems", "Delta V Corporation", "Kraz Cybernetics", "Polymath Nanoinstruments", "Megaparsec Incorporated", "Poseidon Industries"]
+[]string canon_homes = ["Prime", "Geminus", "Valhalla", "Zug", "Foundry", "Wayfarer", "Luna", "Asgard", "Ada", "Hephaestus", "Solace", "Rust", "Vinci", "Earth", "Deep"]
+[]int canon_sectors = [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 3, 3, 4, 4]
+[]float canon_capacity = [14.0, 12.0, 11.0, 15.0, 20.0, 16.0, 12.0, 13.0, 11.0, 16.0, 13.0, 14.0, 11.0, 18.0, 10.0]
+
+// How many invented companies each sector starts with (25 in all).
+[]int invented_start = [1, 2, 3, 3, 3, 4, 5, 4]
+
+[]string prefixes = ["Corvid", "Vantage", "Bellwether", "Halcyon", "Meridian", "Orrery", "Kestrel", "Tamarisk", "Ironbark", "Lodestar", "Aldane", "Brightwater", "Cassini", "Dunmore", "Everline", "Farrow", "Galloway", "Harrowgate", "Isher", "Juniper", "Kellerman", "Larkspur", "Mercator", "Northgate", "Osprey", "Peregrine", "Quillon", "Rookwood", "Sable", "Thornfield", "Umber", "Vireo", "Wrenfield", "Yardley", "Zephyr", "Ashgrove", "Blackwater", "Coldharbour", "Driftwood", "Emberline", "Foxglove", "Greyhaven", "Highmoor", "Ironside", "Kingfisher", "Longreach", "Marchbank", "Nightjar", "Oakhurst", "Pellucid", "Redfern", "Saltire", "Tidewater", "Underhill", "Valemont", "Westmark", "Starling", "Covenant", "Lanthorn", "Arbiter"]
+[][]string suffixes = [["Shipworks", "Yards", "Drydocks", "Hullwrights"], ["Systems", "Instruments", "Arms", "Ordnance"], ["Propulsion", "Drives", "Thrust", "Engineworks"], ["Electronics", "Logic", "Photonics", "Signals"], ["Provisions", "Foods", "Goods", "Commodities"], ["Ore", "Mining", "Minerals", "Extraction"], ["Haulage", "Freight", "Lines", "Transit"], ["Security", "Guard", "Escort", "Watch"]]
+
+// A name for a new company in `sector`, not among `used`.
+string invent(Rng rng, int sector, []string used):
+    []string ends = suffixes[sector]
+    for attempt in 0..<60:
+        string name = prefixes[rng.range(0, prefixes.len() - 1)] + " " + ends[rng.range(0, ends.len() - 1)]
+        if !used.contains(name):
+            return name
+    // Every pairing taken: number them.
+    int n = 2
+    string base = prefixes[rng.range(0, prefixes.len() - 1)] + " " + ends[0]
+    for used.contains(base + " " + string(n)):
+        n += 1
+    return base + " " + string(n)

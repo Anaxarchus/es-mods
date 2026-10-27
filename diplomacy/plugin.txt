@@ -1,0 +1,13 @@
+name "Diplomacy"
+version "0.1.0"
+authors
+	"Anaxarchus"
+tags
+	"gameplay"
+	"factions"
+	"scripting"
+about "Lightweight diplomacy for after the Free Worlds campaign. Now and then the Republic, the Free Worlds or the Syndicate go to war with one another and send flotillas of various sizes to take each other's border systems."
+about "Flotillas and sieges are shown on the map. Fly to a flotilla's system and you will find it there, and fight beside it or against it: what you destroy is gone from the war. A siege takes several days, so an enemy flotilla a few jumps away can still arrive in time to break it."
+about "Capitals are never taken, and no border moves more than two jumps past where it started, so no faction is ever wiped out. When a war ends in a truce, the borders stay where it left them."
+about `Land in any system a faction holds and press "Faction" to see its wars and flotillas, and to join or leave it. Members are allies of their faction's flotillas and enemies of its enemies' flotillas. They earn merit for enemy ships destroyed and for faction dispatch jobs, rise in rank, and draw a salary that grows with rank.`
+about "It needs the Dado mod loader in the game's modloaders folder. Without it only its data loads, and nothing happens."

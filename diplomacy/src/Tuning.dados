@@ -1,0 +1,170 @@
+class Tuning
+
+// Every number the diplomacy simulation is tuned by, in one place. Strengths
+// are in "points": a small flotilla is about 70, a large one about 250. Days are
+// game days. Chances are per day, in percent.
+//
+// DadoScript has no class constants yet, so these are fields of one shared
+// instance (Diplomacy.tune).
+
+// ---- Wars ----
+// Days after activation before the first war may start.
+int first_war_min = 5
+int first_war_max = 20
+// Chance per day that a war starts while no war is running and no truce holds.
+int war_chance = 4
+// How long a war lasts, and the truce after it, in days.
+int war_min_days = 30
+int war_max_days = 70
+int truce_min_days = 40
+int truce_max_days = 120
+
+// ---- Flotillas ----
+// Flotilla slots per faction: at most this many flotillas at once.
+int max_flotillas = 3
+// Chance per day that a faction at war launches a flotilla into a free slot.
+int launch_chance = 30
+// Strength of a new flotilla of each size (1 small, 2 medium, 3 large).
+int small_strength = 70
+int medium_strength = 140
+int large_strength = 250
+// Chance (percent) of each size at launch: small, medium, else large.
+int small_odds = 40
+int medium_odds = 35
+// Objectives are drawn from the nearest this many capturable systems.
+int objective_choices = 4
+// A flotilla weaker than this is destroyed (scattered).
+int destroy_below = 20
+
+// ---- Battles between flotillas ----
+// Each side loses this percentage of the other side's strength per day,
+// times a random factor of 75%..125%.
+int battle_rate = 35
+
+// ---- Sieges ----
+// A garrison's full strength: base + defense fleet value / unit, capped.
+int garrison_base = 140
+int garrison_unit = 1000000
+int garrison_cap = 260
+// Per day, the garrison loses siege_attack% of the besiegers' strength and the
+// besiegers lose siege_defense% of the garrison's, times a random factor.
+int siege_attack = 18
+int siege_defense = 6
+// A garrison never loses more than this percent of its full strength in a day,
+// so a siege always takes a few days, whoever brings how much.
+int siege_max_per_day = 40
+// And no system falls before its besiegers have spent this many days at it,
+// even one whose garrison raids have already worn down.
+int min_siege_days = 2
+// A garrison not under siege recovers this percentage of its full strength per day.
+int garrison_recovery = 10
+// Garrison bookkeeping slots (systems damaged at once).
+int garrison_slots = 12
+// The border never moves more than this many jumps past a faction's original territory.
+int max_depth = 2
+
+// ---- In person ----
+// Points a spawned fleet stands for: a "Large <faction>" and a "Small <faction>".
+int large_fleet_points = 100
+int small_fleet_points = 40
+// At most this many fleets per flotilla, and defense fleets per garrison.
+int max_spawn_fleets = 6
+int max_defense_fleets = 4
+// Engine steps between syncs of what the player sees with the simulation.
+int sync_steps = 60
+
+// ---- The player ----
+// Merit per enemy ship destroyed or disabled; merit lost per own ship.
+int merit_per_kill = 1
+int merit_per_friendly_kill = 3
+// Daily salary by rank, Recruit to Admiral: a curve, not a straight line.
+// Commodore matches the 8,900 a day the Free Worlds pay at the end of their
+// campaign, the rank a campaign veteran joins them at.
+[]int salaries = [200, 600, 1800, 3600, 6000, 8900, 12000]
+// The rank (5 Commodore) a pilot who finished the Free Worlds campaign holds
+// in the Free Worlds when they turn Diplomacy on.
+int veteran_rank = 5
+// Reputation with the flotilla governments.
+float rep_own = 10.0
+float rep_enemy = -10.0
+float rep_neutral = 1.0
+
+// ---- Commanders ----
+// Each side (the three factions and the pirates) keeps this many named
+// commanders; a flotilla or raid is led by one who is free.
+int admirals_per_side = 5
+// Chance (percent) that a commander dies when their flotilla is destroyed.
+int admiral_death_chance = 50
+// Personalities (1 bold, 2 cautious, 3 methodical, 4 reckless), in percent:
+// how hard their side hits, and how much damage it takes.
+int bold_attack = 120
+int reckless_attack = 135
+int cautious_damage = 80
+int reckless_damage = 125
+// Methodical commanders press sieges (and pirate plunder) this much harder.
+int methodical_siege = 130
+// A cautious commander turns for home below this percent of their starting strength.
+int cautious_retreat = 40
+// A bold commander chases enemies up to this many jumps farther than its objective.
+int bold_reach = 2
+
+// ---- Sim score ----
+// Battles and sieges roll a winner each day with odds score_a : score_b. A
+// side's score is its strength times its quality (from its fleets' hull,
+// shields, damage per second and speed; an average fleet is 1.0) times its
+// commander's personality. The day's winner takes win_losses% of the usual
+// losses and the loser lose_losses%.
+int win_losses = 60
+int lose_losses = 140
+// Speed counts this much: quality is scaled by (speed / average speed) to this
+// power, in percent (50 = the square root).
+int speed_weight = 50
+// Fleet sizes make up most of the factions' difference in ship quality: a
+// faction whose fleets are weaker per strength point fields bigger flotillas,
+// enough to reach this percent of the best faction's power, so the best (the
+// Republic, with the base game's fleets) keeps an edge. Never more than
+// max_fleet_scale percent of the usual size, and never smaller than usual.
+int balance_target = 85
+int max_fleet_scale = 250
+
+// ---- Pirate raids ----
+// Raids out at once, and the chance per day that a new one sets out.
+int max_raids = 4
+int raid_chance = 12
+// A raid visits 2-3 inhabited faction systems within this many jumps of home,
+// staying 1..raid_max_dwell days at each, then goes home.
+int raid_range = 4
+int raid_max_dwell = 3
+// Strength of a small, medium and large raid, and the odds of each (small, medium; else large).
+int raid_small = 60
+int raid_medium = 110
+int raid_large = 180
+int raid_small_odds = 50
+int raid_medium_odds = 35
+// Each day at a stop, the system's garrison loses this percent of the raid's score.
+int plunder_rate = 8
+// When a raid reaches a faction's system, the chance (percent) that the faction
+// sends a relief flotilla after it: at peace, and while at war.
+int relief_chance = 60
+int relief_chance_war = 10
+// A relief flotilla gives up the hunt after this many days.
+int relief_days = 12
+// Merit for each raider the player destroys (members only).
+int merit_per_pirate_kill = 1
+
+// ---- Debug mode ----
+// Turned on by enabling the "Diplomacy Debug" plugin (tools/deploy-debug.mjs). The
+// mod activates on any pilot from day 0, gives the Free Worlds their wartime
+// territory if they hold none yet, keeps the Republic and the Free Worlds at
+// war, launches a flotilla whenever a slot is free, and messages each launch
+// and siege so there is always something to watch. Once per pilot it also
+// reveals the whole map and adds debug_credits to the account.
+string debug_plugin = "Diplomacy Debug"
+int debug_launch_chance = 100
+int debug_truce_days = 3
+int debug_raid_chance = 60
+// Credits given once per pilot in debug mode.
+int debug_credits = 100000000
+// Set while debug mode is on: message launches and sieges.
+bool verbose = false
+

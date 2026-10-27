@@ -1,0 +1,94 @@
+class Factions
+
+// The three factions, indexed 1..3 (0 means none):
+//   1 the Republic, 2 the Free Worlds, 3 the Syndicate.
+// Index 4 is the pirates: not a faction (they hold no territory to take and
+// cannot be joined), but a side whose raids and commanders the simulation runs
+// like the factions' flotillas. Loops over the factions run 1..3; loops over
+// every side run 1..sides().
+// Their real governments, capitals, fleets, colours, and the flotilla
+// governments this mod's plugin defines (data/diplomacy.txt).
+
+[]string governments = ["", "Republic", "Free Worlds", "Syndicate", "Pirate"]
+[]string names = ["", "the Republic", "the Free Worlds", "the Syndicate", "the pirates"]
+[]string titles = ["", "The Republic", "The Free Worlds", "The Syndicate", "The pirates"]
+[]string adjectives = ["", "Republic", "Free Worlds", "Syndicate", "Pirate"]
+[]string capitals = ["", "Sol", "Gamma Corvi", "Markab", ""]
+// The government each side's ships fly under; pirates fly as the real pirates.
+[]string flotilla_governments = ["", "Republic Flotilla", "Free Worlds Flotilla", "Syndicate Flotilla", "Pirate"]
+// Pirates use their home system's own pirate fleets; these are the fallback.
+[]string small_fleets = ["", "Small Republic", "Small Free Worlds", "Small Syndicate", "Small Core Pirates"]
+[]string large_fleets = ["", "Large Republic", "Large Free Worlds", "Large Syndicate", "Large Core Pirates"]
+[]float red = [1.0, 0.91, 0.06, 0.0, 0.85]
+[]float green = [1.0, 0.42, 0.68, 0.41, 0.2]
+[]float blue = [1.0, 0.09, 0.0, 0.71, 0.6]
+[]string sizes = ["", "small", "medium", "large"]
+// The systems the campaign's "war begins" event gives the Free Worlds; debug
+// mode hands them over on a pilot that has not reached the war yet.
+[]string free_worlds_territory = ["Gamma Corvi", "Spica", "Minkar", "Acrux", "Mimosa", "Kraz", "Izar", "Zeta Centauri", "Hadar", "Alkaid", "Zubeneschamali", "Kochab", "Ildaria", "Zubenelgenubi", "Sabik", "Unukalhai", "Kornephoros", "Sargas", "Lesath", "Aldhibain", "Dschubba", "Atria", "Alniyat", "Han", "Pherkad", "Yed Prior", "Beta Lupi", "Kappa Centauri"]
+// The ranks a member climbs, and the merit each needs.
+[]string ranks = ["Recruit", "Ensign", "Lieutenant", "Commander", "Captain", "Commodore", "Admiral"]
+[]int rank_merit = [0, 10, 25, 50, 100, 200, 400]
+
+// Licenses a faction issues its members at a rank, kept after leaving, as
+// licenses are. Only the Republic issues any: its Navy licenses.
+[]int license_faction = [1, 1, 1, 1]
+[]int license_rank = [2, 4, 5, 6]
+[]string licenses = ["Navy", "Navy Auxiliary", "Navy Cruiser", "Navy Carrier"]
+
+int count():
+    return 3
+
+// Every side the simulation runs: the three factions and the pirates.
+int sides():
+    return 4
+
+int pirates():
+    return 4
+
+// Commanders: each side's rank title (and its short form), and the surnames
+// its commanders are drawn from.
+[]string commander_titles = ["", "Admiral", "Commodore", "Director", "Captain"]
+[]string commander_short = ["", "Adm.", "Cdre.", "Dir.", "Capt."]
+[][]string surnames = [[], ["Okafor", "Lindqvist", "Harrow", "Castellano", "Whitfield", "Ishikawa", "Mbeki", "Duarte", "Kowalczyk", "Ferreira", "Nakamura", "Ashworth", "Delacroix", "Sato", "Brennan", "Vasquez"], ["Rourke", "Tamsin", "Adeyemi", "Cho", "Halvorsen", "Mercado", "Ndiaye", "Quill", "Barros", "Lund", "Petrov", "Abara", "Kestrel", "Ito", "Calloway", "Navarro"], ["Vance", "Sterling", "Holloway", "Mercer", "Kaine", "Ashford", "Thorne", "Lockwood", "Pryce", "Gallagher", "Sinclair", "Weston", "Hale", "Crane", "Marlowe", "Steele"], ["Black", "Varga", "Kurtz", "Grim", "Sable", "Rook", "Mallory", "Teague", "Vex", "Hask", "Drago", "Cutter", "Brand", "Kincaid", "Morrow", "Slate"]]
+// Personalities, 1..4.
+[]string personalities = ["", "bold", "cautious", "methodical", "reckless"]
+
+// The faction whose real government this is, or 0.
+int of_government(string government):
+    for f in 1..=3:
+        if governments[f] == government:
+            return f
+    return 0
+
+bool is_capital(string system):
+    for f in 1..=3:
+        if capitals[f] == system:
+            return true
+    return false
+
+// The rank merit earns: 0 (Recruit) .. 6 (Admiral).
+int rank_of(int merit):
+    int r = 0
+    for k in 0..<rank_merit.len():
+        if merit >= rank_merit[k]:
+            r = k
+    return r
+
+// Merit needed for the next rank, or -1 at the top.
+int next_rank_merit(int rank):
+    if rank + 1 < rank_merit.len():
+        return rank_merit[rank + 1]
+    return -1
+
+// The tag prefix of every ship this mod spawns for faction f.
+string tag_prefix(int f):
+    return "diplomacy:" + string(f) + ":"
+
+// The condition the game pays a member's salary through. For the Free Worlds
+// it is the campaign's own "salary: Free Worlds", so a pilot who finished the
+// campaign keeps one salary, set by rank, and not two.
+string salary_key(int f):
+    if f == 2:
+        return "salary: Free Worlds"
+    return "salary: " + adjectives[f] + " commission"

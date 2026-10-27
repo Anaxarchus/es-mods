@@ -1,0 +1,87 @@
+class State
+
+import "imports:sdk/es"
+
+// The mod's saved state: the player's conditions, all prefixed "diplomacy: ".
+// Conditions are saved with the pilot, so loading another pilot brings its
+// own state. Nothing here is cached; every read goes to the game. Systems are
+// stored as their index in game.system_at plus one, so 0 means none.
+//
+// Keys (see README.md for the full list):
+//   active, rng, last day                      activation, random state, last simulated day
+//   war a, war b, war since, war until         the war (factions 1..3, 0 = peace)
+//   at war <f>                                 1 while faction f is at war (for missions)
+//   next war                                   no war starts before this day
+//   flotilla <f>.<s> <field>                   flotilla slot s of faction f
+//   garrison <k> <field>                       garrison slot k (a damaged system)
+//   origin <system>                            original owner of a captured system
+//   member, merit, rank                        the player
+//   stat <name>                                running statistics
+//   force active, force war, force peace       test overrides
+
+string prefix = "diplomacy: "
+
+int get(es.Game game, string key):
+    return game.condition(prefix + key)
+
+void put(es.Game game, string key, int value):
+    game.set_condition(prefix + key, value)
+
+void add(es.Game game, string key, int delta):
+    put(game, key, get(game, key) + delta)
+
+// ---- Wars ----
+
+int war_a(es.Game game):
+    return get(game, "war a")
+
+int war_b(es.Game game):
+    return get(game, "war b")
+
+bool at_war(es.Game game):
+    return war_a(game) != 0
+
+// True if factions f and g are at war with each other.
+bool hostile(es.Game game, int f, int g):
+    int a = war_a(game)
+    int b = war_b(game)
+    if a == 0 || f == g:
+        return false
+    return (f == a && g == b) || (f == b && g == a)
+
+// The faction f is at war with, or 0.
+int enemy_of(es.Game game, int f):
+    int a = war_a(game)
+    int b = war_b(game)
+    if a == 0:
+        return 0
+    if f == a:
+        return b
+    if f == b:
+        return a
+    return 0
+
+void set_war(es.Game game, int a, int b, int since, int until):
+    put(game, "war a", a)
+    put(game, "war b", b)
+    put(game, "war since", since)
+    put(game, "war until", until)
+    for f in 1..=3:
+        put(game, "at war " + string(f), 1 if (f == a || f == b) && a != 0 else 0)
+
+// ---- Origins ----
+
+// The original owner (1..3) recorded for a captured system, or 0.
+int origin(es.Game game, int system):
+    return get(game, "origin " + string(system + 1))
+
+void set_origin(es.Game game, int system, int faction):
+    put(game, "origin " + string(system + 1), faction)
+
+// ---- The player ----
+
+int member(es.Game game):
+    return get(game, "member")
+
+int merit(es.Game game):
+    return get(game, "merit")

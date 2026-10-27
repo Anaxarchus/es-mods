@@ -1,0 +1,159 @@
+class Quality
+
+// The sim score: how much a point of strength is worth in a fight, by what the
+// points stand for in ships. A fleet's value comes from its ships' real stats
+// (game.fleet_stat, mod API 3):
+//
+//   value = sqrt((hull + shields) * dps) * (speed / average speed) ^ speed_weight
+//
+// that is, how long it lasts times how hard it hits, with a bonus for being
+// fast. A side's quality is the value per strength point of the fleets it
+// spawns as (a "Large" fleet stands for tune.large_fleet_points, a "Small" one
+// for tune.small_fleet_points), divided by the average over the three factions,
+// so an average fleet has quality 1.0. A score is strength * quality * the
+// commander's personality.
+//
+// Values are worked out once per fleet and kept for the session; nothing here
+// is saved.
+
+import "imports:sdk/es"
+
+Tuning tune = Tuning()
+Factions factions = Factions()
+
+{string: float} values = {}
+{string: float} speeds = {}
+// The average value per point over the three factions' fleets, and their average speed.
+float norm = 0.0
+float average_speed = 0.0
+
+void wire(Tuning t, Factions f):
+    tune = t
+    factions = f
+
+float sqrt(float x):
+    if x <= 0.0:
+        return 0.0
+    float r = globalThis.Math.sqrt(x)
+    return r
+
+float power(float x, float p):
+    if x <= 0.0:
+        return 0.0
+    float r = globalThis.Math.pow(x, p)
+    return r
+
+// How many strength points a fleet stands for when spawned.
+int points(string fleet):
+    if fleet.contains("Large"):
+        return tune.large_fleet_points
+    return tune.small_fleet_points
+
+// The fleet's value before speed is counted (0 for an unknown fleet).
+float raw(es.Game game, string fleet):
+    float cached = values.get(fleet, -1.0)
+    if cached >= 0.0:
+        return cached
+    float durability = game.fleet_stat(fleet, "hull") + game.fleet_stat(fleet, "shields")
+    float v = sqrt(durability * game.fleet_stat(fleet, "dps"))
+    values[fleet] = v
+    speeds[fleet] = game.fleet_stat(fleet, "speed")
+    return v
+
+// Work out the normalisation from the three factions' fleets (once).
+void prepare(es.Game game):
+    if norm > 0.0:
+        return
+    float sum = 0.0
+    float speed = 0.0
+    int n = 0
+    for f in 1..=3:
+        for fleet in [factions.small_fleets[f], factions.large_fleets[f]]:
+            float v = raw(game, fleet)
+            if v > 0.0:
+                sum += v / float(points(fleet))
+                speed += speeds.get(fleet, 0.0)
+                n += 1
+    if n == 0:
+        // No stats (an unknown galaxy): every side is average.
+        norm = 1.0
+        average_speed = 1.0
+        return
+    norm = sum / float(n)
+    average_speed = speed / float(n)
+    if average_speed <= 0.0:
+        average_speed = 1.0
+    string line = "diplomacy: fleet quality (1.0 = average):"
+    for f in 1..=3:
+        line = line + " " + factions.adjectives[f] + " " + string(int(side_quality(game, factions.small_fleets[f], factions.large_fleets[f]) * 100.0)) + "%"
+    line = line + " Core pirates " + string(int(side_quality(game, factions.small_fleets[4], factions.large_fleets[4]) * 100.0)) + "%"
+    line = line + "; flotilla sizes:"
+    for f in 1..=3:
+        line = line + " " + factions.adjectives[f] + " " + string(fleet_scale(game, f)) + "%"
+    game.log(line)
+
+// How big faction f's flotillas are, in percent of the usual strengths: enough
+// that strength * quality reaches tune.balance_target percent of the best
+// faction's, within 100..tune.max_fleet_scale.
+int fleet_scale(es.Game game, int f):
+    if f < 1 || f > 3:
+        return 100
+    float best = 0.0
+    for g in 1..=3:
+        float q = side_quality(game, factions.small_fleets[g], factions.large_fleets[g])
+        if q > best:
+            best = q
+    float mine = side_quality(game, factions.small_fleets[f], factions.large_fleets[f])
+    if mine <= 0.0:
+        return 100
+    int scale = int(best * float(tune.balance_target) / mine)
+    if scale < 100:
+        scale = 100
+    if scale > tune.max_fleet_scale:
+        scale = tune.max_fleet_scale
+    return scale
+
+// A fleet's quality per point, speed included (1.0 when its stats are unknown).
+float fleet_quality(es.Game game, string fleet):
+    prepare(game)
+    float v = raw(game, fleet)
+    if v <= 0.0:
+        return 1.0
+    float q = v / float(points(fleet)) / norm
+    float s = speeds.get(fleet, 0.0)
+    if s > 0.0:
+        q = q * power(s / average_speed, float(tune.speed_weight) / 100.0)
+    return q
+
+// A side's quality: the mean of its small and large fleets'.
+float side_quality(es.Game game, string small, string large):
+    return (fleet_quality(game, small) + fleet_quality(game, large)) / 2.0
+
+// The quality of a system's garrison: its planets' defense fleets, valued per
+// credit against the owner's navy (so better-armed defenders count for more),
+// times the owner's quality. The owner's quality if the system has none.
+float garrison_quality(es.Game game, string system, int owner):
+    float base = side_quality(game, factions.small_fleets[owner], factions.large_fleets[owner])
+    int n = game.defense_count(system)
+    if n == 0:
+        return base
+    float per_credit = 0.0
+    int counted = 0
+    for k in 0..<n:
+        string fleet = game.defense_fleet(system, k)
+        float cost = game.fleet_strength(fleet)
+        float v = raw(game, fleet)
+        if cost > 0.0 && v > 0.0:
+            per_credit += v / cost
+            counted += 1
+    float navy = 0.0
+    int navy_n = 0
+    for fleet in [factions.small_fleets[owner], factions.large_fleets[owner]]:
+        float cost = game.fleet_strength(fleet)
+        float v = raw(game, fleet)
+        if cost > 0.0 && v > 0.0:
+            navy += v / cost
+            navy_n += 1
+    if counted == 0 || navy_n == 0 || navy <= 0.0:
+        return base
+    return base * (per_credit / float(counted)) / (navy / float(navy_n))

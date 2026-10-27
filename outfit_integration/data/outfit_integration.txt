@@ -1,0 +1,2 @@
+# Outfit Integration has no data of its own: the mod does its work in the
+# outfitter. The game needs a data folder to see the plugin.

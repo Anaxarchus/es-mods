@@ -1,5 +1,13 @@
 # Plan: shipyards with stock (Mod API 9 + Corporations supply chain)
 
+**Where the mod lives (2026-10-27):** the canonical source of the Corporations
+mod (and of Diplomacy and Outfit Integration) is now the `es-mods` repository,
+`es-mods/mods/corporations/`, which vendors the SDK pieces it needs and releases
+the mods (`tools/release.sh`). The commands below work there unchanged (run them
+from `es-mods` instead of `endless-sky-mod-sdk`); the SDK's `mods/corporations/`
+is a copy. This file is kept byte-identical in `es-mods/mods/corporations/HANDOFF.md`
+and `es-modloader/PLAN-shipyard-stock.md`.
+
 Status: **Task A done** (2026-10-27, uncommitted): the engine side, in
 `PlayerInfo` (`ShipStockEnabled`/`SetShipStockEnabled`, `ShipStock`,
 `SetShipStock`, `AddShipStock`, `ShipOrderNote`/`SetShipOrderNote`, the

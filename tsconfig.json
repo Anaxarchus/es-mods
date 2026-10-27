@@ -1,0 +1,21 @@
+{
+  // Editor and `npm run typecheck` settings for JavaScript and TypeScript mods
+  // (the same as the SDK's, for mods/ only). The game runs a mod's file on
+  // QuickJS (ES2023, no DOM, no Node). Plain mods (scripts/*.js) reference
+  // stub/es.d.ts for the loader's globals. The SDK's declarations are included
+  // too, so the check has inputs while every mod here is DadoScript.
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "lib": ["es2022"],
+    "types": [],
+    "allowJs": true,
+    "checkJs": true,
+    "strict": true,
+    "noImplicitAny": false,
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": ["mods/*/src/**/*", "mods/*/scripts/*.js", "js/*.d.ts", "stub/es.d.ts"]
+}

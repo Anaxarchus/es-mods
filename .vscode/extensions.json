@@ -1,0 +1,5 @@
+{
+  // The Dado extension brings DadoScript highlighting and the Dado language
+  // server; `dado editors` installs it too. JavaScript and TypeScript need nothing.
+  "recommendations": ["dado-lang.dado-lang"]
+}

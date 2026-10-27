@@ -8,9 +8,9 @@ API 4 (`map_detail`). Once the Free Worlds campaign is over, the
 Republic, the Free Worlds and the Syndicate now and then go to war over their
 borders, pirates raid the settled worlds, and named commanders lead the fleets. See [DESIGN.md](DESIGN.md) for the plan this follows.
 
-It is one of the SDK's mods, in `mods/diplomacy`, and builds, checks, tests
-and deploys with the SDK's commands like any other (run them from the SDK
-folder):
+It lives in the `es-mods` repository, in `mods/diplomacy`, and builds, checks,
+tests and deploys with the SDK's commands, which that repository carries (run
+them from its root; the SDK's own `mods/diplomacy` is a copy):
 
 ```sh
 npm run check -- mods/diplomacy      # build, then run its hooks against the fake game
@@ -204,8 +204,8 @@ folder's name.
 ## Deploying
 
 You need the SDK set up (`npm install`, and `dadoc` on your `PATH`: see the
-SDK's GUIDE.md, section 1) and a game built with Dado mods on. From the SDK
-folder:
+SDK's GUIDE.md, section 1) and a game built with Dado mods on. From the
+`es-mods` folder:
 
 ```sh
 npm run deploy -- mods/diplomacy                          # into your user plugins folder:

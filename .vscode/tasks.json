@@ -1,0 +1,48 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Mods: build",
+      "detail": "Build every mod in mods/ into dist/<Plugin Name>/",
+      "type": "npm",
+      "script": "build",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Mods: check",
+      "detail": "Build every mod and run it against the fake game",
+      "type": "npm",
+      "script": "check",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Mods: deploy",
+      "detail": "Build every mod and copy it into your Endless Sky plugins folder",
+      "type": "npm",
+      "script": "deploy",
+      "problemMatcher": []
+    },
+    {
+      "label": "Mods: install the Dado loader",
+      "detail": "Copy the loader built in ../es-modloader into your Endless Sky modloaders folder",
+      "type": "npm",
+      "script": "install-loader",
+      "problemMatcher": []
+    },
+    {
+      "label": "Mods: package",
+      "detail": "Build every mod and zip it into dist/ to share",
+      "type": "npm",
+      "script": "package",
+      "problemMatcher": []
+    },
+    {
+      "label": "Mods: type-check JavaScript and TypeScript",
+      "type": "npm",
+      "script": "typecheck",
+      "problemMatcher": ["$tsc"]
+    }
+  ]
+}

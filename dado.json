@@ -1,0 +1,6 @@
+{
+  "name": "es_mods",
+  "targets": [
+    "native"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "name": "es-mods",
+  "version": "1.0.0",
+  "description": "Anaxarchus's mods for Argosy (Endless Sky with the Dado mod loader): Corporations, Diplomacy and Outfit Integration.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "new": "node tools/esmod.mjs new",
+    "build": "node tools/esmod.mjs build",
+    "check": "node tools/esmod.mjs check",
+    "deploy": "node tools/esmod.mjs deploy",
+    "package": "node tools/esmod.mjs package",
+    "install-loader": "node tools/esmod.mjs install-loader",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "node --test",
+    "sync": "bash tools/sync-sdk.sh",
+    "release": "bash tools/release.sh"
+  },
+  "devDependencies": {
+    "es": "file:./js",
+    "esbuild": "0.25.12",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

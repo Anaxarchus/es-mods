@@ -1,0 +1,17 @@
+{
+  "corporations": {
+    "version": "0.1.0",
+    "tag": "corporations-v0.1.0",
+    "source_hash": "2ab71a5cd3a379b96f69cb4146963673026ceac42fd6d7ef17704bc21047428d"
+  },
+  "diplomacy": {
+    "version": "0.1.0",
+    "tag": "diplomacy-v0.1.0",
+    "source_hash": "554ef36ba5ffd4a4c8e8bf42795f0862466fa8ae6bd087f95831802533ec3b6e"
+  },
+  "outfit_integration": {
+    "version": "0.1.0",
+    "tag": "outfit_integration-v0.1.0",
+    "source_hash": "66702d8532e9bd2e5a0c0dfc4f8750acf63badc8a4a82fa500c1a895342c7879"
+  }
+}

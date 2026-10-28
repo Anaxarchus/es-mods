@@ -1,20 +1,24 @@
 class Factions
 
-// The three factions, indexed 1..3 (0 means none):
-//   1 the Republic, 2 the Free Worlds, 3 the Syndicate.
-// Index 4 is the pirates: not a faction (they hold no territory to take and
-// cannot be joined), but a side whose raids and commanders the simulation runs
-// like the factions' flotillas. Loops over the factions run 1..3; loops over
-// every side run 1..sides().
-// Their real governments, capitals, fleets, colours, and the flotilla
-// governments this mod's plugin defines (data/diplomacy.txt).
+// The sides of the simulation. 1..3 are the major factions (1 the Republic,
+// 2 the Free Worlds, 3 the Syndicate), 4 the pirates, and 5 + k the rebel
+// faction minor k forms if it secedes (Regions; most never exist). 0 is none.
+// Loops over the majors run 1..3; over every side, 1..sides().
+//
+// Majors have their real governments (which own their systems), separate
+// flotilla governments (data/diplomacy.txt) their war fleets fly under, so a
+// war never touches the game's own politics, and capitals that are never
+// taken. A rebel faction's government is its own, defined with its fleets in
+// data/diplomacy factions.txt, and serves for both: it owns the rebel systems
+// and its flotillas fly under it. Pirates fly as the real pirates.
+
+Regions regions = Regions()
 
 []string governments = ["", "Republic", "Free Worlds", "Syndicate", "Pirate"]
 []string names = ["", "the Republic", "the Free Worlds", "the Syndicate", "the pirates"]
 []string titles = ["", "The Republic", "The Free Worlds", "The Syndicate", "The pirates"]
 []string adjectives = ["", "Republic", "Free Worlds", "Syndicate", "Pirate"]
 []string capitals = ["", "Sol", "Gamma Corvi", "Markab", ""]
-// The government each side's ships fly under; pirates fly as the real pirates.
 []string flotilla_governments = ["", "Republic Flotilla", "Free Worlds Flotilla", "Syndicate Flotilla", "Pirate"]
 // Pirates use their home system's own pirate fleets; these are the fallback.
 []string small_fleets = ["", "Small Republic", "Small Free Worlds", "Small Syndicate", "Small Core Pirates"]
@@ -36,29 +40,131 @@ class Factions
 []int license_rank = [2, 4, 5, 6]
 []string licenses = ["Navy", "Navy Auxiliary", "Navy Cruiser", "Navy Carrier"]
 
+// Commanders: each major's rank title (and its short form), and the surnames
+// its commanders are drawn from. Rebels' commanders are "Commander"s, named
+// from rebel_surnames; pirates are "Captain"s.
+[]string commander_titles = ["", "Admiral", "Commodore", "Director", "Captain"]
+[]string commander_short = ["", "Adm.", "Cdre.", "Dir.", "Capt."]
+[][]string surnames = [[], ["Okafor", "Lindqvist", "Harrow", "Castellano", "Whitfield", "Ishikawa", "Mbeki", "Duarte", "Kowalczyk", "Ferreira", "Nakamura", "Ashworth", "Delacroix", "Sato", "Brennan", "Vasquez"], ["Rourke", "Tamsin", "Adeyemi", "Cho", "Halvorsen", "Mercado", "Ndiaye", "Quill", "Barros", "Lund", "Petrov", "Abara", "Kestrel", "Ito", "Calloway", "Navarro"], ["Vance", "Sterling", "Holloway", "Mercer", "Kaine", "Ashford", "Thorne", "Lockwood", "Pryce", "Gallagher", "Sinclair", "Weston", "Hale", "Crane", "Marlowe", "Steele"], ["Black", "Varga", "Kurtz", "Grim", "Sable", "Rook", "Mallory", "Teague", "Vex", "Hask", "Drago", "Cutter", "Brand", "Kincaid", "Morrow", "Slate"]]
+[]string rebel_surnames = ["Arkwright", "Bellamy", "Corwin", "Dasari", "Esposito", "Fairweather", "Gutierrez", "Hollis", "Iversen", "Jaramillo", "Kaur", "Lowell", "Moreau", "Nwosu", "Orlov", "Penhaligon"]
+// Personalities, 1..4.
+[]string personalities = ["", "bold", "cautious", "methodical", "reckless"]
+
 int count():
     return 3
-
-// Every side the simulation runs: the three factions and the pirates.
-int sides():
-    return 4
 
 int pirates():
     return 4
 
-// Commanders: each side's rank title (and its short form), and the surnames
-// its commanders are drawn from.
-[]string commander_titles = ["", "Admiral", "Commodore", "Director", "Captain"]
-[]string commander_short = ["", "Adm.", "Cdre.", "Dir.", "Capt."]
-[][]string surnames = [[], ["Okafor", "Lindqvist", "Harrow", "Castellano", "Whitfield", "Ishikawa", "Mbeki", "Duarte", "Kowalczyk", "Ferreira", "Nakamura", "Ashworth", "Delacroix", "Sato", "Brennan", "Vasquez"], ["Rourke", "Tamsin", "Adeyemi", "Cho", "Halvorsen", "Mercado", "Ndiaye", "Quill", "Barros", "Lund", "Petrov", "Abara", "Kestrel", "Ito", "Calloway", "Navarro"], ["Vance", "Sterling", "Holloway", "Mercer", "Kaine", "Ashford", "Thorne", "Lockwood", "Pryce", "Gallagher", "Sinclair", "Weston", "Hale", "Crane", "Marlowe", "Steele"], ["Black", "Varga", "Kurtz", "Grim", "Sable", "Rook", "Mallory", "Teague", "Vex", "Hask", "Drago", "Cutter", "Brand", "Kincaid", "Morrow", "Slate"]]
-// Personalities, 1..4.
-[]string personalities = ["", "bold", "cautious", "methodical", "reckless"]
+// Every side: the majors, the pirates and a rebel faction per minor.
+int sides():
+    return 4 + regions.count()
 
-// The faction whose real government this is, or 0.
+bool is_major(int side):
+    return side >= 1 && side <= 3
+
+bool is_rebel(int side):
+    return side > 4 && side <= sides()
+
+// The rebel side minor m forms, and the minor a rebel side came from.
+int rebel_side(int m):
+    return 5 + m
+
+int rebel_minor(int side):
+    return side - 5 if is_rebel(side) else -1
+
+// The major a rebel side broke away from (its minor's default parent).
+int rebel_parent(int side):
+    int m = rebel_minor(side)
+    return regions.parents[m] if m >= 0 else 0
+
+// The government that owns a side's systems.
+string government(int side):
+    if side >= 1 && side <= 4:
+        return governments[side]
+    if is_rebel(side):
+        return regions.rebels[rebel_minor(side)]
+    return ""
+
+// The government a side's flotillas fly under.
+string flotilla_government(int side):
+    if side >= 1 && side <= 4:
+        return flotilla_governments[side]
+    return government(side)
+
+string name(int side):
+    if side >= 1 && side <= 4:
+        return names[side]
+    if is_rebel(side):
+        return "the " + regions.rebels[rebel_minor(side)]
+    return "no one"
+
+string title(int side):
+    if side >= 1 && side <= 4:
+        return titles[side]
+    if is_rebel(side):
+        return "The " + regions.rebels[rebel_minor(side)]
+    return "No one"
+
+string adjective(int side):
+    if side >= 1 && side <= 4:
+        return adjectives[side]
+    if is_rebel(side):
+        return regions.rebels[rebel_minor(side)]
+    return ""
+
+// The fleets a side's flotillas spawn as: a rebel faction flies its own fleets
+// (its parent's ships under its flag).
+string small_fleet(int side):
+    if side >= 1 && side <= 4:
+        return small_fleets[side]
+    return "Small " + government(side)
+
+string large_fleet(int side):
+    if side >= 1 && side <= 4:
+        return large_fleets[side]
+    return "Large " + government(side)
+
+// The major whose ships a side's are (for the sim score): a rebel's parent.
+int stock(int side):
+    if is_rebel(side):
+        return rebel_parent(side)
+    return side
+
+float r(int side):
+    if side >= 0 && side <= 4:
+        return red[side]
+    return regions.red[rebel_minor(side)] if is_rebel(side) else 1.0
+
+float g(int side):
+    if side >= 0 && side <= 4:
+        return green[side]
+    return regions.green[rebel_minor(side)] if is_rebel(side) else 1.0
+
+float b(int side):
+    if side >= 0 && side <= 4:
+        return blue[side]
+    return regions.blue[rebel_minor(side)] if is_rebel(side) else 1.0
+
+string commander_title(int side):
+    return commander_titles[side] if side >= 1 && side <= 4 else "Commander"
+
+string commander_abbrev(int side):
+    return commander_short[side] if side >= 1 && side <= 4 else "Cmdr."
+
+[]string surname_list(int side):
+    return surnames[side] if side >= 1 && side <= 4 else rebel_surnames
+
+// The side whose government this is (a major, the pirates or a rebel), or 0.
 int of_government(string government):
-    for f in 1..=3:
+    if government == "":
+        return 0
+    for f in 1..=4:
         if governments[f] == government:
             return f
+    for m in 0..<regions.count():
+        if regions.rebels[m] == government:
+            return rebel_side(m)
     return 0
 
 bool is_capital(string system):
@@ -81,7 +187,7 @@ int next_rank_merit(int rank):
         return rank_merit[rank + 1]
     return -1
 
-// The tag prefix of every ship this mod spawns for faction f.
+// The tag prefix of every ship this mod spawns for side f.
 string tag_prefix(int f):
     return "diplomacy:" + string(f) + ":"
 

@@ -258,6 +258,11 @@ async function checkOne(built) {
 	if (typeof mod.api_version !== "function") return ["it does not extend Mod (or es.Mod): it has no api_version()"];
 	const v = Number(mod.api_version());
 	if (!Number.isInteger(v) || v < 1 || v > MOD_API) problems.push(`api_version() is ${v}; this SDK speaks 1 ..= ${MOD_API}`);
+	// Mod API 10: the loader refuses a mod whose min_api() is newer than it speaks.
+	if (typeof mod.min_api === "function") {
+		const need = Number(mod.min_api());
+		if (!Number.isInteger(need) || need < 1 || need > MOD_API) problems.push(`min_api() is ${need}; this SDK speaks 1 ..= ${MOD_API}`);
+	}
 
 	// Run the hooks the way the game does, with the globals the game lacks taken away.
 	const saved = {};
@@ -281,8 +286,14 @@ async function checkOne(built) {
 			throw e;
 		}
 	};
+	// Mod API 10: notifications queued for the mod are delivered after each hook, as the game does.
+	const drain = () => { if (typeof mod.on_notification === "function") hook("on_notification", () => game.drain(mod)); };
+	const save = (label) => { if (typeof mod.on_save === "function") hook(label, () => mod.on_save(game)); };
 	try {
 		hook("on_load", () => mod.on_load(game));
+		// Mod API 10: the mods start with a pilot: on_pilot_loaded, before any other hook for it.
+		if (typeof mod.on_pilot_loaded === "function") hook("on_pilot_loaded", () => mod.on_pilot_loaded(game));
+		drain();
 		if (typeof mod.on_day === "function") hook("on_day", () => mod.on_day(game, game.day()));
 		if (typeof mod.on_enter === "function") hook("on_enter", () => mod.on_enter(game, game.here()));
 		for (let step = 1; step <= 600; step++) {
@@ -296,13 +307,19 @@ async function checkOne(built) {
 			}
 			hook(`on_step (step ${step})`, () => mod.on_step(game, step));
 			game.stepLosses = [];
+			// Mod API 10: now and then the game saves (an autosave), and another mod posts.
+			if (step % 200 === 0) save(`on_save (step ${step})`);
+			if (step % 250 === 0) game.receive("check.ping", JSON.stringify({ step }), "some other mod");
+			drain();
 		}
 		game.day_ += 1;
 		if (typeof mod.on_day === "function") hook("on_day (the next day)", () => mod.on_day(game, game.day()));
 		game.landed = true;
 		game.planet_ = game.planetsIn(game.here())[0] ?? "";
-		// Landing runs on_enter; then the planet button, its panel, a table row and a number dialog.
+		// Landing saves the pilot and runs on_enter; then the planet button, its panel, a table row and a number dialog.
+		save("on_save (landing)");
 		if (typeof mod.on_enter === "function") hook("on_enter (landed)", () => mod.on_enter(game, game.here()));
+		drain();
 		if (game.planetButtonLabel && typeof mod.on_planet_button === "function") {
 			hook("on_planet_button", () => mod.on_planet_button(game));
 			if (game.panel?.rows?.length && typeof mod.on_panel_row === "function") hook("on_panel_row (row 0)", () => mod.on_panel_row(game, 0));

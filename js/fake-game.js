@@ -55,14 +55,118 @@ const DEFAULT_MODELS = {
 	"Cruiser": { display: "Cruiser", cost: 9900000, category: "Heavy Warship", licenses: ["Navy"] },
 };
 
+// Energy and fuel are absolute amounts, as the game answers them; maxEnergy and
+// maxFuel give the fractions (mod API 10).
 const DEFAULT_SHIPS = [
-	{ name: "Flagship", model: "Sparrow", player: true, hull: 300, maxHull: 400, shields: 200, maxShields: 300, energy: 1, fuel: 1, government: "Escort", strength: 300000 },
-	{ name: "Escort", model: "Shuttle", player: true, hull: 100, maxHull: 100, shields: 0, maxShields: 50, energy: 0.5, fuel: 1, government: "Escort", strength: 180000 },
-	{ name: "Bandit", model: "Clipper", player: false, hull: 500, maxHull: 600, shields: 300, maxShields: 400, energy: 0.8, fuel: 0.6, government: "Pirate", strength: 900000 },
+	{ name: "Flagship", model: "Sparrow", player: true, hull: 300, maxHull: 400, shields: 200, maxShields: 300, energy: 1200, maxEnergy: 1200, fuel: 400, maxFuel: 400, government: "Escort", strength: 300000 },
+	{ name: "Escort", model: "Shuttle", player: true, hull: 100, maxHull: 100, shields: 0, maxShields: 50, energy: 300, maxEnergy: 600, fuel: 300, maxFuel: 300, government: "Escort", strength: 180000 },
+	{ name: "Bandit", model: "Clipper", player: false, hull: 500, maxHull: 600, shields: 300, maxShields: 400, energy: 1600, maxEnergy: 2000, fuel: 300, maxFuel: 500, government: "Pirate", strength: 900000 },
+];
+
+// Mod API 10: the standard commodities, and each system's prices: [now, as the data sets it].
+const DEFAULT_COMMODITIES = ["Food", "Clothing", "Metal", "Plastic", "Equipment", "Medical", "Industrial", "Electronics", "Heavy Metals", "Luxury Goods"];
+const DEFAULT_PRICES = {
+	"Sol": { "Food": [255, 280], "Clothing": [320, 300], "Metal": [410, 390], "Electronics": [770, 800], "Luxury Goods": [1600, 1550] },
+	"Alpha Centauri": { "Food": [300, 290], "Metal": [350, 360], "Medical": [610, 600] },
+	"Vega": { "Food": [220, 240], "Equipment": [500, 480], "Heavy Metals": [890, 900] },
+	"Rigel": { "Food": [310, 300], "Industrial": [600, 650], "Plastic": [420, 400] },
+};
+// Every feature the fake game offers (game.has); a test may pass its own list.
+const DEFAULT_FEATURES = [
+	"api_has", "cargo", "notify", "on_notification", "on_pilot_loaded", "on_save", "outfit_stock", "ship_fractions",
+	"ship_parking", "timing_section", "trade_price",
+	"call:api_features", "call:api_has", "call:cargo", "call:commodity_count", "call:commodity_name", "call:listen",
+	"call:notify", "call:outfit_stock", "call:outfit_stock_on", "call:set_outfit_stock", "call:ship_energy_fraction",
+	"call:ship_fuel_fraction", "call:ship_park", "call:ship_parked", "call:ship_remove", "call:timing_section",
+	"call:trade_base_price", "call:trade_price", "call:unlisten",
 ];
 
 // What the game answers for a ship index out of range.
-const NO_SHIP = Object.freeze({ name: "", model: "", player: false, disabled: false, hull: 0, maxHull: 0, shields: 0, maxShields: 0, energy: 0, fuel: 0, government: "", strength: 0, tag: "" });
+const NO_SHIP = Object.freeze({ name: "", model: "", player: false, disabled: false, hull: 0, maxHull: 0, shields: 0, maxShields: 0, energy: 0, maxEnergy: 0, fuel: 0, maxFuel: 0, government: "", strength: 0, tag: "" });
+
+// A notification name: 1 to 128 bytes of A-Z a-z 0-9 . _ : / -; a pattern may end in "*".
+function noteName(name, pattern) {
+	if (name.length > 128) return false;
+	const body = pattern && name.endsWith("*") ? name.slice(0, -1) : name;
+	if (!pattern && body === "") return false;
+	return /^[A-Za-z0-9._:/-]*$/.test(body);
+}
+// Mod names in the game's order: by their UTF-8 bytes, which is the order of
+// their code points (JavaScript's own < compares UTF-16 units).
+function byBytes(a, b) {
+	const x = [...a], y = [...b];
+	for (let i = 0; i < Math.min(x.length, y.length); i++) {
+		const d = x[i].codePointAt(0) - y[i].codePointAt(0);
+		if (d) return d;
+	}
+	return x.length - y.length;
+}
+function listensFor(patterns, name) {
+	for (const p of patterns) if (p.endsWith("*") ? name.startsWith(p.slice(0, -1)) : p === name) return true;
+	return false;
+}
+
+// Mod API 10: the notification bus between mods, as the game runs it, for tests
+// with more than one mod. Each mod has a FakeGame of its own, joined to one bus:
+//
+//     const bus = new FakeBus();
+//     const a = new FakeGame(), b = new FakeGame();
+//     bus.join("trader", modA, a);
+//     bus.join("market", modB, b);
+//     modA.on_load(a); modB.on_load(b);     // they listen
+//     modA.on_step(a, 1);                   // it posts
+//     bus.drain();                          // delivered, as after the step's hooks
+//
+// A FakeGame on no bus keeps what its mod posts in `posted`, and `receive()`
+// queues a notification for its mod, delivered by `drain()`.
+export class FakeBus {
+	constructor() {
+		this.members = new Map();
+		this.queue = [];
+		this.postsSinceDrain = new Map();
+		// How many deliveries the last drain made, and every delivery, for tests.
+		this.lastDeliveries = 0;
+		this.delivered = [];
+	}
+	join(name, mod, game) {
+		str("name", name);
+		this.members.set(name, { mod, game });
+		game.bus = this;
+		game.busName = name;
+	}
+	post(sender, name, payload) {
+		if (!noteName(name, false) || payload.length > 65536 || this.queue.length >= 1024) return false;
+		const posts = this.postsSinceDrain.get(sender) ?? 0;
+		if (posts >= 256) return false;
+		this.postsSinceDrain.set(sender, posts + 1);
+		this.queue.push({ name, payload, sender });
+		return true;
+	}
+	// Deliver the queue as the game does: oldest first, to every member that
+	// listens but the sender, in name order; what is posted meanwhile joins in,
+	// for up to 4 rounds or 1024 deliveries, and the rest waits.
+	drain() {
+		let deliveries = 0;
+		for (let round = 0; round < 4 && this.queue.length && deliveries < 1024; round++) {
+			const batch = this.queue;
+			this.queue = [];
+			while (batch.length && deliveries < 1024) {
+				const note = batch.shift();
+				const receivers = [...this.members.keys()].sort(byBytes).filter((m) => m !== note.sender && listensFor(this.members.get(m).game.listening, note.name));
+				for (const m of receivers) {
+					deliveries++;
+					this.delivered.push({ to: m, ...note });
+					const { mod, game } = this.members.get(m);
+					if (typeof mod.on_notification === "function") mod.on_notification(game, note.name, note.payload, note.sender);
+				}
+			}
+			this.queue = batch.concat(this.queue);
+		}
+		this.postsSinceDrain.clear();
+		this.lastDeliveries = deliveries;
+		return deliveries;
+	}
+}
 
 // The game refuses an argument of the wrong type the way these do, with the
 // same words, and the hook that made the call is switched off for that mod.
@@ -134,6 +238,25 @@ export class FakeGame {
 		this.stepLosses = [];
 		// Used hulls the player sold to the landed planet's shipyard, by model, for ship_in_stock.
 		this.usedHulls = new Map(Object.entries(options.usedHulls ?? {}));
+		// Mod API 10: commodities and prices ([now, as the data sets it] by system
+		// and commodity), what the player carries (`carried`, by commodity),
+		// outfitter stock, ships removed with ship_remove, the features game.has
+		// answers, the notification patterns the mod listens for, what it posted
+		// (when on no FakeBus) and the notifications queued for it (`receive`), and
+		// the timing sections it named.
+		this.commodities = [...(options.commodities ?? DEFAULT_COMMODITIES)];
+		this.prices = JSON.parse(JSON.stringify(options.prices ?? DEFAULT_PRICES));
+		this.carried = new Map(Object.entries(options.cargo ?? { "Food": 10 }));
+		this.outfitStockOn = false;
+		this.outfitStock = new Map();
+		this.removed = [];
+		this.features = new Set(options.features ?? DEFAULT_FEATURES);
+		this.listening = new Set();
+		this.posted = [];
+		this.incoming = [];
+		this.sections = [];
+		this.bus = null;
+		this.busName = "";
 	}
 
 	fleetShip(uuid) {
@@ -404,4 +527,75 @@ export class FakeGame {
 		if (this.sys(system)) this.map.push({ ring: system, scale: Number.isFinite(scale) ? Math.min(Math.max(scale, 0.5), 3) : 1, color: [r, g, b] });
 	}
 	ship_in_stock(model) { return this.model(model) && this.planet() ? (this.usedHulls.get(model) ?? 0) : 0; }
+
+	// Mod API 10: trade, parking, outfitter stock, cargo, the notification bus,
+	// features, timing sections and the fractions.
+	priceOf(system, commodity) {
+		str("system", system); str("commodity", commodity);
+		if (!this.sys(system) || !this.commodities.includes(commodity)) return undefined;
+		return this.prices[system]?.[commodity] ?? [0, 0];
+	}
+	trade_price(system, commodity) { return this.priceOf(system, commodity)?.[0] ?? -1; }
+	trade_base_price(system, commodity) { return this.priceOf(system, commodity)?.[1] ?? -1; }
+	commodity_count() { return this.commodities.length; }
+	commodity_name(k) { int("k", k); return this.commodities[k] ?? ""; }
+	// The game allows these only in a hook the player started while landed;
+	// FakeGame checks the landing, not the hook. The flagship is the fleet's first ship.
+	ship_park(ship, on) {
+		bool("on", on);
+		const s = this.fleetShip(ship);
+		if (!s || !this.landed) return false;
+		if (on && s === this.fleet[0]) return false;
+		s.parked = on;
+		return true;
+	}
+	ship_remove(ship) {
+		const s = this.fleetShip(ship);
+		if (!s || !this.landed) return false;
+		if (s === this.fleet[0] && !this.fleet.some((o) => o !== s && !o.parked)) return false;
+		this.fleet.splice(this.fleet.indexOf(s), 1);
+		this.removed.push(s);
+		return true;
+	}
+	ship_parked(ship) { return this.fleetShip(ship)?.parked ?? false; }
+	outfit_stock_on(on) { bool("on", on); this.outfitStockOn = on; }
+	// Maps and licenses are not tracked, as in the game.
+	outfitKey(planet, outfit) {
+		const o = this.outfit(outfit);
+		const trackable = o && !o.attributes?.map && !outfit.endsWith(" License");
+		return this.planetOf(planet) && trackable ? planet + "\u0000" + outfit : undefined;
+	}
+	outfit_stock(planet, outfit) {
+		const key = this.outfitKey(planet, outfit);
+		return key !== undefined && this.outfitStock.has(key) ? this.outfitStock.get(key) : -1;
+	}
+	set_outfit_stock(planet, outfit, count) {
+		int("count", count);
+		const key = this.outfitKey(planet, outfit);
+		if (key === undefined) return;
+		if (count < 0) this.outfitStock.delete(key);
+		else this.outfitStock.set(key, Math.min(count, 2147483647));
+	}
+	cargo(commodity) { str("commodity", commodity); return this.carried.get(commodity) ?? 0; }
+	notify(name, payload) {
+		str("name", name); str("payload", payload);
+		if (this.bus) return this.bus.post(this.busName, name, payload);
+		if (!noteName(name, false) || payload.length > 65536) return false;
+		this.posted.push({ name, payload });
+		return true;
+	}
+	listen(pattern) { str("pattern", pattern); if (noteName(pattern, true)) this.listening.add(pattern); }
+	unlisten(pattern) { str("pattern", pattern); this.listening.delete(pattern); }
+	// Queue a notification for this game's mod, from `sender`; drain(mod) delivers it.
+	receive(name, payload, sender) { this.incoming.push({ name, payload, sender }); }
+	drain(mod) {
+		const queued = this.incoming;
+		this.incoming = [];
+		for (const n of queued)
+			if (listensFor(this.listening, n.name) && typeof mod.on_notification === "function") mod.on_notification(this, n.name, n.payload, n.sender);
+	}
+	has(feature) { str("feature", feature); return this.features.has(feature); }
+	timing_section(name) { str("name", name); this.sections.push(name); }
+	energy_fraction(i) { const s = this.ship(i); return s.maxEnergy ? s.energy / s.maxEnergy : 0; }
+	fuel_fraction(i) { const s = this.ship(i); return s.maxFuel ? s.fuel / s.maxFuel : 0; }
 }

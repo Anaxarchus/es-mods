@@ -1,87 +1,164 @@
 class State
 
+// The conditions the mod shares with missions and other plugins, all
+// prefixed "diplomacy: ". The simulation's own state is World (Game.data);
+// these are published from it once a day (and after a change in person),
+// and only the ones that changed are written. See README.md, "Conditions".
+//
+// Kept for compatibility (Corporations reads "war a"/"war b"): "war a" and
+// "war b" name one war in progress between two majors (the one involving the
+// player's faction if there is one), and "at war <f>" is 1 for each major in
+// any war. Per war slot k (1..hard_max_wars): "war <k> a", "b", "goal" (its
+// first goal minor + 1), "score" (positive: a is winning), "kind" (kind + 1).
+// Per minor (by its short name): "minor <name> owner" (the side holding most
+// of it), "contested" (1 if split), "unrest" (0..100), "core" (1 for a major's
+// core), "rebel" (1 while a rebel faction holds part of it).
+
 import "imports:sdk/es"
 
-// The mod's saved state: the player's conditions, all prefixed "diplomacy: ".
-// Conditions are saved with the pilot, so loading another pilot brings its
-// own state. Nothing here is cached; every read goes to the game. Systems are
-// stored as their index in game.system_at plus one, so 0 means none.
-//
-// Keys (see README.md for the full list):
-//   active, rng, last day                      activation, random state, last simulated day
-//   war a, war b, war since, war until         the war (factions 1..3, 0 = peace)
-//   at war <f>                                 1 while faction f is at war (for missions)
-//   next war                                   no war starts before this day
-//   flotilla <f>.<s> <field>                   flotilla slot s of faction f
-//   garrison <k> <field>                       garrison slot k (a damaged system)
-//   origin <system>                            original owner of a captured system
-//   member, merit, rank                        the player
-//   stat <name>                                running statistics
-//   force active, force war, force peace       test overrides
+Tuning tune = Tuning()
+Factions factions = Factions()
+Galaxy galaxy = Galaxy()
+World world = World()
 
 string prefix = "diplomacy: "
+// What was last written, so unchanged conditions are not written again.
+{string: int} written = {}
+
+void wire(Tuning t, Factions f, Galaxy g, World w):
+    tune = t
+    factions = f
+    galaxy = g
+    world = w
 
 int get(es.Game game, string key):
     return game.condition(prefix + key)
 
 void put(es.Game game, string key, int value):
     game.set_condition(prefix + key, value)
+    written[key] = value
 
 void add(es.Game game, string key, int delta):
     put(game, key, get(game, key) + delta)
 
-// ---- Wars ----
+// Write a published condition if it changed since it was last written.
+void publish_one(es.Game game, string key, int value):
+    if !written.has(key):
+        written[key] = game.condition(prefix + key)
+    if written[key] == value:
+        return
+    game.set_condition(prefix + key, value)
+    written[key] = value
 
-int war_a(es.Game game):
-    return get(game, "war a")
-
-int war_b(es.Game game):
-    return get(game, "war b")
-
-bool at_war(es.Game game):
-    return war_a(game) != 0
-
-// True if factions f and g are at war with each other.
-bool hostile(es.Game game, int f, int g):
-    int a = war_a(game)
-    int b = war_b(game)
-    if a == 0 || f == g:
-        return false
-    return (f == a && g == b) || (f == b && g == a)
-
-// The faction f is at war with, or 0.
-int enemy_of(es.Game game, int f):
-    int a = war_a(game)
-    int b = war_b(game)
-    if a == 0:
-        return 0
-    if f == a:
-        return b
-    if f == b:
-        return a
-    return 0
-
-void set_war(es.Game game, int a, int b, int since, int until):
-    put(game, "war a", a)
-    put(game, "war b", b)
-    put(game, "war since", since)
-    put(game, "war until", until)
-    for f in 1..=3:
-        put(game, "at war " + string(f), 1 if (f == a || f == b) && a != 0 else 0)
-
-// ---- Origins ----
-
-// The original owner (1..3) recorded for a captured system, or 0.
-int origin(es.Game game, int system):
-    return get(game, "origin " + string(system + 1))
-
-void set_origin(es.Game game, int system, int faction):
-    put(game, "origin " + string(system + 1), faction)
-
-// ---- The player ----
+// Another pilot (or a reload): forget what was written.
+void forget():
+    written = {}
 
 int member(es.Game game):
     return get(game, "member")
 
 int merit(es.Game game):
     return get(game, "merit")
+
+// ---- Publishing ----
+
+// The headline war for "war a"/"war b": a war between two majors, the
+// player's faction's first.
+War headline(int player):
+    War best = War()
+    for w in world.wars:
+        if !factions.is_major(w.a) || !factions.is_major(w.b):
+            continue
+        if best.id == 0 || (player != 0 && w.involves(player) && !best.involves(player)):
+            best = w
+    return best
+
+void publish(es.Game game, int player):
+    War h = headline(player)
+    publish_one(game, "war a", h.a)
+    publish_one(game, "war b", h.b)
+    publish_one(game, "war since", h.since)
+    for f in 1..=3:
+        publish_one(game, "at war " + string(f), 1 if world.at_war(f) else 0)
+    publish_one(game, "wars", world.wars.len())
+    for k in 1..=tune.hard_max_wars:
+        string key = "war " + string(k) + " "
+        if k <= world.wars.len():
+            War w = world.wars[k - 1]
+            publish_one(game, key + "a", w.a)
+            publish_one(game, key + "b", w.b)
+            publish_one(game, key + "goal", w.goals[0] + 1 if w.goals.len() > 0 else 0)
+            publish_one(game, key + "score", w.score)
+            publish_one(game, key + "kind", w.kind + 1)
+        else:
+            for f in ["a", "b", "goal", "score", "kind"]:
+                publish_one(game, key + f, 0)
+    int rebels = 0
+    for m in 0..<factions.regions.count():
+        string key = "minor " + factions.regions.shorts[m] + " "
+        publish_one(game, key + "owner", galaxy.minor_owner(m))
+        publish_one(game, key + "contested", 1 if galaxy.split(m) else 0)
+        publish_one(game, key + "unrest", world.unrest[m] / 10 if m < world.unrest.len() else 0)
+        publish_one(game, key + "core", 1 if factions.regions.cores[m] else 0)
+        bool rebel = false
+        for s in 5..=factions.sides():
+            if galaxy.held_by(m, s) > 0:
+                rebel = true
+        publish_one(game, key + "rebel", 1 if rebel else 0)
+    for s in 5..=factions.sides():
+        if galaxy.territory(s) > 0:
+            rebels += 1
+    publish_one(game, "rebels", rebels)
+    publish_fleets(game)
+    for k in ["wars", "launches", "raids", "captures", "rebellions", "defections", "separatists", "flotillas destroyed"]:
+        publish_one(game, "stat " + k, world.get_stat(k))
+    publish_one(game, "crisis day", world.story[0])
+    publish_one(game, "crisis", world.story[2])
+    publish_one(game, "crisis minor", world.story[1] + 1)
+
+// Each side's flotillas and raids, for other plugins (Corporations): slot k
+// (1..its cap: 4 for a major and the pirates, 2 for a rebel faction) of side
+// s is "flotilla <s>.<k> strength", "kind" (0 war flotilla, 1 relief, 2 raid,
+// 3 going home), "at" and "goal" (system index + 1, as game.system_at
+// counts). The live ones fill the first slots; the rest are 0.
+void publish_fleets(es.Game game):
+    for s in 1..=factions.sides():
+        int slots = tune.rebel_flotillas if factions.is_rebel(s) else (tune.max_raids if s == factions.pirates() else tune.max_flotillas)
+        int k = 0
+        for x in world.fleets:
+            if !x.alive() || x.side != s || k >= slots:
+                continue
+            k += 1
+            string key = "flotilla " + string(s) + "." + string(k) + " "
+            publish_one(game, key + "strength", x.strength)
+            publish_one(game, key + "kind", x.kind)
+            publish_one(game, key + "at", x.at + 1)
+            publish_one(game, key + "goal", x.goal + 1)
+        for j in (k + 1)..=slots:
+            string key = "flotilla " + string(s) + "." + string(j) + " "
+            for f in ["strength", "kind", "at", "goal"]:
+                publish_one(game, key + f, 0)
+
+// ---- Old saves ----
+
+// The conditions the mod kept before it saved its state as data (version 1):
+// all of them are cleared when such a pilot is migrated.
+void clear_v1(es.Game game):
+    for f in 1..=4:
+        for s in 1..=4:
+            for field in ["strength", "size", "kind", "admiral", "full", "at", "goal", "home", "target", "siege", "launched", "stop 1", "stop 2", "stop 3", "leg", "dwell", "plan", "alerted"]:
+                clear(game, "flotilla " + string(f) + "." + string(s) + " " + field)
+        for k in 1..=5:
+            for field in ["name", "personality", "wins"]:
+                clear(game, "admiral " + string(f) + "." + string(k) + " " + field)
+    for k in 1..=12:
+        for field in ["system", "hp", "start", "last"]:
+            clear(game, "garrison " + string(k) + " " + field)
+    for i in 1..=galaxy.count():
+        clear(game, "origin " + string(i))
+    for key in ["war until", "next war", "rng", "pirate attitudes", "stat truces", "stat battles", "stat intercepts ordered", "stat interceptions", "stat sieges", "stat captured by 1", "stat captured by 2", "stat captured by 3", "stat siege days", "stat timed sieges", "stat kills", "stat promotions", "stat licenses", "stat destroyed in person", "stat raids completed", "stat raids destroyed", "stat plunder days", "stat reliefs", "stat pirate battles", "stat pirate kills", "stat flotillas destroyed", "stat commanders killed", "stat retreats", "stat returned home"]:
+        clear(game, key)
+
+void clear(es.Game game, string key):
+    if game.condition(prefix + key) != 0:
+        game.set_condition(prefix + key, 0)

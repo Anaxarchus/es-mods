@@ -1,10 +1,14 @@
 class Galaxy
 
-// The map: systems, hyperspace lanes, distances in jumps, who owns what, and
-// the depth rule that decides what a faction may capture.
+// The map: systems, hyperspace lanes inside human space, distances in jumps
+// (cached), who owns what (read from the game once a day and kept up to date
+// as the simulation captures), the minors each system belongs to, and garrison
+// strengths.
 //
-// The lane graph and garrison strengths come from game data that a pilot does
-// not change, so they are cached; ownership is always read from the game.
+// Flotillas and raids move only through human space: the systems of the
+// minors (Regions). Lanes come from the game, so events that cut or restore
+// them (the Pug invasion's) are seen: a cheap fingerprint of the lanes is
+// checked each day and the graph and distance cache are rebuilt when it changes.
 
 import "imports:sdk/es"
 
@@ -13,41 +17,81 @@ Factions factions = Factions()
 
 []string names = []
 {string: int} index = {}
+// Lanes between human systems, by system index (empty for the rest).
 [][]int links = []
+int fingerprint = -1
+// The human systems, and each system's minor (-1 outside human space).
+[]int human = []
+[]int minor_of = []
+// The systems of each minor, as indices.
+[][]int minor_systems = []
+// Distances from a source to every system (-1: unreachable), cached by source.
+{int: []int} dist_cache = {}
+// Owners (sides) of every system, as of the day's refresh and the captures since.
+[]int owners = []
+bool owners_known = false
+// Systems held by each side in each minor ([minor][side]), rebuilt when owners change.
+[][]int held = []
+bool held_dirty = true
 {int: int} garrisons = {}
-// The pirates' home systems (government "Pirate"), and which systems are inhabited.
-[]int homes = []
-bool homes_known = false
 {int: int} peopled = {}
 
 void wire(Tuning t, Factions f):
     tune = t
     factions = f
 
-// (Re)build the lane graph if the galaxy's size changed (or on first use).
+// (Re)build the system list if the galaxy's size changed (or on first use).
 void build(es.Game game):
     int n = game.system_count()
     if n == names.len() && n > 0:
         return
     names = []
     index = {}
-    links = []
     garrisons = {}
-    homes = []
     peopled = {}
-    homes_known = false
     for i in 0..<n:
         string s = game.system_at(i)
         names.append(s)
         index[s] = i
-    for i in 0..<n:
+    minor_of = []
+    minor_of.resize(n)
+    minor_of.fill(-1)
+    human = []
+    minor_systems = []
+    for m in 0..<factions.regions.count():
+        []int list = []
+        for s in factions.regions.systems[m]:
+            int i = index.get(s, -1)
+            if i >= 0:
+                minor_of[i] = m
+                list.append(i)
+                human.append(i)
+        minor_systems.append(list)
+    fingerprint = -1
+    owners_known = false
+    check_links(game)
+
+// Rebuild the lane graph if the lanes between human systems changed.
+void check_links(es.Game game):
+    int sig = 0
+    for i in human:
+        sig = (sig * 31 + game.link_count(names[i]) * (i + 1)) % 1000000007
+    if sig == fingerprint:
+        return
+    fingerprint = sig
+    links = []
+    links.resize(names.len())
+    for i in 0..<names.len():
+        links[i] = []
+    for i in human:
         []int out = []
         string s = names[i]
         for k in 0..<game.link_count(s):
             int j = index.get(game.link(s, k), -1)
-            if j >= 0 && !out.contains(j):
+            if j >= 0 && minor_of[j] >= 0 && !out.contains(j):
                 out.append(j)
-        links.append(out)
+        links[i] = out
+    dist_cache = {}
 
 int count():
     return names.len()
@@ -61,7 +105,23 @@ string name(int i):
         return ""
     return names[i]
 
-// Jumps from the nearest of `sources` to every system (-1: unreachable).
+bool is_human(int i):
+    return i >= 0 && i < minor_of.len() && minor_of[i] >= 0
+
+int minor(int i):
+    return minor_of[i] if i >= 0 && i < minor_of.len() else -1
+
+// ---- Distances ----
+
+// Jumps from `source` to every system (-1: unreachable), cached.
+[]int from(int source):
+    if dist_cache.has(source):
+        return dist_cache[source]
+    []int d = distances_from([source])
+    dist_cache[source] = d
+    return d
+
+// Jumps from the nearest of `sources` to every system (not cached).
 []int distances_from([]int sources):
     []int dist = []
     dist.resize(names.len())
@@ -81,30 +141,136 @@ string name(int i):
                 queue.append(v)
     return dist
 
-[]int distances_one(int source):
-    return distances_from([source])
+int jumps(int a, int b):
+    if a < 0 || b < 0:
+        return -1
+    return from(b)[a]
 
-// The next system on a shortest path from `from` to `to` (`from` if there, or unreachable).
-int next_hop(int from, int to):
-    if from == to:
-        return from
-    []int dist = distances_one(to)
-    int d = dist[from]
+// The next system on a shortest path from `here` to `to` (`here` if there, or unreachable).
+int next_hop(int here, int to):
+    if here == to || here < 0 || to < 0:
+        return here
+    []int dist = from(to)
+    int d = dist[here]
     if d <= 0:
-        return from
-    for v in links[from]:
+        return here
+    for v in links[here]:
         if dist[v] == d - 1:
             return v
-    return from
+    return here
 
-// The systems the pirates hold, where raids set out from.
+// ---- Ownership ----
+
+// Read every human system's owner from the game (once a day, and on load).
+void refresh(es.Game game):
+    owners = []
+    owners.resize(names.len())
+    owners.fill(0)
+    for i in human:
+        owners[i] = factions.of_government(game.system_government(names[i]))
+    owners_known = true
+    held_dirty = true
+
+int owner(int i):
+    if i < 0 || i >= owners.len():
+        return 0
+    return owners[i]
+
+// The simulation took a system: the game is told with the day's changes (Changes).
+void set_owner(int i, int side):
+    owners[i] = side
+    held_dirty = true
+
+// Systems side s holds in minor m.
+int held_by(int m, int s):
+    if held_dirty:
+        rebuild_held()
+    return held[m][s]
+
+void rebuild_held():
+    held = []
+    for m in 0..<minor_systems.len():
+        []int row = []
+        row.resize(factions.sides() + 1)
+        row.fill(0)
+        for i in minor_systems[m]:
+            int o = owners[i]
+            if o > 0 && o < row.len():
+                row[o] += 1
+        held.append(row)
+    held_dirty = false
+
+// The sides holding part of minor m, most systems first.
+[]int holders(int m):
+    []int out = []
+    for s in 1..=factions.sides():
+        if held_by(m, s) > 0:
+            out.append(s)
+    out.sort(bool(int x, int y): return held_by(m, x) > held_by(m, y))
+    return out
+
+// The side holding most of minor m (ties to the default parent), or 0.
+int minor_owner(int m):
+    int best = 0
+    int most = 0
+    for s in 1..=factions.sides():
+        int h = held_by(m, s)
+        if h > most || (h == most && h > 0 && s == factions.regions.parents[m]):
+            best = s
+            most = h
+    return best
+
+// True if two or more factions (majors or rebels) hold part of minor m.
+bool split(int m):
+    int n = 0
+    for s in 1..=factions.sides():
+        if s != factions.pirates() && held_by(m, s) > 0:
+            n += 1
+    return n >= 2
+
+// Systems side s holds anywhere.
+int territory(int s):
+    int n = 0
+    for i in human:
+        if owners[i] == s:
+            n += 1
+    return n
+
+// True if side s holds a system in minor m or one next to it.
+bool borders(int s, int m):
+    for i in minor_systems[m]:
+        if owners[i] == s:
+            return true
+        for v in links[i]:
+            if owners[v] == s:
+                return true
+    return false
+
+// Jumps from side s's capital to minor m's nearest system (majors; else 0).
+int distance_from_capital(int s, int m):
+    if !factions.is_major(s):
+        return 0
+    int cap = find(factions.capitals[s])
+    if cap < 0:
+        return 0
+    []int d = from(cap)
+    int best = -1
+    for i in minor_systems[m]:
+        if d[i] >= 0 && (best < 0 || d[i] < best):
+            best = d[i]
+    return best if best >= 0 else 0
+
+// ---- Places ----
+
+// The systems the pirates hold, where raids set out from: from today's owners,
+// so a system that turns pirate (Gienah and Algenib, 47 days into the Veteran
+// start) starts raids from the next day.
 []int pirate_homes(es.Game game):
-    if !homes_known:
-        homes_known = true
-        for i in 0..<names.len():
-            if game.system_government(names[i]) == "Pirate":
-                homes.append(i)
-    return homes
+    []int out = []
+    for i in human:
+        if owners[i] == factions.pirates():
+            out.append(i)
+    return out
 
 bool inhabited(es.Game game, int i):
     if i < 0 || i >= names.len():
@@ -114,45 +280,6 @@ bool inhabited(es.Game game, int i):
         known = 1 if game.inhabited(names[i]) else 0
         peopled[i] = known
     return known == 1
-
-// The faction (1..3) that owns a system now, or 0.
-int owner(es.Game game, int i):
-    return factions.of_government(game.system_government(names[i]))
-
-// The faction a system belonged to when the diplomacy began.
-int original_owner(es.Game game, State state, int i):
-    int o = state.origin(game, i)
-    if o != 0:
-        return o
-    return owner(game, i)
-
-// Jumps from faction f's original territory to every system.
-[]int original_distances(es.Game game, State state, int f):
-    []int src = []
-    for i in 0..<names.len():
-        if original_owner(game, state, i) == f:
-            src.append(i)
-    return distances_from(src)
-
-// Jumps from the systems faction f owns now to every system.
-[]int current_distances(es.Game game, int f):
-    []int src = []
-    for i in 0..<names.len():
-        if owner(game, i) == f:
-            src.append(i)
-    return distances_from(src)
-
-// The systems f could take from e if they were at war: e owns it, it is not a
-// capital, and it lies within max_depth jumps of f's original territory.
-[]int targets(es.Game game, State state, int f, int e):
-    []int out = []
-    if f == e || f == 0 || e == 0:
-        return out
-    []int dist = original_distances(game, state, f)
-    for i in 0..<names.len():
-        if dist[i] >= 0 && dist[i] <= tune.max_depth && owner(game, i) == e && !factions.is_capital(names[i]):
-            out.append(i)
-    return out
 
 // The system's garrison at full strength, from its planets' defense fleets.
 int full_garrison(es.Game game, int i):

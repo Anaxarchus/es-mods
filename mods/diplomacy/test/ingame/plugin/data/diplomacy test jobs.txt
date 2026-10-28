@@ -70,6 +70,7 @@ mission "Diplomacy Test: Republic Job: Scout System vs Free Worlds"
 	on complete
 		payment 40000 400
 		"diplomacy: merit" += 4
+		"diplomacy: intel" += 2
 		dialog `A Navy intelligence officer downloads your sensor logs from <waypoints> and pays you <payment>. "That's exactly what we needed on the Free Worlds positions."`
 
 mission "Diplomacy Test: Republic Job: Medium Warship vs Free Worlds"

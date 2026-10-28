@@ -8,6 +8,8 @@ class Names
 
 // The canonical companies: name, home planet, sector, and capacity (work a day).
 []string canon_names = ["Betelgeuse Shipyards", "Gemini Shipyards", "Lionheart Industries", "Southbound Shipyards", "Syndicated Shipyards", "Tarazed Corporation", "Tycho Crater Shipyards", "Deep Sky", "Lovelace Labs", "Syndicated Systems", "Delta V Corporation", "Kraz Cybernetics", "Polymath Nanoinstruments", "Megaparsec Incorporated", "Poseidon Industries"]
+// Their short names, for the map's labels.
+[]string canon_short = ["Betelgeuse", "Gemini", "Lionheart", "Southbound", "Syndicated Yards", "Tarazed", "Tycho Crater", "Deep Sky", "Lovelace", "Syndicated Systems", "Delta V", "Kraz", "Polymath", "Megaparsec", "Poseidon"]
 []string canon_homes = ["Prime", "Geminus", "Valhalla", "Zug", "Foundry", "Wayfarer", "Luna", "Asgard", "Ada", "Hephaestus", "Solace", "Rust", "Vinci", "Earth", "Deep"]
 []int canon_sectors = [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 3, 3, 4, 4]
 []float canon_capacity = [14.0, 12.0, 11.0, 15.0, 20.0, 16.0, 12.0, 13.0, 11.0, 16.0, 13.0, 14.0, 11.0, 18.0, 10.0]

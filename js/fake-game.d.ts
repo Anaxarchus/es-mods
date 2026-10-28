@@ -11,8 +11,11 @@ export interface FakeShip {
 	maxHull: number;
 	shields: number;
 	maxShields: number;
+	/** Absolute amounts, as the game answers them; the maxima give the fractions (mod API 10). */
 	energy: number;
+	maxEnergy?: number;
 	fuel: number;
+	maxFuel?: number;
 	government: string;
 	strength: number;
 	tag?: string;
@@ -38,6 +41,8 @@ export interface FakeFleetShip {
 	/** The mass integration has saved, in tons, and the outfit space it gave back. */
 	massSaved?: number;
 	spaceSaved?: Record<string, number>;
+	/** Parked (mod API 10). */
+	parked?: boolean;
 }
 
 /** An outfit the fake game knows (mod API 5). */
@@ -102,6 +107,12 @@ export interface FakeGameOptions {
 	/** Mod API 9: ship models added to the default ones, and the used hulls in the landed planet's shipyard. */
 	models?: Record<string, FakeModel>;
 	usedHulls?: Record<string, number>;
+	/** Mod API 10: the standard commodities, prices ([now, as the data sets it] by system and commodity),
+	 * what the player carries by commodity, and the features game.has() answers. */
+	commodities?: string[];
+	prices?: Record<string, Record<string, [number, number]>>;
+	cargo?: Record<string, number>;
+	features?: string[];
 }
 
 export interface FakeGame extends Game {}
@@ -162,4 +173,44 @@ export declare class FakeGame {
 	stepLosses: FakeLoss[];
 	/** Used hulls in the landed planet's shipyard, by model, for ship_in_stock(). */
 	usedHulls: Map<string, number>;
+	/** Mod API 10. */
+	commodities: string[];
+	prices: Record<string, Record<string, [number, number]>>;
+	/** What the player carries, by commodity, for cargo(). */
+	carried: Map<string, number>;
+	/** Whether outfit_stock_on(true) was called, and outfitter stock by "<planet>\u0000<outfit>". */
+	outfitStockOn: boolean;
+	outfitStock: Map<string, number>;
+	/** Ships ship_remove() took out of `fleet`. */
+	removed: FakeFleetShip[];
+	features: Set<string>;
+	/** The notification patterns the mod listens for. */
+	listening: Set<string>;
+	/** What the mod posted with notify(), when this game is on no FakeBus. */
+	posted: { name: string; payload: string }[];
+	/** Notifications queued for the mod with receive(); drain(mod) delivers them. */
+	incoming: { name: string; payload: string; sender: string }[];
+	/** The timing sections the mod named. */
+	sections: string[];
+	bus: FakeBus | null;
+	busName: string;
+	/** Queue a notification for this game's mod, from `sender`. */
+	receive(name: string, payload: string, sender: string): void;
+	/** Deliver the queued notifications the mod listens for to its on_notification. */
+	drain(mod: { on_notification?(game: Game, name: string, payload: string, sender: string): void }): void;
+}
+
+/** Mod API 10: the notification bus between several mods, each with a FakeGame of its own. */
+export declare class FakeBus {
+	constructor();
+	members: Map<string, { mod: object; game: FakeGame }>;
+	queue: { name: string; payload: string; sender: string }[];
+	/** How many deliveries the last drain() made, and every delivery so far. */
+	lastDeliveries: number;
+	delivered: { to: string; name: string; payload: string; sender: string }[];
+	/** Join a mod, under its name, and its game: the game's notify() posts to this bus. */
+	join(name: string, mod: object, game: FakeGame): void;
+	post(sender: string, name: string, payload: string): boolean;
+	/** Deliver the queue as the game does (no self-delivery, 4 rounds or 1024 deliveries); answers how many. */
+	drain(): number;
 }

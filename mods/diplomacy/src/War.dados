@@ -1,0 +1,95 @@
+class War
+
+// One war. Sides a (who declared it) and b; its goals, the minors it is about;
+// its kind (0 a border crisis: limited, one goal; 1 a war; 2 a rebellion: a
+// rebel faction against the major it left; 3 a defection: the old parent
+// against the major a minor went over to; 4 a reconquest: a major against a
+// rebel faction); its reason; the day it began and the day it must end by; the
+// score (positive: a is winning); each side's exhaustion (tenths: 1000 ends
+// it); and the systems each side took, and core systems each side lost.
+
+int id = 0
+int a = 0
+int b = 0
+int kind = 1
+[]int goals = []
+string reason = ""
+int since = 0
+int until = 0
+int score = 0
+int ex_a = 0
+int ex_b = 0
+int took_a = 0
+int took_b = 0
+int core_lost_a = 0
+int core_lost_b = 0
+
+bool involves(int s):
+    return s == a || s == b
+
+int other(int s):
+    if s == a:
+        return b
+    if s == b:
+        return a
+    return 0
+
+bool between(int s, int t):
+    return (s == a && t == b) || (s == b && t == a)
+
+// The score from side s's point of view.
+int score_for(int s):
+    return score if s == a else -score
+
+void add_score(int s, int points):
+    if s == a:
+        score += points
+    else if s == b:
+        score -= points
+
+void add_exhaustion(int s, int tenths):
+    if s == a:
+        ex_a += tenths
+    else if s == b:
+        ex_b += tenths
+
+int exhaustion(int s):
+    return ex_a if s == a else ex_b
+
+string kind_name():
+    if kind == 0:
+        return "border crisis"
+    if kind == 2:
+        return "rebellion"
+    if kind == 3:
+        return "defection war"
+    if kind == 4:
+        return "reconquest"
+    return "war"
+
+[]int encode():
+    []int v = [id, a, b, kind, since, until, score, ex_a, ex_b, took_a, took_b, core_lost_a, core_lost_b, goals.len()]
+    for m in goals:
+        v.append(m)
+    return v
+
+void decode([]int v):
+    if v.len() < 14:
+        return
+    id = v[0]
+    a = v[1]
+    b = v[2]
+    kind = v[3]
+    since = v[4]
+    until = v[5]
+    score = v[6]
+    ex_a = v[7]
+    ex_b = v[8]
+    took_a = v[9]
+    took_b = v[10]
+    core_lost_a = v[11]
+    core_lost_b = v[12]
+    goals = []
+    for k in 0..<v[13]:
+        if 14 + k < v.len():
+            goals.append(v[14 + k])

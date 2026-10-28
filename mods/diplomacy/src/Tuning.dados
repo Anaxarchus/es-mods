@@ -8,20 +8,171 @@ class Tuning
 // instance (Diplomacy.tune).
 
 // ---- Wars ----
-// Days after activation before the first war may start.
-int first_war_min = 5
+// Several wars may run at once: at most max_wars, and a rebellion or a
+// defection (which cannot wait) may take one more, up to hard_max_wars. A new
+// war (other than those) is declared at most once every declare_gap_min..max days.
+int max_wars = 3
+int hard_max_wars = 4
+int declare_gap_min = 8
+int declare_gap_max = 20
+// Days after activation before the first war, which always involves the
+// player's faction (the Free Worlds for a campaign veteran): the border crisis.
+int first_war_min = 10
 int first_war_max = 20
-// Chance per day that a war starts while no war is running and no truce holds.
-int war_chance = 4
-// How long a war lasts, and the truce after it, in days.
-int war_min_days = 30
-int war_max_days = 70
-int truce_min_days = 40
-int truce_max_days = 120
+// Each pair of factions has a war pressure: a chance per day, in hundredths of
+// a percent, that it declares war if a slot is free. Each minor two majors
+// both hold part of adds split_pressure, growing by half again for every
+// split_growth_days the split has gone without a war, up to split_max_growth
+// times; each minor a major claims (its own by default, held by the other, on
+// its border) adds claim_pressure; each whole minor of the other's on its
+// border adds whole_pressure. A rebel faction holding a minor a major claims
+// adds reclaim_pressure for that major. A grudge raises it by grudge points / 20.
+int split_pressure = 40
+int split_growth_days = 120
+int split_max_growth = 3
+int claim_pressure = 12
+// A side that lost systems of a minor claims it for this many days.
+int claim_days = 1500
+int whole_pressure = 4
+// A major already at war and tiring (exhaustion over opportunity_exhaustion
+// percent) invites its other neighbours: each whole minor of its on their
+// border adds opportunity_pressure instead of whole_pressure.
+int opportunity_pressure = 40
+int opportunity_exhaustion = 20
+int reclaim_pressure = 45
+int opportunist_pressure = 3
+// A faction whose member has seen no war of their own for this many days gets
+// its pressures multiplied by peace_boost (so a player always has something
+// going on), and none is declared against a faction already in
+// faction_war_limit wars.
+int quiet_days = 45
+int peace_boost = 4
+int faction_war_limit = 2
+// After a peace, the pair keeps a truce of truce_min_days..truce_max_days.
+int truce_min_days = 25
+int truce_max_days = 70
+// A rebel faction that held out gets a longer truce: its independence is recognised.
+int independence_truce_min = 200
+int independence_truce_max = 400
+// A border crisis (a limited war: one goal, no counter-goal) lasts
+// crisis_min..crisis_max days; a war war_min..war_max; a rebellion or a
+// defection war rebellion_min..rebellion_max.
+int crisis_min_days = 25
+int crisis_max_days = 45
+int war_min_days = 40
+int war_max_days = 90
+int rebellion_min_days = 60
+int rebellion_max_days = 120
+// While "free worlds reconciliation" is set, wars in the first
+// reconciliation_days after activation are border crises.
+int reconciliation_days = 300
+// Score: per goal system taken, per core system taken, per flotilla destroyed,
+// per siege broken. A side ends a war at once at exhaustion 100, or wins a
+// crisis outright at a score of crisis_decisive.
+int score_capture = 8
+int score_core = 20
+int score_flotilla = 4
+int score_relief = 3
+int crisis_decisive = 30
+// Peace terms: a side whose score is at least win_score is the winner; one at
+// overwhelming_score keeps even the core systems it took. A winner holding
+// cession_share percent of a goal minor's systems (of those the two hold) is
+// ceded the rest of it.
+int win_score = 15
+int overwhelming_score = 60
+int cession_share = 60
+// Exhaustion, in tenths: per day at war, per flotilla lost, per system lost,
+// per core system lost.
+int exhaustion_day = 6
+int exhaustion_flotilla = 50
+int exhaustion_system = 50
+int exhaustion_core = 150
+// Grudge points per system lost in a war; they decay by one every grudge_decay days.
+int grudge_per_system = 6
+int grudge_decay = 15
+// A freshly captured system: its garrison starts at capture_hp percent and
+// stands at consolidation percent of full for consolidation_days, recovering
+// fresh_recovery percent a day. After swap_days without a siege its patrols
+// become the new owner's (the old owner's patrol fleets are swapped out).
+int capture_hp = 60
+int consolidation = 150
+int consolidation_days = 20
+int fresh_recovery = 15
+int swap_days = 10
+// Patrol fleets put in a captured system, as "add fleet <name> <period>".
+int small_patrol_period = 1800
+int large_patrol_period = 4500
+// Flotilla targets: systems in the war's goals first; an objective outside
+// them counts this many jumps farther.
+int off_goal_penalty = 4
+
+// ---- Minors: unrest, rebellion and defection ----
+// Unrest (0..100, kept in tenths) drifts each day toward a target, by
+// unrest_drift percent of the gap. The target: unrest_base, plus
+// unrest_per_jump per jump from the owner's capital past unrest_free_jumps,
+// plus foreign_rule if the owner is not the minor's default parent, plus
+// split_unrest if another side holds part of it, plus war_unrest per war the
+// owner fights and its worst war's exhaustion / war_weariness, plus the
+// owner's defeats and core shock, plus the minor's neglect (unopposed raids).
+int unrest_drift = 3
+int unrest_base = 8
+int unrest_per_jump = 2
+int unrest_free_jumps = 3
+int foreign_rule = 22
+int split_unrest = 8
+int war_unrest = 4
+int war_weariness = 50
+// Defeat points per war lost and per system lost (decay 1 a day); core shock
+// per core system lost (decays 1 every 2 days); neglect per plunder day (decays
+// 1 a day, and never above neglect_cap).
+int defeat_per_war = 20
+int defeat_per_system = 5
+int core_shock = 25
+int neglect_per_plunder = 3
+int neglect_cap = 20
+// Above rebellion_unrest a minor may rebel: a chance per day of
+// (unrest - rebellion_unrest)^2 / rebellion_divisor percent, at most once in
+// rebellion_cooldown days per minor.
+int rebellion_unrest = 40
+int rebellion_divisor = 400
+int rebellion_cooldown = 600
+// Weights (percent) for how a rebellion goes: separatist, or defection to a
+// bordering major (more if it is the minor's default parent, or already holds
+// part of it; less if it is at war twice already).
+int separatist_weight = 100
+int defect_weight = 40
+int defect_home_bonus = 60
+int defect_split_bonus = 30
+// A separatist faction losing its war (exhaustion above protection_exhaustion)
+// asks a bordering major for protection with this chance per day (percent x 10).
+int protection_exhaustion = 60
+int protection_chance = 15
+// Rebels' flotillas: at most rebel_flotillas at once, at rebel_strength percent
+// of their parent's sizes; a rebel system's garrison holds at rebel_garrison percent.
+int rebel_flotillas = 2
+int rebel_strength = 70
+int rebel_garrison = 80
+
+// ---- The chronicle and the War Room ----
+int chronicle_cap = 60
+int history_every = 10
+int history_cap = 120
+int medals_cap = 40
+
+// ---- Operations (jobs from the live war) ----
+int ops_per_landing = 3
+int ops_tracked = 24
+// An operation's job has ops_deadline days; its track is kept that long and
+// ops_margin more after its last offer (always while the job is taken).
+int ops_deadline = 20
+int ops_margin = 25
+int ops_range = 4
 
 // ---- Flotillas ----
-// Flotilla slots per faction: at most this many flotillas at once.
-int max_flotillas = 3
+// Flotillas per faction: at most this many at once (all its wars together),
+// and at most per_war in any one war.
+int max_flotillas = 4
+int per_war = 3
 // Chance per day that a faction at war launches a flotilla into a free slot.
 int launch_chance = 30
 // Strength of a new flotilla of each size (1 small, 2 medium, 3 large).
@@ -58,10 +209,8 @@ int siege_max_per_day = 40
 int min_siege_days = 2
 // A garrison not under siege recovers this percentage of its full strength per day.
 int garrison_recovery = 10
-// Garrison bookkeeping slots (systems damaged at once).
-int garrison_slots = 12
-// The border never moves more than this many jumps past a faction's original territory.
-int max_depth = 2
+// Damaged garrisons kept at once (the least recently besieged is forgotten).
+int garrison_slots = 24
 
 // ---- In person ----
 // Points a spawned fleet stands for: a "Large <faction>" and a "Small <faction>".

@@ -6,8 +6,7 @@ tags
 	"gameplay"
 	"factions"
 	"scripting"
-about "Lightweight diplomacy for after the Free Worlds campaign. Now and then the Republic, the Free Worlds or the Syndicate go to war with one another and send flotillas of various sizes to take each other's border systems."
-about "Flotillas and sieges are shown on the map. Fly to a flotilla's system and you will find it there, and fight beside it or against it: what you destroy is gone from the war. A siege takes several days, so an enemy flotilla a few jumps away can still arrive in time to break it."
-about "Capitals are never taken, and no border moves more than two jumps past where it started, so no faction is ever wiped out. When a war ends in a truce, the borders stay where it left them."
-about `Land in any system a faction holds and press "Faction" to see its wars and flotillas, and to join or leave it. Members are allies of their faction's flotillas and enemies of its enemies' flotillas. They earn merit for enemy ships destroyed and for faction dispatch jobs, rise in rank, and draw a salary that grows with rank.`
-about "It needs the Dado mod loader in the game's modloaders folder. Without it only its data loads, and nothing happens."
+about "Diplomacy for after the Free Worlds campaign. Human space is carved into the Republic, the Free Worlds and the Syndicate, thirteen minor regions they compete for (the Paradise Worlds, the Deep, the Dirt Belt, the South, Bloodsea's frontier, Tarazed's reach, the Upper Core...) and the pirate worlds. Wars over the minors run side by side and end in peace terms that move borders; regions rise against their rulers, seceding as rebel factions or going over to a neighbour."
+about "Flotillas, sieges, war goals and fronts are shown on the map. Fly to a flotilla's system and you will find it there, and fight beside it or against it: what you destroy is gone from the war. Capitals are never taken, and a fresh conquest holds for a while before it can be retaken."
+about `Accept the Council's commission as a campaign veteran, or land in any system a faction holds and press "Faction" to join it, see its minors, and open the War Room: its wars, forces, minors and chronicle, with charts of territory over time. Members earn merit and medals for enemy ships and for operations made from the live war (relieve a siege, intercept a flotilla, supply a garrison, hunt raiders or rebels), rise in rank and draw a salary.`
+about "It needs the Dado mod loader (mod API 9 or newer) in the game's modloaders folder. Without it only its data loads, and nothing happens."

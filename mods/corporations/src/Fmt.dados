@@ -51,3 +51,29 @@ string short_credits(float value):
 string one_decimal(float value):
     int tenths = globalThis.Math.round(value * 10.0)
     return string(tenths / 10) + "." + string(tenths % 10)
+
+// "14 Mar 3015": a day as the game counts them (days since its epoch, where
+// day 1 is 1 January of year 1, in the Gregorian calendar).
+[]string month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+string date(int n):
+    int d = n - 1
+    int year = 1 + 400 * (d / 146097)
+    d = d % 146097
+    int c = d / 36524
+    c = 3 if c > 3 else c
+    year += 100 * c
+    d -= 36524 * c
+    year += 4 * (d / 1461)
+    d = d % 1461
+    int y = d / 365
+    y = 3 if y > 3 else y
+    year += y
+    d -= 365 * y
+    bool leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+    []int lengths = [31, 29 if leap else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    int m = 0
+    for m < 11 && d >= lengths[m]:
+        d -= lengths[m]
+        m += 1
+    return string(d + 1) + " " + month_names[m] + " " + string(year)

@@ -1,0 +1,113 @@
+class Press
+
+import "imports:sdk/es"
+
+// Spaceport news (M1): the market's big events (fires, buyouts, tender
+// awards, loss spikes) as news items in the spaceports near where they
+// happened, as the game's own news shows them.
+//
+// Every game.change stays in the pilot file for good (the game saves each
+// unnamed event's changes with the pilot, and keeps them), so items are
+// written to cost as little as possible there:
+// - Canonical companies' items (kinds "tender", "fire", "beats") and loss
+//   spikes at each stocked shipyard system are written in the plugin's data
+//   (data/corporations.txt, made by tools/make-news.mjs), each shown while
+//   the condition "corporations: news <key>" is at least "days since epoch".
+//   Showing one is a set_condition to the day it ends: no data change, and it
+//   hides itself when that day passes, even if the market's own list is lost.
+// - Anything else (an invented company) uses one of SLOTS items written in
+//   the data with no place or message; a game.change gives it both. At most
+//   one change in Market.DYNAMIC_EVERY days, about 250 bytes each, so the
+//   pilot grows by at most about 9 KB a year from this.
+// At most Market.NEWS_ACTIVE items show at once; each lasts Market.NEWS_DAYS.
+
+int SLOTS = 4
+// The game picks one news item at random among all that match a spaceport
+// (SpaceportPanel::PickNews), vanilla ones included, so these are seldom
+// seen. So the player is also told on landing within 2 jumps of an item's
+// place, once an item: what each item said and where (not saved: after a
+// load an item may be told once more).
+{string: string} texts = {}
+{string: string} places = {}
+{string: bool} told = {}
+
+void post(es.Game game, Market market, int d):
+    // Items whose window is over: their condition goes back to 0, so it leaves
+    // the save (it hid itself already).
+    for e in market.news_active:
+        if until(e) < d:
+            game.set_condition("corporations: news " + e.split("=")[0], 0)
+    market.news_active = market.news_active.filter(bool(string e): return until(e) >= d)
+    for item in market.press:
+        if market.news_active.len() >= market.NEWS_ACTIVE:
+            break
+        []string f = item.split("|")
+        if f.len() < 3:
+            continue
+        string key = f[0]
+        // From the day it happened (a reload can simulate several days at once).
+        int when = f[3].to_int() if f.len() > 3 else d
+        int ends = when + market.NEWS_DAYS
+        if ends < d:
+            continue
+        if key != "" && showing(market, key):
+            continue
+        if key != "":
+            game.set_condition("corporations: news " + key, ends)
+            market.news_active.append(key + "=" + string(ends))
+            remember(key, f[1], f[2])
+        else:
+            if when - market.last_dynamic < market.DYNAMIC_EVERY:
+                continue
+            int slot = free_slot(market)
+            if slot == 0:
+                continue
+            string text = f[2].replace_all("\"", "'").replace_all("`", "'")
+            string body = "news \"corporations: slot " + string(slot) + "\"\n\tremove location\n\tlocation\n\t\tnear \"" + f[1] + "\" 2\n\tremove message\n\tmessage\n\t\tword\n\t\t\t\"" + text + "\""
+            game.change(body)
+            // A change stays in the pilot for good: save today, so a mission's
+            // autosave in flight cannot replay it as a second change.
+            market.must_save = true
+            game.set_condition("corporations: news slot " + string(slot), ends)
+            market.news_active.append("slot " + string(slot) + "=" + string(ends))
+            remember("slot " + string(slot), f[1], f[2])
+            market.last_dynamic = when
+    // Conditions alone need no save: they hide the items by themselves, and a
+    // stale list here only lets an item through a little early.
+    market.press = []
+
+int until(string entry):
+    []string f = entry.split("=")
+    return f[1].to_int() if f.len() == 2 else 0
+
+bool showing(Market market, string key):
+    for e in market.news_active:
+        if e.starts_with(key + "="):
+            return true
+    return false
+
+int free_slot(Market market):
+    for k in 1..=SLOTS:
+        if !showing(market, "slot " + string(k)):
+            return k
+    return 0
+
+void remember(string key, string place, string text):
+    if text == "":
+        return
+    texts[key] = text
+    places[key] = place
+    told.delete(key)
+
+// Landed: a line for each item showing near here that the player has not been told.
+void tell(es.Game game, Galaxy galaxy, Market market):
+    string here = game.here()
+    for e in market.news_active:
+        string key = e.split("=")[0]
+        if told.has(key) || !texts.has(key):
+            continue
+        int j = galaxy.jumps(here, places[key])
+        if j < 0 || j > 2:
+            continue
+        told[key] = true
+        game.message("Spaceport news: " + texts[key])

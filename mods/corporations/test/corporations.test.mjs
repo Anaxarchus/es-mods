@@ -23,12 +23,19 @@ test(`the market runs ${DAYS} days and keeps its rules`, { skip }, () => {
 	const events = { bankrupt: 0, buys: 0, breakups: 0, listings: 0, rescues: 0, reviews: 0, distress: 0, cycles: 0, good: 0, bad: 0 };
 	// Turns of fortune, and where each company's price stood in its range the day before.
 	const GOOD = [/production breakthrough/, /lands an emergency order/, /award for safety/, /new chief executive/, /development grant/];
-	const BAD = [/accident shuts/, /accounting scandal/, /Workers strike/, /loses a lawsuit/, /recalls a faulty/];
+	const BAD = [/A fire shuts/, /accounting scandal/, /Workers strike/, /loses a lawsuit/, /recalls a faulty/];
 	let goodPosition = 0, badPosition = 0;
 	const positions = new Map();
 	let seen = m().news.length;
 	let minListed = 99, maxListed = 0, maxShare = 0, slowest = 0, overDays = new Map(), worstOver = 0;
 	let totalTime = 0;
+	// M1: military shelves never sit empty for long; canonical builders keep
+	// their yards; spaceport news stays bounded; one earnings line a day.
+	const zeroRun = new Map();
+	let longestZero = 0, maxActive = 0, maxState = 0, saves = 0, earningsLines = 0, contradictions = 0;
+	const founding = new Map(m().companies.filter((c) => c.canon).map((c) => [c.id, c.capacity]));
+	const setData = game.set_data.bind(game);
+	game.set_data = (k, v) => { if (k === "state") { saves++; maxState = Math.max(maxState, v.length); } setData(k, v); };
 	const t0 = game.day_;
 	for (let d = 1; d <= DAYS; d++) {
 		game.day_ = t0 + d;
@@ -56,6 +63,19 @@ test(`the market runs ${DAYS} days and keeps its rules`, { skip }, () => {
 			if (BAD.some((r) => r.test(text))) { events.bad++; badPosition += positions.get(who) ?? 0.5; }
 		}
 		seen = news.length;
+		const today = news.filter((l) => Number(l.split("|")[0]) === game.day_);
+		const digests = today.filter((l) => l.split("|")[1].startsWith("Earnings: "));
+		assert.ok(digests.length <= 1, `day ${d}: one earnings line a day (${digests.length})`);
+		earningsLines += digests.length;
+		for (const l of today) if (/reports a (profit|loss).*shares (jump|fall)/.test(l)) contradictions++;
+		for (const s of m().shelves) {
+			if (!m().hulls.military(s.row)) continue;
+			const key = s.planet + "|" + s.model;
+			const run = s.count === 0 ? (zeroRun.get(key) || 0) + 1 : 0;
+			zeroRun.set(key, run);
+			longestZero = Math.max(longestZero, run);
+		}
+		maxActive = Math.max(maxActive, m().news_active.length);
 		const now = listed(mod);
 		minListed = Math.min(minListed, now.length);
 		maxListed = Math.max(maxListed, now.length);
@@ -75,8 +95,9 @@ test(`the market runs ${DAYS} days and keeps its rules`, { skip }, () => {
 		for (const c of now) {
 			const share = c.capacity / bySector.get(c.sector);
 			maxShare = Math.max(maxShare, share);
-			const line = Math.max(0.35, 2 / peers.get(c.sector));
-			const over = share > line || c.price * c.shares / worth > 0.15 ? (overDays.get(c.id) || 0) + 1 : 0;
+			// Canonical companies: only their capacity share, over 50% (M1).
+			const line = Math.max(c.canon ? 0.5 : 0.35, 2 / peers.get(c.sector));
+			const over = share > line || (!c.canon && c.price * c.shares / worth > 0.15) ? (overDays.get(c.id) || 0) + 1 : 0;
 			overDays.set(c.id, over);
 			worstOver = Math.max(worstOver, over);
 		}
@@ -92,7 +113,20 @@ test(`the market runs ${DAYS} days and keeps its rules`, { skip }, () => {
 	assert.ok(biggest / value <= 0.25, "no company is over 25% of the market");
 	console.log(`  turns of fortune: ${events.good} good (average place in range ${(goodPosition / events.good).toFixed(2)}), ${events.bad} bad (${(badPosition / events.bad).toFixed(2)}); index ${m().index.toFixed(0)}`);
 	assert.ok(events.good + events.bad > DAYS * 40 / 700 / 2, "turns of fortune happen");
-	assert.ok(goodPosition / events.good < badPosition / events.bad, "good turns come lower in a company's range than bad ones");
+	// M1 narrowed the luck bias (55% good at a 60-day low, 45% at the high):
+	// good and bad turns come about equally often.
+	const goodShare = events.good / (events.good + events.bad);
+	assert.ok(goodShare > 0.35 && goodShare < 0.65, `good turns are about half (${goodShare.toFixed(2)})`);
+	console.log(`  M1: longest a military shelf sat empty ${longestZero} days; saves ${saves} in ${DAYS} days; largest state ${(maxState / 1024).toFixed(0)} KB; news showing at most ${maxActive}; ${earningsLines} earnings lines`);
+	assert.ok(longestZero <= 150, `a military shelf is never empty for long (${longestZero} days)`);
+	assert.ok(saves <= DAYS / 4, `the market is not saved every day (${saves} saves)`);
+	assert.ok(maxState <= 120 * 1024, `the saved state stays under 120 KB (${(maxState / 1024).toFixed(0)} KB)`);
+	assert.ok(maxActive <= m().NEWS_ACTIVE, "spaceport news stays bounded");
+	assert.equal(contradictions, 0, "no 'profit; shares fall' lines");
+	for (const [id, cap] of founding) {
+		const c = m().by_id.get(id);
+		if (c.sector === 0) assert.ok(c.capacity >= 0.4 * cap, `${c.name} keeps its yards (${c.capacity.toFixed(1)} of ${cap})`);
+	}
 	assert.ok(m().index > 0 && m().index_history.length === 60, "the index runs, with 60 days kept");
 });
 
@@ -101,10 +135,12 @@ test("the saved market reads back as it was", { skip }, () => {
 	const mod = new Corporations();
 	mod.on_load(game);
 	mod.on_enter(game, "Sol");
-	for (let d = 1; d <= 200; d++) {
+	for (let d = 1; d <= 203; d++) {
 		game.day_ += 1;
 		mod.on_day(game, game.day_);
 	}
+	assert.notEqual(game.data("state"), mod.market.encode(), "not saved every day");
+	mod.save(game);
 	const saved = game.data("state");
 	const again = new Corporations();
 	again.on_enter(game, "Sol");
@@ -134,7 +170,7 @@ test("the exchange: its own screen, sorting, a company, buying and selling", { s
 	assert.equal(game.panel.title, "Stock exchange: market");
 	assert.deepEqual(game.panel.columns, ["Company", "Sector", "Price", "30 days", "P/E", "Yield", "Value v", "You hold"]);
 	assert.equal(game.panel.rows.length, listed(mod).length, "every listed company on one screen");
-	assert.deepEqual(game.panel.buttons, ["Market", "Portfolio", "Contracts", "News", "Leave"]);
+	assert.deepEqual(game.panel.buttons, ["Market", "Portfolio", "Contracts", "News", "Map", "Leave"]);
 	assert.equal(game.panel.selected, -1);
 	assert.equal(game.panel.charts?.[0]?.label, "Exchange index", "the sidebar charts the index");
 	assert.equal(game.panel.charts[0].values.length, 40);
@@ -156,7 +192,7 @@ test("the exchange: its own screen, sorting, a company, buying and selling", { s
 	mod.on_panel_row(game, 3);
 	assert.equal(game.panel.selected, 3, "the chosen row is marked");
 	assert.ok(game.panel.text.startsWith(top + "\n"), "the sidebar shows the company");
-	assert.deepEqual(game.panel.buttons, ["Market", "Portfolio", "Contracts", "News", "Buy", "Leave"]);
+	assert.deepEqual(game.panel.buttons, ["Market", "Portfolio", "Contracts", "News", "Map", "Buy", "Leave"]);
 	assert.equal(game.panel.charts[0].label, top + ", 60 days", "the sidebar charts the company's price");
 	const credits = game.condition("credits");
 	mod.on_panel(game, game.panel.buttons.indexOf("Buy"));
@@ -247,7 +283,14 @@ test("jobs: parts for running contracts, and what carrying them does", { skip },
 	game.day_ += 1;
 	mod.on_day(game, game.day_);
 	assert.ok(company.reliability > before, "a delivery raises reliability");
-	assert.equal(game.condition(`corporations: delivered ${id}`), 2, "and is counted once");
+	assert.equal(game.condition(`corporations: delivered ${id}`), 0, "its conditions go back to 0, leaving the save");
+	assert.equal(game.condition(`corporations: hauling ${id}`), 0);
+	assert.ok(mod.market.jobs_done.has(id), "and the contract is remembered as settled");
+	assert.equal(game.data("state"), mod.market.encode(), "a settled job saves the market that day");
+	const again2 = company.reliability;
+	game.day_ += 1;
+	mod.on_day(game, game.day_);
+	assert.ok(Math.abs(company.reliability - again2) < 0.05, "counted once");
 	// A job already taken is not offered again.
 	game.landed = true;
 	game.jobs.clear();
@@ -336,7 +379,7 @@ test("shipyards: a purchase triggers a restock, which arrives; stock never goes 
 	assert.equal(k.units, 4);
 	assert.equal(s.onorder, 4);
 	assert.ok(k.days >= 12 && k.days < 60, `lead time ${k.days} days`);
-	assert.ok(Math.abs(k.price - models.Shuttle.cost * 4 * 0.12) < 1, "the owner earns 12% of the price");
+	assert.ok(Math.abs(k.price - models.Shuttle.cost * 4 * mod.market.RESTOCK_MARGIN) < 1, "the owner earns RESTOCK_MARGIN of the price");
 	// Landing on Luna again before it arrives: empty, with a note saying when.
 	land(mod, game, "Luna");
 	assert.equal(game.ship_stock("Luna", "Shuttle"), 0);
@@ -365,7 +408,7 @@ test("shipyards: a purchase triggers a restock, which arrives; stock never goes 
 	assert.equal(mod.market.player_sold, 1);
 });
 
-test("shipyards: military hulls are stocked but not restocked (tenders come later)", { skip }, () => {
+test("shipyards: military hulls are not restocked by an owner: their government tenders for them", { skip }, () => {
 	const game = newGame();
 	const mod = new Corporations();
 	mod.on_load(game);
@@ -379,8 +422,9 @@ test("shipyards: military hulls are stocked but not restocked (tenders come late
 	mod.on_day(game, game.day_);
 	assert.equal(navy.count, 0);
 	assert.ok(!restocks(mod).some((k) => k.model === navy.model && k.client === navy.planet), "no restock for a military hull");
+	assert.ok(mod.market.contracts.some((k) => k.kind === 4 && k.model === navy.model), "a tender instead");
 	land(mod, game, navy.planet);
-	assert.match(game.orderNotes.get(navy.planet + "\u0000" + navy.model) ?? "", /procurement/);
+	assert.match(game.orderNotes.get(navy.planet + "\u0000" + navy.model) ?? "", /out to tender|military tender/);
 });
 
 test("shipyards: counts and orders survive a save and load; old saves are seeded", { skip }, () => {
@@ -394,6 +438,8 @@ test("shipyards: counts and orders survive a save and load; old saves are seeded
 	takeOff(game);
 	game.day_ += 1;
 	mod.on_day(game, game.day_);
+	// In flight the market is saved every few days (M1); save it now.
+	mod.save(game);
 	const saved = game.data("state");
 	assert.match(saved, /^s\|Luna\|/m, "an s| record per shipyard planet");
 	assert.doesNotMatch(saved, /^y\|/m, "the planet left is read back once, then forgotten");
@@ -432,7 +478,7 @@ test("the Contracts tab sums restocks per owner", { skip }, () => {
 	const owners = new Set(restocks(mod).map((k) => k.winner));
 	assert.equal(rows.length, owners.size, "one row per owner, not one per restock");
 	assert.ok(!game.panel.rows.some((r) => r[0].endsWith(" shipyard")), "no row for a single restock");
-	mod.on_panel_row(game, 0);
+	mod.on_panel_row(game, game.panel.rows.findIndex((r) => r[0] === "Shipyard restocks"));
 	assert.ok(owners.has(mod.exchange.selected), "the row chooses the owner");
 	assert.match(game.panel.text, /Hull restocks: \d+ on order/);
 });

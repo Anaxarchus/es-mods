@@ -3,7 +3,7 @@
 // into the mod are plain JS numbers, strings and booleans, as the built
 // mod's runtime expects (it keeps ints as JS numbers within 2^53).
 
-import { tokens } from './galaxy.mjs';
+import { tokens } from './datafile.mjs';
 
 // Real stats from the game (game.fleet_stat with the base data), so the
 // simulation test sees the factions' real difference in ship quality.
@@ -128,7 +128,9 @@ function shipsIn(fleet) {
 }
 
 export class MockGame {
-	constructor(galaxy) {
+	// `api10`: the game also has mod API 10's has() and notify() (an API 9
+	// game, as loader 0.1.0 is, has neither).
+	constructor(galaxy, { api10 = false } = {}) {
 		this.galaxy = galaxy;
 		this.names = [...galaxy.systems.keys()].sort();
 		this.governments = new Map();
@@ -153,6 +155,24 @@ export class MockGame {
 		this.panel = null;
 		this.calls = new Map();
 		this.spawned = { flotilla: 0, garrison: 0 };
+		this.store = new Map();          // Game.data
+		this.landed = '';                // the planet the player is on ('' in flight)
+		this.jobs = [];                  // offer_job calls: { name, text, day }
+		this.screen = null;              // screen_open: { title, text, columns, rows, charts, buttons, selected }
+		this.rings = [];
+		this.labels = [];
+		this.fleetLists = new Map();     // system -> its fleets, once a change touched them
+		this.shipyards = new Map();      // planet -> shipyards added by changes
+		this.notes = [];                 // notify() calls: { name, payload, day }
+		if (api10) {
+			this.has = feature => ['notify', 'on_save', 'on_pilot_loaded', 'on_notification'].includes(feature);
+			this.notify = (name, payload) => {
+				if (!/^[A-Za-z0-9._:\/-]{1,128}$/.test(name)) throw new Error('notify: bad name ' + name);
+				JSON.parse(payload);
+				this.notes.push({ name, payload, day: this.today });
+				return true;
+			};
+		}
 	}
 
 	count(name) { this.calls.set(name, (this.calls.get(name) || 0) + 1); }
@@ -239,7 +259,7 @@ export class MockGame {
 			return { depth: d, t: tokens(l) };
 		}).filter(l => l.t.length > 0);
 		let applied = false;
-		let top = null, sub = null;
+		let top = null, sub = null, fleetsReset = false;
 		for (const l of lines) {
 			if (l.depth === 0 && l.t[0] === 'visit') {
 				if (!this.governments.has(l.t[1])) throw new Error('change: visit of unknown system ' + l.t[1]);
@@ -249,11 +269,20 @@ export class MockGame {
 				top = null;
 				continue;
 			}
-			if (l.depth === 0) { top = l.t; sub = null; continue; }
+			if (l.depth === 0) { top = l.t; sub = null; fleetsReset = false; continue; }
 			if (!top) throw new Error('change: no top-level node in ' + JSON.stringify(text));
-			if (top[0] === 'system' && l.depth === 1 && l.t[0] === 'government') {
+			if (top[0] === 'system' && l.depth === 1) {
 				if (!this.governments.has(top[1])) throw new Error('change: unknown system ' + top[1]);
-				this.governments.set(top[1], l.t[1]);
+				const fleets = () => { if (!this.fleetLists.has(top[1])) this.fleetLists.set(top[1], [...this.sys(top[1]).fleets]); return this.fleetLists.get(top[1]); };
+				if (l.t[0] === 'government') { this.governments.set(top[1], l.t[1]); applied = true; }
+				else if (l.t[0] === 'add' && l.t[1] === 'fleet') { if (!(Number(l.t[3]) > 0)) throw new Error('change: add fleet needs a period: ' + JSON.stringify(text)); fleets().push(l.t[2]); applied = true; }
+				else if (l.t[0] === 'remove' && l.t[1] === 'fleet') { const f = fleets(); const k = f.indexOf(l.t[2]); if (k >= 0) f.splice(k, 1); applied = true; }
+				else if (l.t[0] === 'fleet') { const f = fleets(); if (!fleetsReset) { f.length = 0; fleetsReset = true; } f.push(l.t[1]); applied = true; }
+				else throw new Error('change: unexpected ' + JSON.stringify(text));
+			} else if (top[0] === 'planet' && l.depth === 1 && l.t[0] === 'shipyard') {
+				if (!this.galaxy.planets.has(top[1])) throw new Error('change: unknown planet ' + top[1]);
+				if (!this.shipyards.has(top[1])) this.shipyards.set(top[1], []);
+				this.shipyards.get(top[1]).push(l.t[1]);
 				applied = true;
 			} else if (top[0] === 'government' && l.depth === 1 && l.t[0] === 'attitude toward') {
 				sub = 'attitude';
@@ -297,8 +326,9 @@ export class MockGame {
 			default: return 0;
 		}
 	}
-	system_fleet_count(s) { const x = this.sys(s); return x ? x.fleets.length : 0; }
-	system_fleet(s, k) { const x = this.sys(s); return x && k >= 0 && k < x.fleets.length ? x.fleets[k] : ''; }
+	fleetsOf(s) { return this.fleetLists.get(s) || (this.sys(s) ? this.sys(s).fleets : []); }
+	system_fleet_count(s) { return this.fleetsOf(s).length; }
+	system_fleet(s, k) { const f = this.fleetsOf(s); return k >= 0 && k < f.length ? f[k] : ''; }
 	spawn(fleet, government, tag, arrive) {
 		this.count('spawn');
 		if (!this.flying) return 0;
@@ -324,7 +354,7 @@ export class MockGame {
 		this.killMarks.set(prefix, this.kills.length);
 		return n;
 	}
-	map_clear() { this.map = { markers: [], lines: [], details: [], clears: this.map.clears + 1 }; }
+	map_clear() { this.map = { markers: [], lines: [], details: [], clears: this.map.clears + 1 }; this.rings = []; this.labels = []; }
 	map_line(from, to, r, g, b) { this.map.lines.push({ from, to, r, g, b }); }
 	map_marker(system, r, g, b, label) { this.map.markers.push({ system, r, g, b, label }); }
 	// ---- API 4 ----
@@ -335,5 +365,49 @@ export class MockGame {
 		if (!this.panel) throw new Error('panel_button without a panel');
 		this.panel.buttons.push(label);
 	}
-	panel_close() { this.panel = null; }
+	panel_close() { this.panel = null; this.screen = null; }
+	// ---- API 5 ----
+	confirm(text, token) { this.confirmed = { text, token }; }
+	// ---- API 6 ----
+	data(key) { return this.store.get(key) || ''; }
+	set_data(key, text) {
+		if (typeof text !== 'string') throw new Error('set_data with a non-string');
+		if (text.length > 4 * 1024 * 1024) throw new Error('set_data over 4 MB');
+		if (text === '') this.store.delete(key); else this.store.set(key, text);
+	}
+	planet() { return this.landed; }
+	planet_name(p) { return this.galaxy.planets.has(p) ? p : ''; }
+	planet_system(p) { for (const [n, s] of this.galaxy.systems) if (s.planets.includes(p)) return n; return ''; }
+	planet_government(p) { return ''; }
+	planet_count(s) { return this.sys(s) ? this.sys(s).planets.filter(p => this.galaxy.planets.has(p)).length : 0; }
+	planet_at(s, k) { const l = this.sys(s) ? this.sys(s).planets.filter(p => this.galaxy.planets.has(p)) : []; return k >= 0 && k < l.length ? l[k] : ''; }
+	planet_service(p, service) { const q = this.galaxy.planets.get(p); return !!(q && q.inhabited && !q.uninhabited); }
+	panel_columns(h) { const t = this.screen || this.panel; if (!t) throw new Error('panel_columns without a panel'); t.columns = h.split('\t'); t.rows = []; }
+	panel_row(cells) {
+		const t = this.screen || this.panel;
+		if (!t || !t.columns) throw new Error('panel_row without columns');
+		const c = cells.split('\t');
+		if (c.length !== t.columns.length) throw new Error('panel_row has ' + c.length + ' cells for ' + t.columns.length + ' columns: ' + cells);
+		t.rows.push(c);
+	}
+	ask_number(text, token, most) { this.asked = { text, token, most }; }
+	// ---- API 7 ----
+	screen_open(title, text) { this.screen = { title, text, buttons: [], charts: [], selected: -1 }; this.panel = this.screen; }
+	panel_select(row) { const t = this.screen || this.panel; if (t) t.selected = row; }
+	// ---- API 8 ----
+	panel_chart(label, values) {
+		if (!this.screen) throw new Error('panel_chart without a screen');
+		if (values !== '' && values.split(',').some(v => Number.isNaN(Number(v)))) throw new Error('panel_chart: bad values ' + values);
+		if (this.screen.charts.length < 3) this.screen.charts.push({ label, values });
+	}
+	offer_job(name, text) {
+		if (!this.landed) return false;
+		if (this.jobs.some(j => j.name === name && j.day === this.today)) return false;
+		if (!/on complete/.test(text) || !/^name /m.test(text)) throw new Error('offer_job: not a mission body: ' + text);
+		this.jobs.push({ name, text, day: this.today });
+		return true;
+	}
+	// ---- API 9 ----
+	map_label(system, text, r, g, b) { if (this.sys(system) && text) this.labels.push({ system, text, r, g, b }); }
+	map_ring(system, scale, r, g, b) { if (this.sys(system)) this.rings.push({ system, scale, r, g, b }); }
 }

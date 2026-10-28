@@ -1,0 +1,88 @@
+class Json
+
+// Writing and reading the state as JSON text (Game.set_data, mod API 6).
+// Writing builds the text by hand; reading goes through the engine's
+// JSON.parse and picks fields out of the `any` it answers, with a default for
+// one that is missing, so a state written by an older version still reads.
+
+string text(string s):
+    string out = globalThis.JSON.stringify(s)
+    return out
+
+string ints([]int v):
+    []string parts = []
+    for x in v:
+        parts.append(string(x))
+    return "[" + parts.join(",") + "]"
+
+string strings([]string v):
+    []string parts = []
+    for x in v:
+        parts.append(text(x))
+    return "[" + parts.join(",") + "]"
+
+string rows([][]int v):
+    []string parts = []
+    for r in v:
+        parts.append(ints(r))
+    return "[" + parts.join(",") + "]"
+
+// ---- Reading ----
+
+any parse(string s):
+    any doc = globalThis.JSON.parse(s)
+    return doc
+
+bool has(any o, string key):
+    bool h = globalThis.Object.prototype.hasOwnProperty.call(o, key)
+    return h
+
+int num(any o, string key, int fallback):
+    if !has(o, key):
+        return fallback
+    int v = globalThis.Math.trunc(o[key])
+    return v
+
+string str(any o, string key, string fallback):
+    if !has(o, key):
+        return fallback
+    string v = o[key]
+    return v
+
+[]int int_list(any o, string key):
+    []int out = []
+    if !has(o, key):
+        return out
+    any list = o[key]
+    int n = list.length
+    for k in 0..<n:
+        int v = globalThis.Math.trunc(list[k])
+        out.append(v)
+    return out
+
+[]string string_list(any o, string key):
+    []string out = []
+    if !has(o, key):
+        return out
+    any list = o[key]
+    int n = list.length
+    for k in 0..<n:
+        string v = list[k]
+        out.append(v)
+    return out
+
+[][]int int_rows(any o, string key):
+    [][]int out = []
+    if !has(o, key):
+        return out
+    any list = o[key]
+    int n = list.length
+    for k in 0..<n:
+        []int row = []
+        any r = list[k]
+        int m = r.length
+        for j in 0..<m:
+            int v = globalThis.Math.trunc(r[j])
+            row.append(v)
+        out.append(row)
+    return out

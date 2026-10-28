@@ -1,92 +1,68 @@
 class Garrisons
 
 // The defenders of systems that have been besieged. A system at full strength
-// has no record; a damaged one holds one of a fixed number of slots:
-//   diplomacy: garrison <k> system   the system (index + 1); 0 = free slot
-//   diplomacy: garrison <k> hp       its strength now
-//   diplomacy: garrison <k> start    the day the siege began
-//   diplomacy: garrison <k> last     the last day it was besieged
-// A garrison not besieged recovers, and its slot frees once it is whole.
-
-import "imports:sdk/es"
+// has no record; a damaged one has [system, hp, siege start, last day
+// besieged] in World.garrisons, at most tune.garrison_slots of them (the one
+// besieged longest ago is forgotten first). A garrison not besieged recovers,
+// faster while a fresh capture consolidates, and its record goes once whole.
+// A freshly captured system's full strength is raised to tune.consolidation
+// percent for tune.consolidation_days (Simulation.full_strength).
 
 Tuning tune = Tuning()
+World world = World()
 
-void wire(Tuning t):
+void wire(Tuning t, World w):
     tune = t
+    world = w
 
-string key(int k, string field):
-    return "diplomacy: garrison " + string(k) + " " + field
-
-// The slot holding system i, or 0.
-int find(es.Game game, int i):
-    for k in 1..=tune.garrison_slots:
-        if game.condition(key(k, "system")) == i + 1:
+int find(int i):
+    for k in 0..<world.garrisons.len():
+        if world.garrisons[k][0] == i:
             return k
-    return 0
+    return -1
 
-// The garrison's strength now: its record, or full.
-int hp(es.Game game, int i, int full):
-    int k = find(game, i)
-    if k == 0:
-        return full
-    return game.condition(key(k, "hp"))
+bool damaged(int i):
+    return find(i) >= 0
+
+// The garrison's strength now: its record, or `full`.
+int hp(int i, int full):
+    int k = find(i)
+    return world.garrisons[k][1] if k >= 0 else full
 
 // The day its siege began, or -1.
-int start(es.Game game, int i):
-    int k = find(game, i)
-    if k == 0:
-        return -1
-    return game.condition(key(k, "start"))
+int start(int i):
+    int k = find(i)
+    return world.garrisons[k][2] if k >= 0 else -1
 
-// Set the garrison of system i to hp (besieged today); answers the slot.
-int set(es.Game game, int i, int value, int day):
-    int k = find(game, i)
-    if k == 0:
-        k = claim(game, i, day)
-    game.set_condition(key(k, "hp"), value)
-    game.set_condition(key(k, "last"), day)
-    return k
+int last(int i):
+    int k = find(i)
+    return world.garrisons[k][3] if k >= 0 else -1
 
-// A slot for system i: a free one, or else the one besieged longest ago.
-int claim(es.Game game, int i, int day):
-    int best = 1
-    int oldest = 2147483647
-    for k in 1..=tune.garrison_slots:
-        if game.condition(key(k, "system")) == 0:
-            best = k
-            break
-        int last = game.condition(key(k, "last"))
-        if last < oldest:
-            oldest = last
-            best = k
-    game.set_condition(key(best, "system"), i + 1)
-    game.set_condition(key(best, "start"), day)
-    game.set_condition(key(best, "last"), day)
-    return best
+// Set the garrison of system i to `value`, besieged today.
+void set(int i, int value, int day):
+    int k = find(i)
+    if k < 0:
+        if world.garrisons.len() >= tune.garrison_slots:
+            int oldest = 0
+            for j in 1..<world.garrisons.len():
+                if world.garrisons[j][3] < world.garrisons[oldest][3]:
+                    oldest = j
+            world.garrisons.remove_at(oldest)
+        world.garrisons.append([i, value, day, day])
+        return
+    world.garrisons[k][1] = value
+    world.garrisons[k][3] = day
 
-void release(es.Game game, int i):
-    int k = find(game, i)
-    if k != 0:
-        clear_slot(game, k)
+// A record without a siege (a fresh capture's garrison): last besieged yesterday.
+void place(int i, int value, int day):
+    release(i)
+    set(i, value, day)
+    world.garrisons[find(i)][3] = day - 1
 
-void clear_slot(es.Game game, int k):
-    for field in ["system", "hp", "start", "last"]:
-        game.set_condition(key(k, field), 0)
+void release(int i):
+    int k = find(i)
+    if k >= 0:
+        world.garrisons.remove_at(k)
 
-void clear_all(es.Game game):
-    for k in 1..=tune.garrison_slots:
-        clear_slot(game, k)
-
-// Garrisons not besieged today recover; whole ones free their slot.
-void recover(es.Game game, Galaxy galaxy, int day):
-    for k in 1..=tune.garrison_slots:
-        int sys = game.condition(key(k, "system")) - 1
-        if sys < 0 || game.condition(key(k, "last")) >= day:
-            continue
-        int full = galaxy.full_garrison(game, sys)
-        int value = game.condition(key(k, "hp")) + full * tune.garrison_recovery / 100
-        if value >= full:
-            clear_slot(game, k)
-        else:
-            game.set_condition(key(k, "hp"), value)
+void clear_all():
+    world.garrisons = []

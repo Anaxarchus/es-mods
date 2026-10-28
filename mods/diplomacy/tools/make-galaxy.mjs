@@ -1,7 +1,8 @@
-// Writes test/galaxy.json, the galaxy the simulation test runs on, from the
-// game's data files (see loadGalaxy in test/galaxy.mjs: systems, lanes,
-// planets and their defense fleets, and the Free Worlds territory from the
-// campaign's events). Run it again after the game's map changes:
+// Writes test/galaxy.json, the galaxy the tests run on, from the game's data
+// files (see loadGalaxy in test/galaxy.mjs: systems, lanes, planets and their
+// defense fleets, with the territory of the Free Worlds Veteran start,
+// data/diplomacy fw veteran.txt). Run it again after the game's map or the
+// start changes:
 //
 //     node mods/diplomacy/tools/make-galaxy.mjs <endless-sky>/data
 import { writeFileSync } from "node:fs";
@@ -14,4 +15,5 @@ if (!data) throw new Error("usage: make-galaxy.mjs <game data folder>");
 const OUT = join(dirname(fileURLToPath(import.meta.url)), "..", "test", "galaxy.json");
 const galaxy = loadGalaxy(data);
 writeFileSync(OUT, JSON.stringify(galaxyToJson(galaxy)) + "\n");
-console.log(`wrote ${OUT}: ${galaxy.systems.size} systems, ${galaxy.planets.size} planets; events applied: ${galaxy.events.join(", ")}`);
+const fw = [...galaxy.systems.values()].filter(s => s.government === "Free Worlds").length;
+console.log(`wrote ${OUT}: ${galaxy.systems.size} systems, ${galaxy.planets.size} planets; ${galaxy.events.length} events applied (the Free Worlds Veteran start); the Free Worlds hold ${fw} systems`);

@@ -1,8 +1,10 @@
 class Service
 
 // The player's side of the diplomacy: the planet-screen "Faction" button and
-// the faction panel, joining and leaving, merit, rank, salary, and the
-// player's reputation with the flotilla governments.
+// its panel (a table of the faction's minors), joining and leaving, merit,
+// rank, salary, and the player's reputation with the flotilla and rebel
+// governments; the War Room (a full screen, mod API 7: wars, forces, minors
+// and the chronicle, with a territory chart, mod API 8) and the service record.
 
 import "imports:sdk/es"
 
@@ -10,45 +12,65 @@ Tuning tune = Tuning()
 Factions factions = Factions()
 Galaxy galaxy = Galaxy()
 State state = State()
+World world = World()
 Garrisons garrisons = Garrisons()
 Simulation sim = Simulation()
+Chronicle chronicle = Chronicle()
 
-// What each button of the open panel does: "join", "leave" or "close".
+// What each button of the open panel or screen does.
 []string actions = []
 // The faction whose panel is open.
 int panel_faction = 0
+// The screen open ("" for the planet panel) and its table's chosen row.
+string screen = ""
+int selected = -1
+// What each row of the screen's table is about (a war id, flotilla id, minor or chronicle entry).
+[]int row_refs = []
 
-void wire(Tuning t, Factions f, Galaxy g, State s, Garrisons gs, Simulation sm):
+void wire(Tuning t, Factions f, Galaxy g, State s, World w, Garrisons gs, Simulation sm, Chronicle c):
     tune = t
     factions = f
     galaxy = g
     state = s
+    world = w
     garrisons = gs
     sim = sm
+    chronicle = c
 
 // ---- Reputation, rank and salary ----
 
-// A member is an ally of its faction's flotillas and an enemy of its enemies'
-// flotillas. Also publishes "diplomacy: enemy", the faction the member's own
-// is at war with (0 for none), which the faction jobs are offered by.
+// The member's faction's first enemy among the majors (the faction jobs are offered by it).
+int enemy(es.Game game):
+    int m = state.member(game)
+    if m == 0:
+        return 0
+    for w in world.wars_of(m):
+        if factions.is_major(w.other(m)):
+            return w.other(m)
+    return 0
+
+// A member is an ally of its faction's flotillas and an enemy of the
+// flotillas (and rebels) its faction is at war with.
 void apply_reputations(es.Game game):
     int m = state.member(game)
     update_enemy(game)
-    for f in 1..=3:
+    for f in 1..=factions.sides():
+        if f == factions.pirates():
+            continue
+        if factions.is_rebel(f) && galaxy.territory(f) == 0 && game.reputation(factions.government(f)) == tune.rep_neutral:
+            continue
         float rep = tune.rep_neutral
         if m != 0 && f == m:
             rep = tune.rep_own
-        else if m != 0 && state.hostile(game, m, f):
+        else if m != 0 && world.hostile(m, f):
             rep = tune.rep_enemy
-        game.set_reputation(factions.flotilla_governments[f], rep)
+        game.set_reputation(factions.flotilla_government(f), rep)
 
 void update_enemy(es.Game game):
-    int m = state.member(game)
-    int e = state.enemy_of(game, m) if m != 0 else 0
+    int e = enemy(game)
     if state.get(game, "enemy") != e:
         state.put(game, "enemy", e)
 
-// Issue the licenses the member's rank has earned.
 void grant_licenses(es.Game game):
     int m = state.member(game)
     if m == 0:
@@ -58,7 +80,7 @@ void grant_licenses(es.Game game):
         string key = "license: " + factions.licenses[k]
         if factions.license_faction[k] == m && r >= factions.license_rank[k] && game.condition(key) == 0:
             game.set_condition(key, 1)
-            state.add(game, "stat licenses", 1)
+            world.stat("licenses", 1)
             game.message(factions.titles[m] + " has issued you a " + factions.licenses[k] + " License, for your service as a " + factions.ranks[r] + ".")
 
 int rank(es.Game game):
@@ -73,7 +95,6 @@ int salary(es.Game game):
         r = tune.salaries.len() - 1
     return tune.salaries[r]
 
-// Endless Sky pays every "salary: ..." condition daily.
 void update_salary(es.Game game):
     int m = state.member(game)
     for f in 1..=3:
@@ -82,7 +103,6 @@ void update_salary(es.Game game):
         if game.condition(key) != want:
             game.set_condition(key, want)
 
-// Record the rank merit earns, congratulating a member on a promotion.
 void check_rank(es.Game game):
     int r = rank(game)
     int old = state.get(game, "rank")
@@ -91,7 +111,7 @@ void check_rank(es.Game game):
         state.put(game, "rank", r)
         if m != 0 && r > old:
             game.message(factions.titles[m] + " has promoted you to " + factions.ranks[r] + ". Your salary is now " + string(salary(game)) + " credits a day.")
-            state.add(game, "stat promotions", 1)
+            world.stat("promotions", 1)
     update_salary(game)
     update_enemy(game)
     grant_licenses(game)
@@ -103,15 +123,17 @@ void poll_kills(es.Game game):
     int pk = game.player_kills(factions.tag_prefix(factions.pirates()))
     if pk > 0 && m != 0:
         state.add(game, "merit", pk * tune.merit_per_pirate_kill)
-        state.add(game, "stat pirate kills", pk)
+        world.stat("pirate kills", pk)
         changed = true
-    for f in 1..=3:
+    for f in 1..=factions.sides():
+        if f == factions.pirates():
+            continue
         int k = game.player_kills(factions.tag_prefix(f))
         if k <= 0 || m == 0:
             continue
-        if state.hostile(game, m, f):
+        if world.hostile(m, f):
             state.add(game, "merit", k * tune.merit_per_kill)
-            state.add(game, "stat kills", k)
+            world.stat("kills", k)
             changed = true
         else if f == m:
             state.add(game, "merit", -k * tune.merit_per_friendly_kill)
@@ -124,7 +146,6 @@ void poll_kills(es.Game game):
 void join(es.Game game, int f):
     join_at(game, f, 0)
 
-// Join faction f at rank r (a campaign veteran joins the Free Worlds as a Commodore).
 void join_at(es.Game game, int f, int r):
     if state.member(game) != 0:
         return
@@ -147,14 +168,15 @@ void leave(es.Game game):
     update_salary(game)
     game.message("You have left " + factions.names[m] + ".")
 
-// ---- The planet button and the panel ----
+// ---- The planet button ----
 
-// The faction that owns the system the player is in, or 0.
+// The side that owns the system the player is in, or 0 (pirates count as none).
 int faction_here(es.Game game):
     int i = galaxy.find(game.here())
     if i < 0:
         return 0
-    return galaxy.owner(game, i)
+    int o = galaxy.owner(i)
+    return 0 if o == factions.pirates() else o
 
 void update_button(es.Game game, bool active):
     if active && faction_here(game) != 0:
@@ -166,36 +188,71 @@ void update_button(es.Game game, bool active):
 
 // ---- Turning Diplomacy on ----
 
-// Set by the mod while a pilot who finished the Free Worlds campaign has not
-// yet chosen whether to turn Diplomacy on.
 bool offering = false
 
 void open_offer(es.Game game):
     actions = []
-    game.panel_open("Diplomacy", "The Free Worlds campaign is over, and the Diplomacy plugin can take the story on from here: the Republic, the Free Worlds and the Syndicate will now and then go to war over their borders, pirates will raid the settled worlds, and named admirals will lead the fleets.\nIf you turn it on, you serve the Free Worlds as a " + factions.ranks[tune.veteran_rank] + ", the rank your part in the war earned, with the same salary of " + string(tune.salaries[tune.veteran_rank]) + " credits a day. You can leave them at any time from the Faction button.\nNot now asks again the next time you land; Never turns the plugin off for this pilot.")
-    add_button(game, "Turn on Diplomacy", "activate")
+    screen = ""
+    game.panel_open("A Council commission", "A courier from Bourne finds you. The Council was dissolved with the peace, but Alondo Gruyere, who now runs the Free Worlds diplomatic corps, writes that the Senate's defense committee has kept your commission open: the border with the Republic is uneasy, the Dirt Belt is still split between the two, the Syndicate is watching, and pirates are testing the new peace.\nAccept, and you serve the Free Worlds again as a " + factions.ranks[tune.veteran_rank] + ", the rank your part in the war earned, at the same " + string(tune.salaries[tune.veteran_rank]) + " credits a day. From then on the Republic, the Free Worlds and the Syndicate will now and then go to war over the minor regions of human space, regions may rise against their rulers, and named commanders lead the fleets. You can leave the Free Worlds at any time from the Faction button.\nNot now asks again the next time you land; Never turns this off for this pilot (the Diplomacy plugin).")
+    add_button(game, "Accept the commission", "activate")
     add_button(game, "Not now", "snooze")
     add_button(game, "Never", "never")
+
+// ---- The faction panel ----
 
 void open_panel(es.Game game):
     int f = faction_here(game)
     panel_faction = f
     actions = []
+    screen = ""
     if f == 0:
         game.panel_open("Diplomacy", "No faction holds this system.")
+        add_button(game, "War Room", "war room")
         add_button(game, "Close", "close")
         return
-    game.panel_open(factions.titles[f], status(game, f))
-    int m = state.member(game)
-    if m == f:
-        add_button(game, "Leave", "leave")
-    else if m == 0:
-        add_button(game, "Join", "join")
+    game.panel_open(factions.title(f), status(game, f))
+    // The faction's minors: held, split and lost.
+    game.panel_columns("Minor\tHeld\tUnrest\tStatus")
+    row_refs = []
+    for m in 0..<factions.regions.count():
+        int h = galaxy.held_by(m, f)
+        if h == 0 && factions.regions.parents[m] != f:
+            continue
+        game.panel_row(minor_name(m) + "\t" + string(h) + " of " + string(galaxy.minor_systems[m].len()) + "\t" + string(world.unrest[m] / 10) + "\t" + minor_status(m, f))
+        row_refs.append(m)
+    int me = state.member(game)
+    if factions.is_major(f):
+        if me == f:
+            add_button(game, "Leave", "leave")
+        else if me == 0:
+            add_button(game, "Join", "join")
+    add_button(game, "War Room", "war room")
+    add_button(game, "Service Record", "record")
     add_button(game, "Close", "close")
 
 void add_button(es.Game game, string label, string action):
     game.panel_button(label)
     actions.append(action)
+
+// "Earth (Republic core)", "Paradise Worlds".
+string minor_name(int m):
+    string s = factions.regions.shorts[m]
+    if factions.regions.cores[m]:
+        return s + " (" + factions.adjective(factions.regions.parents[m]) + " core)"
+    return s
+
+string minor_status(int m, int f):
+    for w in world.wars:
+        if w.goals.contains(m):
+            return "war goal"
+    int o = galaxy.minor_owner(m)
+    if galaxy.split(m):
+        return "split"
+    if o == f:
+        return "held"
+    if factions.is_rebel(o):
+        return "rebels"
+    return "lost to " + factions.adjective(o)
 
 // Answers the action of an offer button ("activate", "snooze", "never") for
 // the mod to carry out, or "" when the panel handled the click itself.
@@ -212,94 +269,60 @@ string on_panel(es.Game game, int button):
     else if action == "leave":
         leave(game)
         open_panel(game)
+    else if action == "war room":
+        open_screen(game, "wars", -1)
+    else if action == "forces" || action == "minors" || action == "chronicle" || action == "wars":
+        open_screen(game, action, -1)
+    else if action == "record":
+        open_screen(game, "record", -1)
+    else if action == "back":
+        open_panel(game)
     else:
+        screen = ""
         game.panel_close()
     return ""
 
+void on_panel_row(es.Game game, int row):
+    if screen == "":
+        return
+    open_screen(game, screen, row)
+
 // The faction's status, for its panel.
 string status(es.Game game, int f):
-    int held = 0
-    int gained = 0
-    int lost = 0
-    for i in 0..<galaxy.count():
-        int o = galaxy.owner(game, i)
-        int orig = state.origin(game, i)
-        if o == f:
-            held += 1
-            if orig != 0 && orig != f:
-                gained += 1
-        else if orig == f:
-            lost += 1
-    string text = "Capital: " + factions.capitals[f] + ". " + factions.titles[f] + " holds " + string(held) + " systems"
-    if gained > 0:
-        text = text + ", " + string(gained) + " of them taken from its rivals"
-    text = text + "."
-    if lost > 0:
-        text = text + " It has lost " + string(lost) + " of its own systems."
-    // The game's text wrapper spaces paragraphs itself: one newline between each.
-    int e = state.enemy_of(game, f)
-    if e != 0:
-        int days = game.day() - state.get(game, "war since")
-        text = text + "\nAt war with " + factions.names[e] + " (day " + string(days + 1) + " of the war)."
-    else if state.at_war(game):
-        text = text + "\nAt peace, while " + factions.names[state.war_a(game)] + " and " + factions.names[state.war_b(game)] + " are at war."
+    int held = galaxy.territory(f)
+    string text = ""
+    if factions.is_major(f):
+        text = "Capital: " + factions.capitals[f] + ". " + factions.title(f) + " holds " + string(held) + " systems."
     else:
+        int m = factions.rebel_minor(f)
+        text = factions.title(f) + " broke away from " + factions.name(factions.rebel_parent(f)) + " and hold " + string(held) + " systems of " + factions.regions.names[m] + "."
+    []War ws = world.wars_of(f)
+    if ws.len() == 0:
         text = text + "\nAt peace."
+    for w in ws:
+        int days = game.day() - w.since
+        text = text + "\nAt " + w.kind_name() + " with " + factions.name(w.other(f)) + " over " + goals_text(w) + " (day " + string(days + 1) + ", score " + string(w.score_for(f)) + ")."
     int n = 0
-    []Flotilla fl = sim.load_all(game)
-    for x in fl:
-        if x.alive() && x.faction == f:
+    for x in world.fleets:
+        if x.alive() && x.side == f:
             n += 1
-            text = text + "\n" + describe(game, x, fl)
-    if n == 0 && e != 0:
-        text = text + "\nNo flotillas are deployed."
-    // Pirate raids in or bound for its space.
-    for x in fl:
-        if !x.alive() || x.faction != factions.pirates():
-            continue
-        []int route = x.route()
-        if x.leg >= 1 && x.leg <= route.len() && galaxy.owner(game, route[x.leg - 1]) == f:
-            string where = galaxy.name(route[x.leg - 1])
-            string doing = " are raiding " + where if x.at == route[x.leg - 1] else " are bound for " + where
-            text = text + "\nPirates under " + sim.led_by(game, x) + " (" + factions.sizes[x.size] + ")" + doing + "."
-    text = text + "\n" + standing(game, f)
+    if n > 0:
+        text = text + "\n" + string(n) + " flotillas deployed (see the War Room)."
+    if factions.is_major(f):
+        text = text + "\n" + standing(game, f)
     return text
 
-// One flotilla, for the panel.
-string describe(es.Game game, Flotilla x, []Flotilla fl):
-    string text = sim.led_by(game, x) + "'s " + factions.sizes[x.size] + " flotilla (strength " + string(x.strength) + ", " + admirals_line(game, x) + ") at " + galaxy.name(x.at)
-    if x.kind == 3:
-        return text + ", going home."
-    if x.kind == 1:
-        Flotilla y = sim.by_code(fl, x.target)
-        if y.alive():
-            return text + ", hunting the pirates under " + sim.led_by(game, y) + " at " + galaxy.name(y.at) + "."
-        return text + ", going home."
-    if x.target != 0:
-        Flotilla y = sim.by_code(fl, x.target)
-        if y.alive():
-            return text + ", intercepting a " + factions.adjectives[y.faction] + " flotilla at " + galaxy.name(y.at) + "."
-    if sim.besieging(game, x):
-        int full = galaxy.full_garrison(game, x.goal)
-        int hp = garrisons.hp(game, x.goal, full)
-        return text + ", besieging it (" + string(100 - hp * 100 / full) + "% done)."
-    if x.at == x.goal:
-        return text + ", holding it."
-    return text + ", bound for " + galaxy.name(x.goal) + "."
+string goals_text(War w):
+    []string parts = []
+    for m in w.goals:
+        parts.append(factions.regions.names[m])
+    return parts.join(" and ")
 
-// The licenses faction f issues by rank, for its panel: the next one a member earns.
-string licensing(es.Game game, int f, int r):
+string licensing(int f, int r):
     for k in 0..<factions.licenses.len():
         if factions.license_faction[k] == f && factions.license_rank[k] > r:
             return " At " + factions.ranks[factions.license_rank[k]] + " you will be issued a " + factions.licenses[k] + " License."
     return ""
-
-// "bold, 3 victories", for the panel.
-string admirals_line(es.Game game, Flotilla x):
-    if x.admiral == 0:
-        return "no commander"
-    int w = sim.admirals.wins(game, x.faction, x.admiral)
-    return sim.admirals.personality_name(game, x.faction, x.admiral) + ", " + string(w) + (" victory" if w == 1 else " victories")
 
 string standing(es.Game game, int f):
     int m = state.member(game)
@@ -309,8 +332,173 @@ string standing(es.Game game, int f):
         int next = factions.next_rank_merit(r)
         if next >= 0:
             text = text + " (" + factions.ranks[r + 1] + " at " + string(next) + ")"
-        text = text + ". Salary: " + string(salary(game)) + " credits a day." + licensing(game, f, r)
-        return text + " Its flotillas count you as an ally, and its enemies' flotillas as an enemy."
+        text = text + ". Salary: " + string(salary(game)) + " credits a day." + licensing(f, r)
+        return text + " Its flotillas count you as an ally, and its enemies' as an enemy."
     if m != 0:
         return "You serve " + factions.names[m] + ". To join " + factions.names[f] + ", leave " + factions.names[m] + " first."
-    return "You are not a member. Members fight beside " + factions.names[f] + "'s flotillas and are enemies of its enemies' flotillas. They earn merit for every enemy ship they destroy and every faction mission they complete, and a salary that grows with their rank."
+    return "You are not a member. Members fight beside " + factions.names[f] + "'s flotillas, earn merit for enemy ships destroyed and operations done, and draw a salary that grows with their rank."
+
+// ---- The War Room and the service record ----
+
+void open_screen(es.Game game, string tab, int row):
+    screen = tab
+    selected = row
+    actions = []
+    row_refs = []
+    string text = ""
+    if tab == "record":
+        text = record_text(game)
+        game.screen_open("Service Record", text)
+        game.panel_columns("Medal\tDate")
+        for k in 0..<world.medals.len():
+            []string f = world.medals[world.medals.len() - 1 - k].split("|")
+            if f.len() >= 3:
+                string citation = f[2]
+                int colon = citation.index_of(":") if citation.contains(":") else citation.len()
+                game.panel_row(citation[0..<colon] + "\t" + chronicle.date(f[1].to_int()))
+                row_refs.append(world.medals.len() - 1 - k)
+        if row >= 0 && row < row_refs.len():
+            []string f = world.medals[row_refs[row]].split("|")
+            game.screen_open("Service Record", f[2] + "\n" + chronicle.date(f[1].to_int()) + "\n" + text)
+            refill_record(game)
+            game.panel_select(row)
+        add_button(game, "War Room", "wars")
+        add_button(game, "Back", "back")
+        add_button(game, "Close", "close")
+        return
+    text = war_room_text(game, tab, row)
+    fill_screen(game, tab, text)
+    if row >= 0 && row < row_refs.len():
+        // The chosen row's details replace the summary in the sidebar.
+        fill_screen(game, tab, row_text(game, tab, row_refs[row]))
+        game.panel_select(row)
+    for b in [["Wars", "wars"], ["Forces", "forces"], ["Minors", "minors"], ["Chronicle", "chronicle"]]:
+        if b[1] != tab:
+            add_button(game, b[0], b[1])
+    add_button(game, "Service Record", "record")
+    add_button(game, "Back", "back")
+    add_button(game, "Close", "close")
+
+// Open the War Room on a tab with this sidebar text: its charts and its table.
+void fill_screen(es.Game game, string tab, string text):
+    game.screen_open("War Room", text)
+    if tab == "wars":
+        game.panel_chart("Republic", chronicle.series(1))
+        game.panel_chart("Free Worlds", chronicle.series(2))
+        game.panel_chart("Syndicate", chronicle.series(3))
+    else if tab == "minors":
+        game.panel_chart("Rebels", chronicle.series(4))
+    refill(game, tab)
+
+void refill(es.Game game, string tab):
+    row_refs = []
+    if tab == "wars":
+        game.panel_columns("War\tGoal\tScore\tDay")
+        for w in world.wars:
+            game.panel_row(factions.adjective(w.a) + " / " + factions.adjective(w.b) + " (" + w.kind_name() + ")\t" + goals_short(w) + "\t" + string(w.score) + "\t" + string(game.day() - w.since + 1))
+            row_refs.append(w.id)
+    else if tab == "forces":
+        game.panel_columns("Force\tSide\tTask\tStrength")
+        for x in world.fleets:
+            if x.alive():
+                string task = "siege of " + galaxy.name(x.goal) if sim.besieging(x) else ("raid" if x.kind == 2 else ("going home" if x.kind == 3 else "at " + galaxy.name(x.at)))
+                game.panel_row(sim.led_by(x) + "\t" + factions.adjective(x.side) + "\t" + task + "\t" + string(x.strength))
+                row_refs.append(x.id)
+    else if tab == "minors":
+        game.panel_columns("Minor\tOwner\tHeld\tUnrest")
+        for m in 0..<factions.regions.count():
+            int o = galaxy.minor_owner(m)
+            string owner = factions.adjective(o) if !galaxy.split(m) else "split: " + split_text(m)
+            game.panel_row(minor_name(m) + "\t" + owner + "\t" + string(galaxy.held_by(m, o)) + "/" + string(galaxy.minor_systems[m].len()) + "\t" + string(world.unrest[m] / 10))
+            row_refs.append(m)
+    else if tab == "chronicle":
+        game.panel_columns("Date\tEvent")
+        for k in 0..<world.chronicle.len():
+            string e = world.chronicle[world.chronicle.len() - 1 - k]
+            string t = chronicle.entry_text(e)
+            if t.len() > 64:
+                t = t[0..<61] + "..."
+            game.panel_row(chronicle.date(chronicle.entry_day(e)) + "\t" + t)
+            row_refs.append(world.chronicle.len() - 1 - k)
+
+void refill_record(es.Game game):
+    game.panel_columns("Medal\tDate")
+    for k in row_refs:
+        []string f = world.medals[k].split("|")
+        string citation = f[2]
+        int colon = citation.index_of(":") if citation.contains(":") else citation.len()
+        game.panel_row(citation[0..<colon] + "\t" + chronicle.date(f[1].to_int()))
+
+string goals_short(War w):
+    []string parts = []
+    for m in w.goals:
+        parts.append(factions.regions.shorts[m])
+    return parts.join(", ")
+
+string split_text(int m):
+    []string parts = []
+    for s in galaxy.holders(m):
+        parts.append(factions.adjective(s) + " " + string(galaxy.held_by(m, s)))
+    return parts.join(", ")
+
+// The sidebar: the selected row's details, or a summary.
+string war_room_text(es.Game game, string tab, int row):
+    string text = string(world.wars.len()) + (" war" if world.wars.len() == 1 else " wars") + " in progress."
+    int rebels = 0
+    for s in 5..=factions.sides():
+        if galaxy.territory(s) > 0:
+            rebels += 1
+    if rebels > 0:
+        text = text + " " + string(rebels) + " rebel " + ("faction holds" if rebels == 1 else "factions hold") + " territory."
+    text = text + "\nTerritory: Republic " + string(galaxy.territory(1)) + ", Free Worlds " + string(galaxy.territory(2)) + ", Syndicate " + string(galaxy.territory(3)) + "."
+    if world.chronicle.len() > 0:
+        text = text + "\nLatest: " + chronicle.entry_text(world.chronicle[world.chronicle.len() - 1])
+    return text
+
+// The details of a row, shown in the sidebar once chosen.
+string row_text(es.Game game, string tab, int key):
+    if tab == "wars":
+        War w = world.war_by_id(key)
+        if w.id == 0:
+            return "That war is over."
+        string t = factions.title(w.a) + " against " + factions.name(w.b) + ": a " + w.kind_name() + " over " + goals_text(w) + ", since " + chronicle.date(w.since) + ", to end by " + chronicle.date(w.until) + "."
+        t = t + "\nScore " + string(w.score) + " (positive favours " + factions.name(w.a) + "). Exhaustion: " + factions.adjective(w.a) + " " + string(w.ex_a / 10) + "%, " + factions.adjective(w.b) + " " + string(w.ex_b / 10) + "%."
+        t = t + "\nSystems taken: " + factions.adjective(w.a) + " " + string(w.took_a) + ", " + factions.adjective(w.b) + " " + string(w.took_b) + "."
+        for m in w.goals:
+            t = t + "\n" + factions.regions.names[m] + ": " + split_text(m) + "."
+        return t
+    if tab == "forces":
+        Flotilla x = world.fleet_by_id(key)
+        if !x.alive():
+            return "That force is gone."
+        string t = sim.led_by(x) + "'s " + factions.sizes[x.size] + " " + factions.adjective(x.side) + (" raiders" if x.kind == 2 else " flotilla") + " at " + galaxy.name(x.at) + ", strength " + string(x.strength) + " of " + string(x.full) + "."
+        if sim.besieging(x):
+            int full = sim.full_strength(game, x.goal)
+            t = t + "\nBesieging " + galaxy.name(x.goal) + ": garrison " + string(garrisons.hp(x.goal, full)) + " of " + string(full) + ", day " + string(x.siege) + "."
+        else if x.goal >= 0 && x.goal != x.at:
+            t = t + "\nBound for " + galaxy.name(x.goal) + "."
+        return t
+    if tab == "minors":
+        int m = key
+        string t = factions.regions.names[m] + (" (" + factions.adjective(factions.regions.parents[m]) + " core)" if factions.regions.cores[m] else ", by default " + factions.name(factions.regions.parents[m]) + "'s") + ": " + split_text(m) + "."
+        t = t + "\nUnrest " + string(world.unrest[m] / 10) + "."
+        if factions.regions.rebels[m] != "":
+            t = t + " If it rises, it forms the " + factions.regions.rebels[m] + ", or goes over to a neighbour."
+        []string names = []
+        for i in galaxy.minor_systems[m]:
+            names.append(galaxy.name(i))
+        return t + "\nSystems: " + names.join(", ") + "."
+    if tab == "chronicle":
+        string e = world.chronicle[key]
+        return chronicle.date(chronicle.entry_day(e)) + "\n" + chronicle.entry_text(e)
+    return ""
+
+string record_text(es.Game game):
+    int m = state.member(game)
+    string text = ""
+    if m != 0:
+        text = "You serve " + factions.names[m] + " as a " + factions.ranks[rank(game)] + ", with " + string(state.merit(game)) + " merit."
+    else:
+        text = "You serve no faction."
+    text = text + "\nOperations done: " + string(world.get_stat("ops done")) + ". Medals: " + string(world.medals.len()) + "."
+    return text

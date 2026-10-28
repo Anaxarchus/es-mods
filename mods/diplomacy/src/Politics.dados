@@ -1,0 +1,875 @@
+class Politics
+
+// The political side of a day: unrest in the minors, rebellions and
+// defections, wars declared by the war-likelihood rule with minors as their
+// goals, wars ended by peace terms that decide which minors (or parts of
+// them) change hands, the effects of a capture, and captured systems' patrols
+// handed to their new owner. See README.md, "Wars", "Rebellion" and DESIGN.md.
+//
+// Ownership is Galaxy's (read from the game each morning, updated by every
+// capture and transfer); changes to the game go out through Changes at the
+// end of the day.
+
+import "imports:sdk/es"
+
+Tuning tune = Tuning()
+Factions factions = Factions()
+Galaxy galaxy = Galaxy()
+World world = World()
+Rng rng = Rng()
+Garrisons garrisons = Garrisons()
+Admirals admirals = Admirals()
+Changes changes = Changes()
+Chronicle chronicle = Chronicle()
+
+// The player's faction (a major they serve), set by the mod each day.
+int player = 0
+
+void wire(Tuning t, Factions f, Galaxy g, World w, Rng r, Garrisons gs, Admirals a, Changes c, Chronicle ch):
+    tune = t
+    factions = f
+    galaxy = g
+    world = w
+    rng = r
+    garrisons = gs
+    admirals = a
+    changes = c
+    chronicle = ch
+
+Regions regions():
+    return factions.regions
+
+// Whether an event concerns the player's faction (messaged at once).
+bool concerns(int s, int t):
+    return player != 0 && (s == player || t == player)
+
+// ---- The day ----
+
+// Answers true if a war started or ended (reputations then change).
+bool day(es.Game game, int day):
+    int before = world.wars.len()
+    int ids = world.next_war
+    decay(day)
+    track_splits(day)
+    update_unrest(day)
+    end_wars(game, day)
+    protection(game, day)
+    rebellions(game, day)
+    first_war(game, day)
+    declare_wars(game, day)
+    swap_patrols(game, day)
+    if player != 0 && world.at_war(player):
+        world.story[4] = day
+    return world.wars.len() != before || world.next_war != ids
+
+void decay(int day):
+    for s in 0..<world.defeat.len():
+        world.defeat[s] = max0(world.defeat[s] - 10)
+        if day % 2 == 0:
+            world.shock[s] = max0(world.shock[s] - 10)
+    for m in 0..<world.neglect.len():
+        world.neglect[m] = max0(world.neglect[m] - 10)
+        if world.neglect[m] > tune.neglect_cap * 10:
+            world.neglect[m] = tune.neglect_cap * 10
+    if day % tune.grudge_decay == 0:
+        for f in 1..=3:
+            for s in 0..<world.grudge[f].len():
+                world.grudge[f][s] = max0(world.grudge[f][s] - 1)
+
+int max0(int v):
+    return v if v > 0 else 0
+
+// When each minor's present split began (for the growing war pressure).
+void track_splits(int day):
+    for m in 0..<regions().count():
+        if galaxy.split(m):
+            if world.split_since[m] == 0:
+                world.split_since[m] = day
+        else:
+            world.split_since[m] = 0
+
+// ---- Unrest ----
+
+bool can_rebel(int m):
+    return !regions().cores[m] && regions().parents[m] != factions.pirates()
+
+// The unrest minor m drifts toward, in whole points.
+int unrest_target(int m):
+    int o = galaxy.minor_owner(m)
+    if !factions.is_major(o):
+        return 0
+    int t = tune.unrest_base
+    int far = galaxy.distance_from_capital(o, m) - tune.unrest_free_jumps
+    if far > 0:
+        t += far * tune.unrest_per_jump
+    if o != regions().parents[m]:
+        t += tune.foreign_rule
+    if galaxy.split(m):
+        t += tune.split_unrest
+    int worst = 0
+    for w in world.wars_of(o):
+        t += tune.war_unrest
+        if w.exhaustion(o) > worst:
+            worst = w.exhaustion(o)
+    t += worst / tune.war_weariness
+    t += world.defeat[o] / 10 + world.shock[o] / 10 + world.neglect[m] / 10
+    return t if t < 100 else 100
+
+void update_unrest(int day):
+    for m in 0..<regions().count():
+        if !can_rebel(m):
+            world.unrest[m] = 0
+            continue
+        int target = unrest_target(m) * 10
+        int u = world.unrest[m]
+        int step = (target - u) * tune.unrest_drift / 100
+        if step == 0 && target != u:
+            step = 1 if target > u else -1
+        world.unrest[m] = u + step
+
+// ---- Rebellions and defections ----
+
+// The majors minor m could defect to from its owner: those on its border, other than the owner.
+[]int patrons(int m, int owner):
+    []int out = []
+    for p in 1..=3:
+        if p != owner && galaxy.borders(p, m) && galaxy.territory(p) > 0:
+            out.append(p)
+    return out
+
+void rebellions(es.Game game, int day):
+    int forced = world_force(game, "force rebellion")
+    if forced > 0:
+        rebel(game, forced - 1, day, world_force(game, "force outcome"))
+        return
+    if world.wars.len() >= tune.hard_max_wars:
+        return
+    for m in 0..<regions().count():
+        if !can_rebel(m):
+            continue
+        int o = galaxy.minor_owner(m)
+        int u = world.unrest[m] / 10
+        if !factions.is_major(o) || galaxy.held_by(m, o) < 2 || u <= tune.rebellion_unrest:
+            continue
+        if world.rebelled[m] != 0 && day - world.rebelled[m] < tune.rebellion_cooldown:
+            continue
+        int over = u - tune.rebellion_unrest
+        if rng.chance_bp(over * over * 100 / tune.rebellion_divisor):
+            rebel(game, m, day, 0)
+            return
+
+// A test override: read and clear it.
+int world_force(es.Game game, string key):
+    int v = game.condition("diplomacy: " + key)
+    if v != 0:
+        game.set_condition("diplomacy: " + key, 0)
+    return v
+
+// Minor m rises against its owner: it secedes (a rebel faction), or defects
+// to a major on its border, which brings war with its old owner at once.
+// `outcome` 1 forces secession, 2 defection (when a patron exists).
+void rebel(es.Game game, int m, int day, int outcome):
+    if m < 0 || m >= regions().count() || !can_rebel(m):
+        return
+    int o = galaxy.minor_owner(m)
+    if !factions.is_major(o) || galaxy.held_by(m, o) == 0:
+        return
+    world.rebelled[m] = day
+    []int ps = patrons(m, o)
+    []int weights = [tune.separatist_weight]
+    for p in ps:
+        int w = tune.defect_weight
+        if p == regions().parents[m]:
+            w += tune.defect_home_bonus
+        if galaxy.held_by(m, p) > 0:
+            w += tune.defect_split_bonus
+        if world.wars_of(p).len() >= tune.faction_war_limit:
+            w = w / 2
+        int ratio = galaxy.territory(p) * 100 / (galaxy.territory(o) + 1)
+        ratio = 50 if ratio < 50 else (150 if ratio > 150 else ratio)
+        weights.append(w * ratio / 100)
+    int pick = rng.weighted(weights)
+    if outcome == 1 || ps.len() == 0:
+        pick = 0
+    else if outcome == 2:
+        pick = 1
+        for k in 1..<weights.len():
+            if weights[k] > weights[pick]:
+                pick = k
+    if world.wars.len() >= tune.hard_max_wars:
+        // No war can start: the unrest is put down for now.
+        world.unrest[m] = world.unrest[m] / 2
+        return
+    world.unrest[m] = world.unrest[m] / 3
+    if pick <= 0:
+        secede(game, m, o, day)
+    else:
+        defect(game, m, o, ps[pick - 1], day)
+
+// Every system of minor m the owner holds goes to `to`, as taken in war `war`
+// (the war the rising starts, declared next: so its peace can give them back).
+int hand_over(es.Game game, int m, int from, int to, int day, int war):
+    int n = 0
+    for i in galaxy.minor_systems[m]:
+        if galaxy.owner(i) == from && !factions.is_capital(galaxy.name(i)):
+            transfer(game, i, from, to, day, war)
+            n += 1
+    return n
+
+// The war a rising starts between s and t: the one they already fight, or the next.
+int rising_war(int s, int t):
+    War w = world.war_between(s, t)
+    return w.id if w.id != 0 else world.next_war
+
+void secede(es.Game game, int m, int o, int day):
+    int r = factions.rebel_side(m)
+    int n = hand_over(game, m, o, r, day, rising_war(r, o))
+    world.stat("rebellions", 1)
+    world.stat("separatists", 1)
+    // At peace with everyone else.
+    for f in 1..=3:
+        if f != o:
+            set_attitudes(r, f, 0)
+    string text = regions().names[m] + " rises against " + factions.name(o) + ": " + systems(n) + " declare for the " + factions.adjective(r) + "."
+    chronicle.add(game, day, cap(text), concerns(o, 0), true)
+    chronicle.post(game, "diplomacy.rising", rising_json(m, "separatist", o, r))
+    declare(game, r, o, 2, [m], "secession", day)
+
+// {"minor":"Paradise Worlds","outcome":"separatist","from":1,"to":6,"from_government":"Republic","to_government":"Paradise Secession"}
+string rising_json(int m, string outcome, int from, int to):
+    return "{\"minor\":" + chronicle_json(regions().shorts[m]) + ",\"outcome\":\"" + outcome + "\",\"from\":" + string(from) + ",\"to\":" + string(to) + ",\"from_government\":" + chronicle_json(factions.government(from)) + ",\"to_government\":" + chronicle_json(factions.government(to)) + "}"
+
+string chronicle_json(string s):
+    string out = globalThis.JSON.stringify(s)
+    return out
+
+void defect(es.Game game, int m, int o, int p, int day):
+    // A war the two already fight takes the minor on as a goal (declare widens it).
+    int n = hand_over(game, m, o, p, day, rising_war(o, p))
+    world.stat("rebellions", 1)
+    world.stat("defections", 1)
+    string text = cap(regions().names[m]) + " defects to " + factions.name(p) + " (" + systems(n) + "); " + factions.name(o) + " declare war to take it back."
+    chronicle.add(game, day, text, concerns(o, p), true)
+    chronicle.post(game, "diplomacy.rising", rising_json(m, "defection", o, p))
+    declare(game, o, p, 3, [m], "defection", day)
+
+// A separatist faction losing its war asks a major on its border for
+// protection: its systems go to that major, and the war becomes the major's.
+void protection(es.Game game, int day):
+    for w in world.wars.copy():
+        if w.kind != 2 || !world.has_war(w.id):
+            continue
+        int r = w.a
+        int parent = w.b
+        int m = factions.rebel_minor(r)
+        if m < 0 || w.ex_a < tune.protection_exhaustion * 10 || !rng.chance_bp(tune.protection_chance * 10):
+            continue
+        []int ps = patrons(m, parent).filter(bool(int p): return p != parent && world.wars_of(p).len() < tune.faction_war_limit)
+        if ps.len() == 0 || world.wars.len() > tune.hard_max_wars:
+            continue
+        int p = ps[rng.range(0, ps.len() - 1)]
+        world.remove_war(w.id)
+        if world.war_between(r, parent).id == 0:
+            set_attitudes(r, parent, 0)
+        send_home(w.id)
+        int n = 0
+        int wid = rising_war(parent, p)
+        for i in galaxy.human:
+            if galaxy.owner(i) == r:
+                transfer(game, i, r, p, day, wid)
+                n += 1
+        dissolve(game, r, day)
+        world.stat("annexations", 1)
+        string text = "The " + factions.adjective(r) + " ask " + factions.name(p) + " for protection: " + regions().names[m] + " is annexed, and " + factions.name(parent) + " fight on to take it back."
+        chronicle.add(game, day, text, concerns(parent, p), true)
+        chronicle.post(game, "diplomacy.rising", rising_json(m, "annexation", r, p))
+        declare(game, parent, p, 3, [m], "annexation", day)
+
+// ---- War pressure ----
+
+// The chance per day (hundredths of a percent) that s and t go to war, by
+// the war-likelihood rule: minors they both hold part of (growing with the
+// time the split has gone unfought), minors one claims that the other holds,
+// whole minors of the other's on one's border, and grudges.
+int pressure(int s, int t, int day):
+    if s == t || world.hostile(s, t) || !factions.is_major(s):
+        return 0
+    if world.truce[s][t] > day:
+        return 0
+    if galaxy.territory(s) == 0 || galaxy.territory(t) == 0:
+        return 0
+    int p = 0
+    for m in 0..<regions().count():
+        if regions().parents[m] == factions.pirates():
+            continue
+        int hs = galaxy.held_by(m, s)
+        int ht = galaxy.held_by(m, t)
+        if ht == 0:
+            continue
+        if factions.is_rebel(t):
+            if regions().parents[m] == s:
+                p += tune.reclaim_pressure
+            else if galaxy.borders(s, m):
+                p += tune.opportunist_pressure
+            continue
+        if hs > 0:
+            int since = world.split_since[m] if world.split_since[m] > 0 else day
+            int quiet = day - since
+            int lw = world.last_war[s][t]
+            if lw > since:
+                quiet = day - lw
+            int growth = 100 + quiet * 50 / tune.split_growth_days
+            if growth > tune.split_max_growth * 100:
+                growth = tune.split_max_growth * 100
+            p += tune.split_pressure * growth / 100
+        else if galaxy.borders(s, m):
+            if regions().parents[m] == s || (world.claimant[m] == s && day - world.claim_day[m] < tune.claim_days):
+                p += tune.claim_pressure
+            else if !regions().cores[m]:
+                p += tune.opportunity_pressure if tiring(t) else tune.whole_pressure
+    p = p * (20 + world.grudge[s][t]) / 20
+    return p
+
+// Whether side t is at war and tiring: an opportunity for its neighbours.
+bool tiring(int t):
+    for w in world.wars_of(t):
+        if w.exhaustion(t) >= tune.opportunity_exhaustion * 10:
+            return true
+    return false
+
+void declare_wars(es.Game game, int day):
+    int forced = world_force(game, "force war")
+    if forced != 0:
+        int a = forced / 10
+        int b = forced % 10
+        if factions.is_major(a) && factions.is_major(b) && a != b:
+            War old = world.war_between(a, b)
+            if old.id != 0:
+                make_peace(game, old, day, true)
+            declare(game, a, b, 1, goals_for(a, b, 1, -1), "forced", day)
+        return
+    if world.first_war == 0 || world.wars.len() >= tune.max_wars || day < world.next_declare:
+        return
+    // Every pair, in a random order; the first to roll war declares it.
+    [][]int pairs = []
+    for s in 1..=3:
+        for t in 1..=factions.sides():
+            if t == s || t == factions.pirates() || (factions.is_major(t) && t < s):
+                continue
+            pairs.append([s, t])
+    for k in 0..<pairs.len():
+        int j = rng.range(k, pairs.len() - 1)
+        []int tmp = pairs[k]
+        pairs[k] = pairs[j]
+        pairs[j] = tmp
+    for pr in pairs:
+        int s = pr[0]
+        int t = pr[1]
+        if world.wars_of(s).len() >= tune.faction_war_limit || world.wars_of(t).len() >= tune.faction_war_limit:
+            continue
+        int p = pressure(s, t, day)
+        if factions.is_major(t):
+            p = (p + pressure(t, s, day)) / 2
+        if p <= 0:
+            continue
+        if player != 0 && (s == player || t == player) && day - world.story[4] > tune.quiet_days:
+            p = p * tune.peace_boost
+        if !rng.chance_bp(p):
+            continue
+        // The side with the stronger claim declares; against rebels, the major.
+        int a = s
+        int b = t
+        if factions.is_major(t) && (pressure(t, s, day) > pressure(s, t, day) || (pressure(t, s, day) == pressure(s, t, day) && rng.chance(50))):
+            a = t
+            b = s
+        int kind = 4 if factions.is_rebel(b) else war_kind(game, day)
+        []int goals = goals_for(a, b, kind, -1)
+        if goals.len() == 0:
+            continue
+        declare(game, a, b, kind, goals, reason_for(a, b, goals[0]), day)
+        world.next_declare = day + rng.range(tune.declare_gap_min, tune.declare_gap_max)
+        return
+
+// A border crisis while the Reconciliation is young; later, a third of the time.
+int war_kind(es.Game game, int day):
+    if game.condition("free worlds reconciliation") != 0 && day - world.activated < tune.reconciliation_days:
+        return 0
+    return 0 if rng.chance(35) else 1
+
+string reason_for(int a, int b, int m):
+    if galaxy.held_by(m, a) > 0 && galaxy.held_by(m, b) > 0:
+        return "split"
+    if regions().parents[m] == a || world.claimant[m] == a:
+        return "claim"
+    return "border"
+
+// The minors a war of a against b is about: the best goal for a (a minor b
+// holds part of, on a's border: split ones first, then a's own, then the
+// rest; a core last), and for a full war a counter-goal for b half the time.
+// `near`, if a system, makes goals near it likelier (the player's crisis).
+[]int goals_for(int a, int b, int kind, int near):
+    []int goals = []
+    int best = best_goal(a, b, near)
+    if best < 0:
+        return goals
+    goals.append(best)
+    if kind == 1 && factions.is_major(b) && rng.chance(50):
+        int counter = best_goal(b, a, -1)
+        if counter >= 0 && counter != best:
+            goals.append(counter)
+    return goals
+
+int best_goal(int a, int b, int near):
+    int best = -1
+    int best_score = -1000000
+    for m in 0..<regions().count():
+        if regions().parents[m] == factions.pirates() || galaxy.held_by(m, b) == 0 || !galaxy.borders(a, m):
+            continue
+        int score = 0
+        if galaxy.held_by(m, a) > 0:
+            score += 100
+        if regions().parents[m] == a || world.claimant[m] == a:
+            score += 60
+        // A core is a goal only now and then: it scores below a split or a claim,
+        // and about level with a plain whole minor. Its capital is never taken.
+        if regions().cores[m]:
+            score -= 15
+        if near >= 0:
+            int d = 1000
+            for i in galaxy.minor_systems[m]:
+                int j = galaxy.jumps(near, i)
+                if j >= 0 && j < d:
+                    d = j
+            score -= d * 25
+        score += rng.range(0, 30)
+        if score > best_score:
+            best_score = score
+            best = m
+    return best
+
+// ---- The first war: the border crisis ----
+
+// Days 10-20 after activation: a border crisis between the player's faction
+// and its likeliest rival, over a minor the two share near the player.
+void first_war(es.Game game, int day):
+    // Test override "diplomacy: force crisis": the crisis comes today.
+    if world_force(game, "force crisis") != 0 && world.first_war == 0:
+        world.story[0] = day
+    if world.first_war != 0 || world.story[0] == 0 || day < world.story[0]:
+        return
+    world.first_war = 1
+    world.next_declare = day + rng.range(tune.declare_gap_min, tune.declare_gap_max)
+    []int candidates = [player] if player != 0 else [1, 2, 3]
+    int fac = candidates[0]
+    int rival = 0
+    int best = -1
+    for s in candidates:
+        for t in 1..=3:
+            if t == s:
+                continue
+            int p = pressure(s, t, day) + pressure(t, s, day)
+            if p > best:
+                best = p
+                fac = s
+                rival = t
+    if rival == 0:
+        return
+    if world.war_between(fac, rival).id != 0:
+        return
+    int near = galaxy.find(game.here())
+    []int goals = goals_for(rival, fac, 0, near)
+    int a = rival
+    int b = fac
+    if goals.len() == 0:
+        goals = goals_for(fac, rival, 0, near)
+        a = fac
+        b = rival
+    if goals.len() == 0:
+        return
+    world.story[1] = goals[0]
+    world.story[2] = day
+    War crisis = declare(game, a, b, 0, goals, reason_for(a, b, goals[0]), day)
+    world.story[5] = crisis.id
+
+// ---- Declaring and ending wars ----
+
+void set_attitudes(int s, int t, int value):
+    changes.attitude(factions.flotilla_government(s), factions.flotilla_government(t), value)
+    changes.attitude(factions.flotilla_government(t), factions.flotilla_government(s), value)
+    // A rebel faction and the major's own navy fight too.
+    if factions.is_rebel(s) && factions.is_major(t):
+        changes.attitude(factions.government(s), factions.government(t), value)
+        changes.attitude(factions.government(t), factions.government(s), value)
+    if factions.is_rebel(t) && factions.is_major(s):
+        changes.attitude(factions.government(t), factions.government(s), value)
+        changes.attitude(factions.government(s), factions.government(t), value)
+
+int war_length(int kind):
+    if kind == 0:
+        return rng.range(tune.crisis_min_days, tune.crisis_max_days)
+    if kind == 2 || kind == 3:
+        return rng.range(tune.rebellion_min_days, tune.rebellion_max_days)
+    return rng.range(tune.war_min_days, tune.war_max_days)
+
+string goal_names([]int goals):
+    []string parts = []
+    for m in goals:
+        parts.append(regions().names[m])
+    return parts.join(" and ")
+
+War declare(es.Game game, int a, int b, int kind, []int goals, string reason, int day):
+    // Never two wars between one pair: a war they already fight takes the new
+    // goals on and runs longer (a crisis becomes the rising's kind of war).
+    War old = world.war_between(a, b)
+    if old.id != 0:
+        []int added = []
+        for m in goals:
+            if !old.goals.contains(m) && old.goals.len() < 4:
+                old.goals.append(m)
+                added.append(m)
+        int until = day + war_length(kind)
+        if until > old.until:
+            old.until = until
+        if old.kind == 0 && kind != 0:
+            old.kind = kind
+        world.stat("wars widened", 1)
+        if added.len() > 0:
+            chronicle.add(game, day, "The " + old.kind_name() + " between " + factions.name(old.a) + " and " + factions.name(old.b) + " widens to " + goal_names(added) + ".", concerns(a, b), true)
+        return old
+    War w = War()
+    w.id = world.next_war
+    world.next_war += 1
+    w.a = a
+    w.b = b
+    w.kind = kind
+    w.goals = goals
+    w.reason = reason
+    w.since = day
+    w.until = day + war_length(kind)
+    world.wars.append(w)
+    set_attitudes(a, b, -1)
+    world.stat("wars", 1)
+    world.stat("wars " + w.kind_name(), 1)
+    string what = "a border crisis" if kind == 0 else "war"
+    string text = ""
+    if kind == 2:
+        text = "Rebellion: the " + factions.adjective(a) + " fight " + factions.name(b) + " for " + goal_names(goals) + "."
+    else if kind == 3:
+        text = "War! " + factions.title(a) + " declare war on " + factions.name(b) + " to take back " + goal_names(goals) + "."
+    else:
+        text = "War! " + factions.title(a) + " and " + factions.name(b) + " go to " + what + " over " + goal_names(goals) + "."
+    if kind == 0:
+        text = "Border crisis! " + factions.title(a) + " and " + factions.name(b) + " clash over " + goal_names(goals) + "."
+    chronicle.add(game, day, text, concerns(a, b), true)
+    chronicle.post(game, "diplomacy.war", war_json(w))
+    game.log("diplomacy: " + w.kind_name() + " " + string(w.id) + " between " + factions.adjective(a) + " and " + factions.adjective(b) + " over " + goal_names(goals) + " until day " + string(w.until))
+    return w
+
+// {"id":3,"a":1,"b":2,"a_government":"Republic","b_government":"Free Worlds","kind":"war","goals":["Central Dirt Belt"],"reason":"split","until":1100300}
+string war_json(War w):
+    []string g = []
+    for m in w.goals:
+        g.append(chronicle_json(regions().shorts[m]))
+    return "{\"id\":" + string(w.id) + ",\"a\":" + string(w.a) + ",\"b\":" + string(w.b) + ",\"a_government\":" + chronicle_json(factions.government(w.a)) + ",\"b_government\":" + chronicle_json(factions.government(w.b)) + ",\"kind\":\"" + w.kind_name() + "\",\"goals\":[" + g.join(",") + "],\"reason\":" + chronicle_json(w.reason) + ",\"until\":" + string(w.until) + "}"
+
+void end_wars(es.Game game, int day):
+    if world_force(game, "force peace") != 0:
+        for w in world.wars.copy():
+            make_peace(game, w, day, true)
+        return
+    for w in world.wars.copy():
+        if !world.has_war(w.id):
+            continue
+        bool over = day >= w.until || w.ex_a >= 1000 || w.ex_b >= 1000
+        if w.kind == 0 && (w.score >= tune.crisis_decisive || -w.score >= tune.crisis_decisive):
+            over = true
+        if galaxy.territory(w.a) == 0 || galaxy.territory(w.b) == 0:
+            over = true
+        // A rebellion is over once the rebels hold nothing of their minor.
+        if w.kind == 2 && galaxy.held_by(factions.rebel_minor(w.a), w.a) == 0:
+            over = true
+        if over:
+            make_peace(game, w, day, false)
+
+// Send home the flotillas of war `id`.
+void send_home(int id):
+    for x in world.fleets:
+        if x.alive() && x.war == id && x.kind == 0:
+            x.kind = 3
+            x.target = 0
+            x.siege = 0
+            x.war = 0
+            x.goal = x.home
+
+// The war ends, and its peace terms decide what changes hands. `white`: a
+// peace with no terms (forced, or a war that gives way to another).
+void make_peace(es.Game game, War w, int day, bool white):
+    if !world.has_war(w.id):
+        return
+    world.remove_war(w.id)
+    if world.war_between(w.a, w.b).id == 0:
+        set_attitudes(w.a, w.b, 0)
+    send_home(w.id)
+    // The first hour's border crisis is over: "diplomacy: crisis" goes back to 0.
+    if w.id == world.story[5]:
+        world.story[2] = 0
+    int winner = 0
+    if !white:
+        if w.score >= tune.win_score || w.ex_b >= 1000:
+            winner = w.a
+        else if -w.score >= tune.win_score || w.ex_a >= 1000:
+            winner = w.b
+        if galaxy.territory(w.b) == 0:
+            winner = w.a
+        else if galaxy.territory(w.a) == 0:
+            winner = w.b
+    int loser = w.other(winner) if winner != 0 else 0
+    []string terms = []
+    int moved = 0
+    if !white:
+        moved = settle(game, w, winner, loser, day, terms)
+    // Bookkeeping: truce, grudges, defeats.
+    int length = rng.range(tune.truce_min_days, tune.truce_max_days)
+    if w.kind == 2 && winner != w.b:
+        length = rng.range(tune.independence_truce_min, tune.independence_truce_max)
+    for pr in [[w.a, w.b], [w.b, w.a]]:
+        if factions.is_major(pr[0]):
+            world.truce[pr[0]][pr[1]] = day + length
+            world.last_war[pr[0]][pr[1]] = day
+    if loser != 0:
+        world.defeat[loser] += tune.defeat_per_war * 10
+        if factions.is_major(loser):
+            world.grudge[loser][winner] += moved * tune.grudge_per_system / 2
+    world.stat("peaces", 1)
+    world.stat("systems moved by treaty", moved)
+    string text = ""
+    if winner == 0:
+        text = "Peace: " + factions.title(w.a) + " and " + factions.name(w.b) + " end their " + w.kind_name() + " over " + goal_names(w.goals) + " where it stands"
+    else:
+        text = "Peace: " + factions.title(winner) + " win the " + w.kind_name() + " over " + goal_names(w.goals) + " against " + factions.name(loser)
+    if terms.len() > 0:
+        text = text + "; " + terms.join("; ")
+    text = text + "."
+    chronicle.add(game, day, text, concerns(w.a, w.b), true)
+    chronicle.post(game, "diplomacy.peace", "{\"id\":" + string(w.id) + ",\"a\":" + string(w.a) + ",\"b\":" + string(w.b) + ",\"winner\":" + string(winner) + ",\"moved\":" + string(moved) + ",\"score\":" + string(w.score) + "}")
+    game.log("diplomacy: peace in war " + string(w.id) + " (" + w.kind_name() + "), winner " + factions.adjective(winner) + ", " + string(moved) + " systems moved, score " + string(w.score))
+    // A rebel faction with nothing left is gone; one at war with no one keeps its independence.
+    for s in [w.a, w.b]:
+        if factions.is_rebel(s) && galaxy.territory(s) == 0:
+            dissolve(game, s, day)
+
+// The peace terms. Core systems go back to their major unless the winner's
+// victory was overwhelming; the loser gives back what it took from the winner;
+// and a winner holding most of a goal minor is ceded the rest. An old parent
+// that wins a rebellion or a defection war gets back every system that rose
+// (the hand-over counts as taken in that war, so it is given back). Without
+// a winner, each keeps what it holds (a defected minor stays with its patron,
+// split if the old parent took part of it). A rebellion the rebels did not
+// lose ends in independence. Answers how many systems changed hands.
+int settle(es.Game game, War w, int winner, int loser, int day, []string terms):
+    int moved = 0
+    int abs_score = w.score if w.score >= 0 else -w.score
+    // Core systems taken in this war go back to their major, unless the side
+    // that took them won overwhelmingly. On a draw each keeps what it holds.
+    if winner != 0:
+        for c in world.captures.copy():
+            int i = c[0]
+            int m = galaxy.minor(i)
+            if m < 0 || !regions().cores[m] || c[4] != w.id:
+                continue
+            int home = regions().parents[m]
+            int o = galaxy.owner(i)
+            if c[1] != home || o != c[2] || !w.involves(home) || !w.involves(o):
+                continue
+            if winner == o && abs_score >= tune.overwhelming_score:
+                continue
+            transfer(game, i, o, home, day, w.id)
+            moved += 1
+    if moved > 0:
+        terms.append(systems(moved) + " of the cores " + ("is" if moved == 1 else "are") + " returned")
+    if winner == 0:
+        if w.kind == 2:
+            terms.append(factions.name(w.a) + " keep their independence")
+        return moved
+    // The loser gives back what it took from the winner in this war.
+    int back = 0
+    for c in world.captures.copy():
+        int i = c[0]
+        if c[4] == w.id && c[2] == loser && c[1] == winner && galaxy.owner(i) == loser:
+            transfer(game, i, loser, winner, day, w.id)
+            back += 1
+    if back > 0:
+        terms.append(factions.name(loser) + " give back " + systems(back))
+    moved += back
+    // Cession of goal minors the winner mostly holds.
+    for m in w.goals:
+        int hw = galaxy.held_by(m, winner)
+        int hl = galaxy.held_by(m, loser)
+        if hl == 0 || hw == 0 || hw * 100 < (hw + hl) * tune.cession_share:
+            continue
+        int n = 0
+        for i in galaxy.minor_systems[m]:
+            if galaxy.owner(i) == loser && !factions.is_capital(galaxy.name(i)) && !(regions().cores[m] && regions().parents[m] == loser):
+                transfer(game, i, loser, winner, day, w.id)
+                n += 1
+        if n > 0:
+            terms.append(factions.name(loser) + " cede " + regions().names[m] + " (" + systems(n) + ")")
+            moved += n
+    return moved
+
+// A rebel faction that holds nothing is gone: its wars end and its flotillas scatter.
+void dissolve(es.Game game, int r, int day):
+    for w in world.wars.copy():
+        if w.involves(r):
+            world.remove_war(w.id)
+            if world.war_between(w.a, w.b).id == 0:
+                set_attitudes(w.a, w.b, 0)
+            send_home(w.id)
+    for x in world.fleets:
+        if x.side == r:
+            x.strength = 0
+    admirals.dissolve(r)
+    int m = factions.rebel_minor(r)
+    world.stat("rebel factions ended", 1)
+    chronicle.add(game, day, "The " + factions.adjective(r) + " are no more: " + regions().names[m] + " is back under " + factions.name(galaxy.minor_owner(m)) + ".", concerns(regions().parents[m], 0), true)
+
+// ---- Systems changing hands ----
+
+// System i passes from one side to another (a capture, a treaty, a
+// rebellion): ownership now, the game's government with the day's changes,
+// and the capture record that consolidation and the patrol swap go by.
+void transfer(es.Game game, int i, int from, int to, int day, int war):
+    galaxy.set_owner(i, to)
+    changes.government(galaxy.name(i), factions.government(to))
+    // The loser keeps a claim on the minor for a while: a rematch is likely.
+    int m = galaxy.minor(i)
+    if m >= 0 && factions.is_major(from):
+        world.claimant[m] = from
+        world.claim_day[m] = day
+    int k = world.capture_index(i)
+    if k < 0:
+        world.captures.append([i, from, to, day, war, from, day])
+    else:
+        []int c = world.captures[k]
+        c[1] = from
+        c[2] = to
+        c[3] = day
+        c[4] = war
+        c[6] = day
+        // Back with the side whose patrols it still has: nothing to swap.
+        if c[5] == to:
+            world.captures.remove_at(k)
+    garrisons.release(i)
+
+// A flotilla of side `by` took system i in war w.
+void capture(es.Game game, int i, int by, War w, int day, int full, int siege_days):
+    int from = galaxy.owner(i)
+    int m = galaxy.minor(i)
+    bool core = m >= 0 && regions().cores[m] && regions().parents[m] == from
+    transfer(game, i, from, by, day, w.id)
+    garrisons.place(i, full * tune.capture_hp / 100, day)
+    w.add_score(by, tune.score_core if core else tune.score_capture)
+    w.add_exhaustion(from, tune.exhaustion_core if core else tune.exhaustion_system)
+    if by == w.a:
+        w.took_a += 1
+    else:
+        w.took_b += 1
+    if core:
+        if from == w.a:
+            w.core_lost_a += 1
+        else:
+            w.core_lost_b += 1
+        world.shock[from] += tune.core_shock * 10
+    world.defeat[from] += tune.defeat_per_system * 10
+    if factions.is_major(from):
+        world.grudge[from][by] += tune.grudge_per_system
+    world.stat("captures", 1)
+    world.stat("captured by " + string(by if by <= 4 else 5), 1)
+    chronicle.post(game, "diplomacy.capture", "{\"system\":" + chronicle_json(galaxy.name(i)) + ",\"by\":" + string(by) + ",\"from\":" + string(from) + ",\"war\":" + string(w.id) + ",\"core\":" + ("true" if core else "false") + "}")
+    string what = galaxy.name(i)
+    string text = "Siege of " + what + ", day " + string(siege_days) + ": " + what + " falls to " + factions.name(by) + (", a blow to the heart of " + factions.name(from) if core else "") + "."
+    chronicle.add(game, day, text, concerns(by, from), true)
+    game.log("diplomacy: " + factions.adjective(by) + " captured " + what + " from " + factions.adjective(from))
+
+// ---- Patrols ----
+
+// A captured system quiet for tune.swap_days gets its new owner's patrols.
+// The first time a system leaves the side whose patrols it had in the game's
+// data, that side's fleets (every fleet named for it: patrols, "Republic
+// Logistics", "Navy Surveillance", the Oathkeepers, the militia...) are
+// removed and kept in World.patrols; the new owner's "Small"/"Large" fleets
+// are added. Between later owners those two fleets are swapped. When the
+// system goes back to its first owner its own fleets are restored (at the
+// standard periods, since the game does not say what theirs were).
+void swap_patrols(es.Game game, int day):
+    for c in world.captures.copy():
+        int i = c[0]
+        int o = galaxy.owner(i)
+        if o == c[5] || o == 0 || o == factions.pirates():
+            continue
+        if day - c[6] < tune.swap_days || garrisons.last(i) > day - tune.swap_days:
+            continue
+        string name = galaxy.name(i)
+        int p = c[5]
+        string body = "system \"" + name + "\""
+        int k = patrol_index(i)
+        if k < 0:
+            []string removed = []
+            for j in 0..<game.system_fleet_count(name):
+                string f = game.system_fleet(name, j)
+                if belongs(f, p) && !removed.contains(f):
+                    removed.append(f)
+            for f in removed:
+                body = body + "\n\tremove fleet \"" + f + "\""
+            body = body + add_patrol(o)
+            world.patrols.append(string(i) + "|" + string(p) + "|" + removed.join(";"))
+        else:
+            []string f = world.patrols[k].split("|")
+            int orig = f[1].to_int()
+            body = body + "\n\tremove fleet \"" + factions.small_fleet(p) + "\"\n\tremove fleet \"" + factions.large_fleet(p) + "\""
+            if o == orig:
+                if f.len() > 2 && f[2] != "":
+                    for fleet in f[2].split(";"):
+                        int period = tune.large_patrol_period if fleet.contains("Large") else tune.small_patrol_period
+                        body = body + "\n\tadd fleet \"" + fleet + "\" " + string(period)
+                world.patrols.remove_at(k)
+            else:
+                body = body + add_patrol(o)
+        changes.add(body)
+        c[5] = o
+        world.stat("patrol swaps", 1)
+    // Records of systems back with the side whose patrols they have are dropped.
+    for c in world.captures.copy():
+        if galaxy.owner(c[0]) == c[5] && c[3] < day - tune.consolidation_days && world.war_by_id(c[4]).id == 0:
+            world.remove_capture(c[0])
+
+string add_patrol(int o):
+    return "\n\tadd fleet \"" + factions.small_fleet(o) + "\" " + string(tune.small_patrol_period) + "\n\tadd fleet \"" + factions.large_fleet(o) + "\" " + string(tune.large_patrol_period)
+
+int patrol_index(int i):
+    for k in 0..<world.patrols.len():
+        if world.patrols[k].starts_with(string(i) + "|"):
+            return k
+    return -1
+
+// Whether a system fleet is side s's (named for it), merchants and pirates aside.
+bool belongs(string fleet, int s):
+    if fleet.contains("Merchant") || fleet.contains("Pirate"):
+        return false
+    if s == 1:
+        return fleet.contains("Republic") || fleet.contains("Navy") || fleet.contains("Oathkeeper") || fleet.contains("Deep Security")
+    if s == 2:
+        return fleet.contains("Free Worlds") || fleet.contains("Militia")
+    if s == 3:
+        return fleet.contains("Syndicate")
+    string g = factions.government(s)
+    return g != "" && fleet.contains(g)
+
+// "1 system", "3 systems".
+string systems(int n):
+    return string(n) + (" system" if n == 1 else " systems")
+
+string cap(string s):
+    if s == "":
+        return s
+    return s[0..<1].to_upper() + s[1..<s.len()]

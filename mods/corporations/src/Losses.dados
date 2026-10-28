@@ -1,0 +1,289 @@
+class Losses
+
+import "imports:sdk/es"
+
+// The losses economy (Tasks C3, C4): how many ships human space loses, by
+// region, which drives how fast shipyards sell hulls to NPC captains.
+//
+// A region is the human space within RADIUS jumps of a shipyard system (one
+// per system with a stocked shipyard, from the BFS Galaxy caches). Each day
+// every system in it loses ships at a rate: BASE everywhere, more in and next
+// to pirate systems, more in a warring government's space and most on its
+// front (Diplomacy's wars, any number of them: Market.enemies), more where Diplomacy's
+// pirate raids and war flotillas are now (its flotilla conditions), and more
+// for each ship the player saw destroyed there (the API 9 losses() feed,
+// collected each step); a ship the player destroyed counts twice.
+//
+// A region's heat is its losses over about the last 30 days: an exponential
+// window (heat = heat × KEEP + today's losses, KEEP = e^(-1/30)), which needs
+// one number per region instead of 30 days of history. Its loss index is the
+// heat over what a quiet region of the same size (BASE alone) would have: 1 in
+// quiet space, about 2 to 3 near pirates, 4 and up under raids or a war front.
+// The index multiplies the region's shipyards' NPC sales (Market.npc_sales).
+// The heat is split by cause (raids, war, witnessed, the rest) so news and
+// the exchange can say why.
+
+float BASE = 1.0
+float PIRATE = 2.0
+float PIRATE_NEAR = 0.6
+float WAR = 0.8
+float FRONT = 2.0
+float RAID = 20.0
+float FLOTILLA = 8.0
+float WITNESSED = 4.0
+float KEEP = 0.96721610
+int RADIUS = 3
+// Diplomacy's flotilla slots scanned each day (its README): sides 1..MAX_SIDES
+// (23: majors, pirates, rebels), slots 1..MAX_SLOTS (4; rebels use 2), the
+// live flotillas filling each side's first slots.
+int MAX_SIDES = 23
+int MAX_SLOTS = 4
+// The index NPC sales use is clamped to this range.
+float MIN_INDEX = 0.5
+float MAX_INDEX = 4.0
+
+bool built = false
+// One region per shipyard system: its name, and by name its row.
+[]string regions = []
+{string: int} region_of = {}
+// Per region, the human systems (Galaxy rows) within RADIUS jumps; per system
+// row, the regions that hold it.
+[][]int members = []
+{int: []int} member_of = {}
+// Per region: the quiet heat (BASE alone, at its 30-day level), and today's
+// rate from pirates and the war, recomputed when the war changes and every 30 days.
+[]float quiet = []
+[]float static_pirate = []
+[]float static_war = []
+string static_key = ""
+int static_day = -1000000
+// Saved (Market's "l|" record): per region, the heat in all and its parts from
+// raids, from the war (fronts and flotillas), from witnessed losses and from
+// pirates; and the last day a spike made the news.
+[]float heat = []
+[]float heat_raid = []
+[]float heat_war = []
+[]float heat_seen = []
+[]float heat_pirate = []
+[]int spike_day = []
+// Losses the player saw since the last day, by system: in all (a ship the
+// player destroyed counts twice), and their models (for local demand). Not saved.
+{string: float} seen = {}
+[]string seen_models = []
+[]string seen_systems = []
+[]bool seen_by_player = []
+// Counted since the mod started, for tests and tools: losses witnessed.
+int witnessed = 0
+
+void build(es.Game game, Galaxy galaxy):
+    if built:
+        return
+    built = true
+    for p in galaxy.yards:
+        string s = galaxy.system_of(game, p)
+        if s == "" || region_of.has(s) || !galaxy.index.has(s):
+            continue
+        region_of[s] = regions.len()
+        regions.append(s)
+    for r in 0..<regions.len():
+        []int in_reach = []
+        for i in 0..<galaxy.systems.len():
+            int j = galaxy.jumps(regions[r], galaxy.systems[i])
+            if j >= 0 && j <= RADIUS:
+                in_reach.append(i)
+                if !member_of.has(i):
+                    member_of[i] = []
+                member_of[i].append(r)
+        members.append(in_reach)
+        quiet.append(BASE * float(in_reach.len()) / (1.0 - KEEP))
+        static_pirate.append(0.0)
+        static_war.append(0.0)
+    // A new market (or one from before M1): every region starts at its quiet heat.
+    if heat.len() != regions.len():
+        heat = []
+        heat_raid = []
+        heat_war = []
+        heat_seen = []
+        heat_pirate = []
+        spike_day = []
+        for r in 0..<regions.len():
+            heat.append(quiet[r])
+            heat_raid.append(0.0)
+            heat_war.append(0.0)
+            heat_seen.append(0.0)
+            heat_pirate.append(0.0)
+            spike_day.append(-1000000)
+
+// (Mod API 10.) Losses Diplomacy's bus reported (a battle, a capture) at a
+// system since the last day, counted with the war's (and a third next to it).
+// Not saved.
+{string: float} battles = {}
+
+void battle(string system, float amount):
+    battles[system] = battles.get(system, 0.0) + amount
+
+// A ship the player saw destroyed in `system` (from the losses() feed).
+void witness(string system, string model, bool by_player):
+    seen[system] = seen.get(system, 0.0) + (2.0 if by_player else 1.0)
+    seen_models.append(model)
+    seen_systems.append(system)
+    seen_by_player.append(by_player)
+    witnessed += 1
+
+// One day: the static rates if the war changed (or every 30 days), today's
+// raids, flotillas and witnessed losses, then every region's heat.
+void update(es.Game game, Galaxy galaxy, string key, {string: []string} enemies, int d):
+    if key != static_key || d - static_day >= 30:
+        compute_static(game, galaxy, enemies)
+        static_key = key
+        static_day = d
+    []float raid = []
+    []float war = []
+    []float saw = []
+    for r in 0..<regions.len():
+        raid.append(0.0)
+        war.append(0.0)
+        saw.append(0.0)
+    if game.condition("diplomacy: active") != 0:
+        // Every flotilla slot of every side: a raid (kind 2) or a war flotilla
+        // (kind 0), whoever's it is. A side's live flotillas fill its first
+        // slots, so its scan stops at the first empty one.
+        for side in 1..=MAX_SIDES:
+            for slot in 1..=MAX_SLOTS:
+                string pre = "diplomacy: flotilla " + string(side) + "." + string(slot) + " "
+                if game.condition(pre + "strength") <= 0:
+                    break
+                int kind = game.condition(pre + "kind")
+                int at = game.condition(pre + "at") - 1
+                if at < 0:
+                    continue
+                string sys = game.system_at(at)
+                if kind == 2:
+                    spread(galaxy, sys, RAID, raid)
+                else if kind == 0:
+                    spread(galaxy, sys, FLOTILLA, war)
+    for sys, n in seen:
+        add_to(galaxy, sys, WITNESSED * n, saw)
+    seen = {}
+    for sys, n in battles:
+        spread(galaxy, sys, n, war)
+    battles = {}
+    for r in 0..<regions.len():
+        float today = quiet[r] * (1.0 - KEEP) + static_pirate[r] + static_war[r] + raid[r] + war[r] + saw[r]
+        heat[r] = heat[r] * KEEP + today
+        heat_raid[r] = heat_raid[r] * KEEP + raid[r]
+        heat_war[r] = heat_war[r] * KEEP + static_war[r] + war[r]
+        heat_seen[r] = heat_seen[r] * KEEP + saw[r]
+        heat_pirate[r] = heat_pirate[r] * KEEP + static_pirate[r]
+
+// Losses at a system, and a third of them in each system next to it.
+void spread(Galaxy galaxy, string sys, float amount, []float into):
+    add_to(galaxy, sys, amount, into)
+    if !galaxy.index.has(sys):
+        return
+    for n in galaxy.links[galaxy.index[sys]]:
+        add_to(galaxy, galaxy.systems[n], amount / 3.0, into)
+
+// Add losses at a system to every region that holds it.
+void add_to(Galaxy galaxy, string sys, float amount, []float into):
+    if !galaxy.index.has(sys):
+        return
+    int i = galaxy.index[sys]
+    if !member_of.has(i):
+        return
+    for r in member_of[i]:
+        into[r] = into[r] + amount
+
+// Pirates (a pirate system, or next to one) and the war (a warring
+// government's system; more on its front, next to the enemy's).
+void compute_static(es.Game game, Galaxy galaxy, {string: []string} enemies):
+    []string gov = []
+    for s in galaxy.systems:
+        gov.append(game.system_government(s))
+    for r in 0..<regions.len():
+        float pirate = 0.0
+        float war = 0.0
+        for i in members[r]:
+            bool near_pirate = false
+            bool front = false
+            string g = gov[i]
+            bool warring = enemies.has(g)
+            for n in galaxy.links[i]:
+                if gov[n] == "Pirate":
+                    near_pirate = true
+                if warring && enemies[g].contains(gov[n]):
+                    front = true
+            if g == "Pirate":
+                pirate += PIRATE
+            else if near_pirate:
+                pirate += PIRATE_NEAR
+            if warring:
+                war += FRONT if front else WAR
+        static_pirate[r] = pirate
+        static_war[r] = war
+
+// A region's loss index: its heat over a quiet region's (1 = quiet).
+float index(int r):
+    return heat[r] / quiet[r] if r >= 0 && r < regions.len() && quiet[r] > 0.0 else 1.0
+
+// The index for a system's region, clamped for NPC sales; 1 outside any region.
+float multiplier(string system):
+    float x = index(region_of.get(system, -1))
+    return MIN_INDEX if x < MIN_INDEX else (MAX_INDEX if x > MAX_INDEX else x)
+
+// What drives a region's losses above quiet: "pirate raids", "the war",
+// "ships lost in combat" (witnessed), "pirates", or "" when it is quiet.
+string cause(int r):
+    if r < 0 || r >= regions.len():
+        return ""
+    float base = quiet[r] * 0.15
+    []float parts = [heat_raid[r], heat_war[r], heat_seen[r], heat_pirate[r]]
+    []string names = ["pirate raids", "the war", "ships lost in combat", "pirates"]
+    int best = -1
+    for k in 0..<4:
+        if parts[k] > base && (best < 0 || parts[k] > parts[best]):
+            best = k
+    return names[best] if best >= 0 else ""
+
+// "l|region:heat,raid,war,seen,pirate,spike;..." (regions by name, so a
+// galaxy that changed between sessions keeps what still matches).
+string encode():
+    if !built:
+        return raw
+    []string out = []
+    for r in 0..<regions.len():
+        out.append(regions[r] + ":" + string(heat[r]) + "," + string(heat_raid[r]) + "," + string(heat_war[r]) + "," + string(heat_seen[r]) + "," + string(heat_pirate[r]) + "," + string(spike_day[r]))
+    return out.join(";")
+
+// Read before build(): kept by name until the regions are known, and as
+// read, so a market encoded before its first day writes it back unchanged.
+{string: string} pending = {}
+string raw = ""
+
+void decode(string rest):
+    pending = {}
+    raw = rest
+    if rest == "":
+        return
+    for part in rest.split(";"):
+        []string f = part.split(":")
+        if f.len() == 2:
+            pending[f[0]] = f[1]
+
+// After build: the regions read from the save take their saved heat.
+void restore():
+    if pending.len() == 0:
+        return
+    for r in 0..<regions.len():
+        if !pending.has(regions[r]):
+            continue
+        []string g = pending[regions[r]].split(",")
+        if g.len() < 6:
+            continue
+        heat[r] = g[0].to_float()
+        heat_raid[r] = g[1].to_float()
+        heat_war[r] = g[2].to_float()
+        heat_seen[r] = g[3].to_float()
+        heat_pirate[r] = g[4].to_float()
+        spike_day[r] = g[5].to_int()
+    pending = {}

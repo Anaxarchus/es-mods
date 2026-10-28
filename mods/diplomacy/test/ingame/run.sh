@@ -4,10 +4,13 @@
 # <game-root> is an Endless Sky checkout (its tests/integration and data). Needs
 # Node and dadoc (the mod is built with the SDK's `npm run deploy`), a built
 # loader in ../es-modloader (installed with `npm run install-loader`; set
-# ES_MODLOADER to use another checkout), and Xvfb (xvfb-run) on Linux. Each test
-# runs in a fresh config: a copy of the game's integration-test config (for its
-# helper tests), the loader in its modloaders folder, the Diplomacy plugin built
-# from this mod, and this folder's test plugin.
+# ES_MODLOADER to use another checkout, or ES_MODLOADER_LIB to name a built
+# library, such as es-modloader/build-release/linux-aarch64/libesdado.so), and
+# Xvfb (xvfb-run) on Linux. Each test runs in a fresh config: a copy of the
+# game's integration-test config (for its helper tests), the loader in its
+# modloaders folder, the Diplomacy plugin built from this mod, this folder's
+# test plugin, and the Diplomacy Probe (diplomacy_probe/), a small mod that
+# reports what conditions cannot show (Luna's shipyard).
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 PROJECT=$(cd "$HERE/../.." && pwd)
@@ -31,13 +34,18 @@ if [ -d "$ROOT/plugins/Diplomacy Debug" ]; then
 fi
 shift 2
 if [ $# -eq 0 ]; then
-	set -- "Diplomacy - War Begins" "Diplomacy - Flotilla In Person" "Diplomacy - Join And Leave" "Diplomacy - Licenses And Jobs" "Diplomacy - Veteran Offer" "Diplomacy - Pirate Raid In Person" "Diplomacy - Debug Mode"
+	set -- "Diplomacy - War Begins" "Diplomacy - Flotilla In Person" "Diplomacy - Join And Leave" "Diplomacy - Licenses And Jobs" "Diplomacy - Veteran Offer" "Diplomacy - Veteran Start" "Diplomacy - Border Crisis" "Diplomacy - Pirate Raid In Person" "Diplomacy - Debug Mode"
 fi
 TEMPLATE=$(mktemp -d)
 trap 'rm -rf "$TEMPLATE"' EXIT
 cp -R "$ROOT/tests/integration/config/." "$TEMPLATE/"
-node "$SDK/tools/esmod.mjs" install-loader --to "$TEMPLATE/modloaders" >/dev/null
+if [ -n "${ES_MODLOADER_LIB:-}" ]; then
+	node "$SDK/tools/esmod.mjs" install-loader --to "$TEMPLATE/modloaders" --lib "$ES_MODLOADER_LIB" >/dev/null
+else
+	node "$SDK/tools/esmod.mjs" install-loader --to "$TEMPLATE/modloaders" >/dev/null
+fi
 node "$SDK/tools/esmod.mjs" deploy "$PROJECT" --to "$TEMPLATE/plugins" >/dev/null
+node "$SDK/tools/esmod.mjs" deploy "$HERE/diplomacy_probe" --to "$TEMPLATE/plugins" >/dev/null
 cp -R "$HERE/plugin" "$TEMPLATE/plugins/Diplomacy Tests"
 failed=0
 for name in "$@"; do

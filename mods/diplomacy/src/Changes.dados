@@ -1,0 +1,36 @@
+class Changes
+
+// World changes, batched. Everything the simulation changes in the game's
+// data on a day (systems changing hands, patrol fleets swapped, attitudes
+// between flotilla governments as wars start and end) goes into one
+// game.change at the end of the day, which the game saves with the pilot as
+// one event: a pilot's save grows by at most one event a day.
+
+import "imports:sdk/es"
+
+[]string lines = []
+int sent = 0
+
+void add(string body):
+    if body != "":
+        lines.append(body)
+
+void government(string system, string gov):
+    add("system \"" + system + "\"\n\tgovernment \"" + gov + "\"")
+
+void attitude(string from, string toward, int value):
+    add("government \"" + from + "\"\n\t\"attitude toward\"\n\t\t\"" + toward + "\" " + string(value))
+
+bool pending():
+    return lines.len() > 0
+
+// Send the batch, if there is one.
+void flush(es.Game game):
+    if lines.len() == 0:
+        return
+    game.change(lines.join("\n"))
+    sent += 1
+    lines = []
+
+void discard():
+    lines = []

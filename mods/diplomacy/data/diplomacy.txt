@@ -9,8 +9,10 @@
 # PARTICULAR PURPOSE. See the GNU General Public License for more details.
 
 # The data half of the "Diplomacy" plugin. Its Dado mod (scripts/diplomacy.js)
-# runs the wars; this file defines the governments its flotillas fly under and
-# the faction missions offered to members.
+# runs the wars; this file defines the governments its flotillas fly under, the
+# faction missions offered to members, and the Luna Navy yard event. The rebel
+# governments and their fleets are in "diplomacy factions.txt", the spaceport
+# news in "diplomacy news.txt".
 #
 # The flotilla governments look like their faction but are separate, so a war
 # is only hostility between flotilla governments (which the mod sets with
@@ -52,7 +54,8 @@ government "Syndicate Flotilla"
 # Faction missions: offered on the job board to members of a faction at war.
 # The mod sets "diplomacy: member" (1 Republic, 2 Free Worlds, 3 Syndicate)
 # and "diplomacy: at war <faction>"; completing one adds to "diplomacy: merit",
-# which the mod turns into rank and salary.
+# which the mod turns into rank and salary, and to "diplomacy: dispatches",
+# which it turns into relief from war exhaustion for the member's faction.
 
 mission "Diplomacy: Republic Dispatches"
 	name "Dispatches to <planet>"
@@ -72,6 +75,7 @@ mission "Diplomacy: Republic Dispatches"
 	on complete
 		payment 20000 150
 		"diplomacy: merit" += 5
+		"diplomacy: dispatches" += 1
 		dialog `A Navy officer signs for the dispatches and pays you <payment>. "Good work, Captain. The fleet won't forget it."`
 
 mission "Diplomacy: Free Worlds Dispatches"
@@ -92,6 +96,7 @@ mission "Diplomacy: Free Worlds Dispatches"
 	on complete
 		payment 20000 150
 		"diplomacy: merit" += 5
+		"diplomacy: dispatches" += 1
 		dialog `A Free Worlds officer signs for the dispatches and pays you <payment>. "Thanks, Captain. Every run helps."`
 
 mission "Diplomacy: Syndicate Dispatches"
@@ -112,4 +117,18 @@ mission "Diplomacy: Syndicate Dispatches"
 	on complete
 		payment 20000 150
 		"diplomacy: merit" += 5
+		"diplomacy: dispatches" += 1
 		dialog `A Syndicate security liaison scans the seals, signs for the dispatches and transfers <payment>. "Efficient. The Syndicate notices efficiency."`
+
+# The Republic's capital-warship yard. The Free Worlds campaign wrecks Geminus
+# (event "war begins" clears its shipyard), the only world that sells the
+# Navy Advanced hulls (Frigate, Cruiser, Carrier, Auxiliary), until "geminus
+# rebuilt" 90 days after the campaign; and in Diplomacy Geminus (Castor, in
+# the Paradise Worlds) can change hands. Luna, in Sol, which is never taken,
+# sells them too. A planet's "shipyard" line in an event adds to its yards,
+# so Luna keeps its own. The Free Worlds Veteran start applies this event; for
+# any other pilot the mod applies the same change once (condition "diplomacy:
+# luna yard") when the campaign is over or Geminus lies wrecked.
+event "diplomacy: luna navy yard"
+	planet "Luna"
+		shipyard "Navy Advanced"

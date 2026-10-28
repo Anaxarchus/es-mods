@@ -4,7 +4,8 @@ class Contract
 // open for sealed bids for a few days, then run by the winner until it is
 // delivered or fails. A restock (kind RESTOCK) is a shipyard's order for
 // hulls from the company that owns their design: no bidding, awarded to the
-// owner at once, never failing; its client is the shipyard's planet. Saved as
+// owner at once, never failing; its client is the shipyard's planet. A
+// tender (kind TENDER) is a government's order for military hulls. Saved as
 // one line, fields separated by "|".
 
 int OPEN = 0
@@ -17,6 +18,13 @@ int GOVERNMENT = 0
 int PLANET = 1
 int COMPANY = 2
 int RESTOCK = 3
+// A government's military procurement (Task C6): N hulls of a military model,
+// open for bids from every shipbuilder for a few days; the winner (price and
+// delivery days weighed together) builds and delivers them to the
+// government's shipyards, most short first. Its client is the government; its
+// system, the shipyard system shortest of the model. Winner 0 while running
+// means no builder could bid: the government's own yards build them, slowly.
+int TENDER = 4
 
 int id = 0
 // Who issued it: a government's or a planet's name, or a company's id as text.
@@ -44,7 +52,7 @@ float runner_price = 0.0
 bool reissued = false
 // The contract this one subcontracts, or 0.
 int parent = 0
-// A restock: the hull model (its true name) and how many.
+// A restock or a tender: the hull model (its true name) and how many.
 string model = ""
 int units = 0
 

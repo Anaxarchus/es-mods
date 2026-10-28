@@ -492,3 +492,241 @@ test "Diplomacy - Pirate Raid In Person"
 		assert
 			"diplomacy: stat raids" >= 1
 			"diplomacy: ships here" > 0
+
+
+# A brand-new pilot on the "Free Worlds Veteran" start (data/diplomacy fw veteran.txt): the galaxy and
+# conditions of a finished Free Worlds campaign, and the Diplomacy offer on Earth, which makes the pilot a
+# Free Worlds Commodore.
+test "Diplomacy - Veteran Start"
+	status active
+	description "A new pilot on the Free Worlds Veteran start begins after the campaign, with its events applied and scheduled and its conditions set, and is offered Diplomacy on landing; turning it on makes them a Free Worlds Commodore."
+	sequence
+		# Main menu: the pilots panel, then New Pilot, which opens the list of starts.
+		input
+			key l
+		input
+			key n
+		# The Free Worlds Veteran is the last start in the list: wrap around to it.
+		input
+			key up
+		input
+			key s
+		# The intro conversation applies the campaign's events, then asks for a name.
+		# Typed too soon, the name is lost and the conversation waits: type it
+		# again until the pilot has landed on Earth (its landing missions offered).
+		apply
+			"test: naming" = 0
+		label "naming"
+		input
+		input
+		input
+			key a
+		input
+			key "return"
+		input
+			key b
+		input
+			key "return"
+		input
+			key "return"
+		input
+		input
+		input
+		apply
+			"test: naming" = "test: naming" + 1
+		branch "naming"
+			"Main Plot Completed Date: offered" == 0
+			"test: naming" < 10
+		assert
+			"start: diplomacy free worlds veteran" == 1
+			"free worlds plot completed" == 1
+			"main plot completed" == 1
+			"free worlds reconciliation" == 1
+			"chosen sides" == 1
+			"license: Militia" == 1
+			"salary: Free Worlds" == 8900
+			"karma" == 3
+			"FW Syndicate Extremists 1C: done" == 1
+		# The campaign's events: the war, the territory, the armistice, the Pug, Algenib.
+		assert
+			"event: war begins" == 1
+			"event: fw southern expansion" == 1
+			"event: fw northern expansion" == 1
+			"event: fw armistice" == 1
+			"event: fw tarazed joins" == 1
+			"event: navy out of rastaban" == 1
+			"event: pug territory liberated" == 1
+			"event: battle of algenib" == 1
+		# Those still pending at the end are scheduled at their remaining offsets.
+		assert
+			"scheduled event: stack core for sale" == 1
+			"scheduled event: pug link restoration 4" == 48
+			"scheduled event: Greenrock recovered" == 121
+		# Reputations, and the landing missions a finisher gets next (Pug Cease Hostilities makes peace with the Pug).
+		assert
+			"reputation: Republic" == 1
+			"reputation: Syndicate" == 1
+			"reputation: Pug" >= 1
+			"Pug Cease Hostilities: offered" == 1
+			"Main Plot Completed Date: offered" == 1
+		# The ship and the rewards.
+		assert
+			"ship model: Osprey" == 1
+			"outfit (flagship installed): Jump Drive" == 1
+			"outfit (flagship installed): Hyperdrive" == 0
+			"outfit: Cloaking Device" == 1
+			"credits" == 5000000
+			"flagship planet: Earth"
+		# The Diplomacy offer is open in the planet screen; its first button turns Diplomacy on.
+		assert
+			"diplomacy: active" == 0
+		apply
+			"test: tries" = 0
+		label "accepting"
+		input
+		input
+			key 1
+		branch "accepted"
+			"diplomacy: active" == 1
+		# A landing conversation (the campaign's random post-war reactions) may
+		# be in the way: Return goes on with it; then open the commission (K).
+		input
+			key "return"
+		input
+		input
+			key k
+		input
+		input
+			key 1
+		label "accepted"
+		assert
+			"diplomacy: active" == 1
+			"diplomacy: member" == 2
+			"diplomacy: rank" == 5
+			"salary: Free Worlds" == 8900
+		# Luna sells the Navy's capital warships (the Diplomacy event the start applies),
+		# as the Diplomacy Probe reports on the next arrival.
+		assert
+			"event: diplomacy: luna navy yard" == 1
+			"diplomacy: luna yard" == 1
+		# Close the faction panel the commission opened (on Earth, a Republic world:
+		# War Room, Service Record, Close), and take off.
+		input
+			key 3
+		input
+		input
+		call "Depart"
+		apply
+			"test: steps to wait" = 30
+		label "probing"
+		input
+		apply
+			"test: steps to wait" = "test: steps to wait" - 1
+		branch "probing"
+			"test: steps to wait" > 0
+		assert
+			"test: luna sells Frigate" == 1
+			"test: luna sells Cruiser" == 1
+			"test: luna sells Carrier" == 1
+
+
+# The Free Worlds Veteran's first hour: a border crisis between the Free Worlds
+# and the Republic over a minor they share, 10 to 20 days after the commission.
+test "Diplomacy - Border Crisis"
+	status active
+	description "A new pilot on the Free Worlds Veteran start accepts the commission; the border crisis is set for 10-20 days later, and when it comes it is between the Free Worlds and their rival, with a minor as its goal."
+	sequence
+		input
+			key l
+		input
+			key n
+		input
+			key up
+		input
+			key s
+		# Typed too soon, the name is lost and the conversation waits: type it
+		# again until the pilot has landed on Earth (its landing missions offered).
+		apply
+			"test: naming" = 0
+		label "naming"
+		input
+		input
+		input
+			key a
+		input
+			key "return"
+		input
+			key b
+		input
+			key "return"
+		input
+			key "return"
+		input
+		input
+		input
+		apply
+			"test: naming" = "test: naming" + 1
+		branch "naming"
+			"Main Plot Completed Date: offered" == 0
+			"test: naming" < 10
+		# The commission opens in the planet screen once the mods start: press its
+		# first button (Accept) until it has been taken.
+		apply
+			"test: tries" = 0
+		label "accepting"
+		input
+		input
+			key 1
+		branch "accepted"
+			"diplomacy: active" == 1
+		# A landing conversation (the campaign's random post-war reactions) may
+		# be in the way: Return goes on with it; then open the commission (K).
+		input
+			key "return"
+		input
+		input
+			key k
+		input
+		input
+			key 1
+		label "accepted"
+		apply
+			"test: tries" = "test: tries" + 1
+		branch "accepting"
+			"diplomacy: active" == 0
+			"test: tries" < 30
+		assert
+			"diplomacy: active" == 1
+			"diplomacy: member" == 2
+			"diplomacy: crisis" == 0
+		# Close the faction panel (War Room, Service Record, Close).
+		input
+			key 3
+		input
+		input
+		# The crisis is set for 10 to 20 days after the commission. Waiting for it
+		# here would take off and land 10-20 times, and the campaign's landing
+		# messages (Barmy Edward's, and others) stop such a loop at random; so the
+		# test checks the day it is set for, then brings it forward with the test
+		# override "diplomacy: force crisis" and takes off once.
+		assert
+			"diplomacy: crisis day" >= "diplomacy: activated" + 10
+			"diplomacy: crisis day" <= "diplomacy: activated" + 20
+		apply
+			"diplomacy: force crisis" = 1
+		call "Depart"
+		apply
+			"test: steps to wait" = 30
+		label "flying"
+		input
+		apply
+			"test: steps to wait" = "test: steps to wait" - 1
+		branch "flying"
+			"test: steps to wait" > 0
+		assert
+			"diplomacy: crisis" > 0
+			"diplomacy: crisis minor" > 0
+			"diplomacy: wars" >= 1
+			"diplomacy: at war 2" == 1
+			"diplomacy: war 1 kind" == 1
+			"diplomacy: war 1 goal" > 0

@@ -1,36 +1,36 @@
 class MapView
 
-// The map overlay. On the map itself each flotilla and raid is a marker in its
-// side's colour, with a short label ("Free Worlds flotilla (small)", "Pirate
-// raiders (medium)") and a line to where it is heading; a besieged system gets
-// a "Siege: 40%" marker. The details go in the map's side panel, below the map
-// key, while the player has the system selected (game.map_detail, mod API 4):
-// for each flotilla or raid there, its commander, strength, task and
-// destination, and for a siege, the garrison and how long it has held.
+// The map overlay. Each flotilla and raid is a marker in its side's colour,
+// with a short label ("Free Worlds flotilla (small)", "Pirate raiders
+// (medium)") and a line to where it is heading; a besieged system gets a
+// "Siege: 40%" marker. The systems a war is fought over (its goals, still held
+// by the other side) get a ring in the attacker's colour (map_ring, mod API
+// 9), and each minor a label with its name and owner under its first system
+// (map_label): "Paradise Worlds (Republic)", "Rim (Free Worlds core)",
+// "Central Dirt Belt (split)", "Front: Republic / Free Worlds". The details go
+// in the map's side panel (map_detail, mod API 4).
 
 import "imports:sdk/es"
 
 Factions factions = Factions()
 Galaxy galaxy = Galaxy()
-State state = State()
+World world = World()
 Garrisons garrisons = Garrisons()
 Simulation sim = Simulation()
 
-void wire(Factions f, Galaxy g, State s, Garrisons gs, Simulation sm):
+void wire(Factions f, Galaxy g, World w, Garrisons gs, Simulation sm):
     factions = f
     galaxy = g
-    state = s
+    world = w
     garrisons = gs
     sim = sm
 
-// The marker's label: what it is and how big, nothing more.
 string label(Flotilla x):
-    if x.faction == factions.pirates():
+    if x.side == factions.pirates():
         return "Pirate raiders (" + factions.sizes[x.size] + ")"
-    return factions.adjectives[x.faction] + " flotilla (" + factions.sizes[x.size] + ")"
+    return factions.adjective(x.side) + " flotilla (" + factions.sizes[x.size] + ")"
 
-// Where the flotilla is heading next, for the line on the map (or its own system).
-int heading(es.Game game, Flotilla x, []Flotilla fl):
+int heading(Flotilla x):
     if x.kind == 3:
         return x.home
     if x.kind == 2:
@@ -39,7 +39,7 @@ int heading(es.Game game, Flotilla x, []Flotilla fl):
             return route[x.leg - 1]
         return x.home
     if x.target != 0:
-        Flotilla y = sim.by_code(fl, x.target)
+        Flotilla y = sim.by_id(x.target)
         if y.alive():
             return y.at
     return x.goal
@@ -48,53 +48,77 @@ void draw(es.Game game, bool active):
     game.map_clear()
     if !active:
         return
-    []Flotilla fl = sim.load_all(game)
     []int besieged = []
-    for x in fl:
+    for x in world.fleets:
         if !x.alive():
             continue
-        int f = x.faction
-        float r = factions.red[f]
-        float g = factions.green[f]
-        float b = factions.blue[f]
-        game.map_marker(galaxy.name(x.at), r, g, b, label(x))
-        int dest = heading(game, x, fl)
+        int f = x.side
+        game.map_marker(galaxy.name(x.at), factions.r(f), factions.g(f), factions.b(f), label(x))
+        int dest = heading(x)
         if dest != x.at && dest >= 0:
-            game.map_line(galaxy.name(x.at), galaxy.name(dest), r, g, b)
-        game.map_detail(galaxy.name(x.at), label(x), details(game, x, fl), r, g, b)
-        if sim.besieging(game, x) && !besieged.contains(x.goal):
+            game.map_line(galaxy.name(x.at), galaxy.name(dest), factions.r(f), factions.g(f), factions.b(f))
+        game.map_detail(galaxy.name(x.at), label(x), details(game, x), factions.r(f), factions.g(f), factions.b(f))
+        if sim.besieging(x) && !besieged.contains(x.goal):
             besieged.append(x.goal)
     for i in besieged:
-        int owner = galaxy.owner(game, i)
-        game.map_marker(galaxy.name(i), factions.red[owner], factions.green[owner], factions.blue[owner], "Siege: " + string(progress(game, i)) + "%")
-        game.map_detail(galaxy.name(i), "Siege of " + galaxy.name(i), siege_details(game, i, owner), factions.red[owner], factions.green[owner], factions.blue[owner])
+        int owner = galaxy.owner(i)
+        game.map_marker(galaxy.name(i), factions.r(owner), factions.g(owner), factions.b(owner), "Siege: " + string(progress(game, i)) + "%")
+        game.map_detail(galaxy.name(i), "Siege of " + galaxy.name(i), siege_details(game, i, owner), factions.r(owner), factions.g(owner), factions.b(owner))
+    // War goals: a ring on each system still to be taken, in the attacker's colour.
+    for w in world.wars:
+        for s in [w.a, w.b]:
+            for i in sim.targets(w, s):
+                if !besieged.contains(i):
+                    game.map_ring(galaxy.name(i), 1.4, factions.r(s), factions.g(s), factions.b(s))
+    // Minor names, with their owners.
+    for m in 0..<factions.regions.count():
+        if galaxy.minor_systems[m].len() == 0:
+            continue
+        int o = galaxy.minor_owner(m)
+        string text = minor_label(m)
+        game.map_label(galaxy.name(galaxy.minor_systems[m][0]), text, factions.r(o), factions.g(o), factions.b(o))
 
-// How far the siege of system i has got, in percent.
+// "Paradise Worlds (Republic)", "Rim (Free Worlds core)", "Central Dirt Belt
+// (split)", or a front: "Front: Republic / Free Worlds".
+string minor_label(int m):
+    string name = factions.regions.shorts[m]
+    for w in world.wars:
+        if w.goals.contains(m):
+            return name + ", front: " + factions.adjective(w.a) + " / " + factions.adjective(w.b)
+    int o = galaxy.minor_owner(m)
+    if factions.regions.cores[m] && o == factions.regions.parents[m]:
+        return name + " (" + factions.adjective(o) + " core)"
+    if galaxy.split(m):
+        return name + " (split)"
+    return name + " (" + factions.adjective(o) + ")"
+
 int progress(es.Game game, int i):
-    int full = galaxy.full_garrison(game, i)
-    int hp = garrisons.hp(game, i, full)
+    int full = sim.full_strength(game, i)
+    int hp = garrisons.hp(i, full)
+    if hp > full:
+        hp = full
     return 100 - hp * 100 / full
 
-// "3 jumps", "1 jump", "here".
-string jumps(int from, int to):
-    if from == to:
+string jumps(int a, int b):
+    if a == b:
         return "here"
-    []int dist = galaxy.distances_one(from)
-    int d = dist[to]
+    int d = galaxy.jumps(a, b)
     if d < 0:
         return "no route"
     return string(d) + (" jump" if d == 1 else " jumps")
 
-// The side panel's lines for one flotilla or raid.
-string details(es.Game game, Flotilla x, []Flotilla fl):
+string details(es.Game game, Flotilla x):
     string text = ""
-    if x.admiral != 0 && sim.admirals.filled(game, x.faction, x.admiral):
-        int w = sim.admirals.wins(game, x.faction, x.admiral)
-        text = sim.admirals.full_name(game, x.faction, x.admiral) + ", " + sim.admirals.personality_name(game, x.faction, x.admiral) + "\n" + string(w) + (" victory" if w == 1 else " victories")
+    if x.admiral != 0 && sim.admirals.filled(x.side, x.admiral):
+        int w = sim.admirals.wins(x.side, x.admiral)
+        text = sim.admirals.full_name(x.side, x.admiral) + ", " + sim.admirals.personality_name(x.side, x.admiral) + "\n" + string(w) + (" victory" if w == 1 else " victories")
     else:
         text = "No commander"
     text = text + "\nStrength " + string(x.strength) + " of " + string(x.full)
-    text = text + "\n" + task(game, x, fl)
+    text = text + "\n" + task(game, x)
+    War war = sim.war_of(x)
+    if war.id != 0:
+        text = text + "\nIn the " + war.kind_name() + " with " + factions.name(war.other(x.side))
     int out = game.day() - x.launched
     if out <= 0:
         text = text + "\nSet out today, from " + galaxy.name(x.home)
@@ -102,7 +126,7 @@ string details(es.Game game, Flotilla x, []Flotilla fl):
         text = text + "\nOut " + string(out) + (" day" if out == 1 else " days") + ", from " + galaxy.name(x.home)
     return text
 
-string task(es.Game game, Flotilla x, []Flotilla fl):
+string task(es.Game game, Flotilla x):
     if x.kind == 3:
         return "Going home to " + galaxy.name(x.home) + " (" + jumps(x.at, x.home) + ")"
     if x.kind == 2:
@@ -119,14 +143,14 @@ string task(es.Game game, Flotilla x, []Flotilla fl):
             return "Bound for " + galaxy.name(stop) + " (" + jumps(x.at, stop) + ")" + next
         return "Going home to " + galaxy.name(x.home) + " (" + jumps(x.at, x.home) + ")"
     if x.target != 0:
-        Flotilla y = sim.by_code(fl, x.target)
+        Flotilla y = sim.by_id(x.target)
         if y.alive():
-            string what = "the pirate raiders" if y.faction == factions.pirates() else "the " + factions.adjectives[y.faction] + " flotilla"
+            string what = "the pirate raiders" if y.side == factions.pirates() else "the " + factions.adjective(y.side) + " flotilla"
             if y.at == x.at:
                 return "Fighting " + what + " here"
             string verb = "Hunting " if x.kind == 1 else "Intercepting "
             return verb + what + " at " + galaxy.name(y.at) + " (" + jumps(x.at, y.at) + ")"
-    if sim.besieging(game, x):
+    if sim.besieging(x):
         string day = ", day " + string(x.siege) if x.siege > 0 else ""
         return "Besieging " + galaxy.name(x.goal) + day + " (" + string(progress(game, x.goal)) + "% done)"
     if x.at == x.goal:
@@ -134,12 +158,13 @@ string task(es.Game game, Flotilla x, []Flotilla fl):
     return "Objective: " + galaxy.name(x.goal) + " (" + jumps(x.at, x.goal) + ")"
 
 string siege_details(es.Game game, int i, int owner):
-    int full = galaxy.full_garrison(game, i)
-    int hp = garrisons.hp(game, i, full)
-    string text = "Held by " + factions.names[owner] + "\nGarrison " + string(hp) + " of " + string(full)
-    int start = garrisons.start(game, i)
+    int full = sim.full_strength(game, i)
+    int hp = garrisons.hp(i, full)
+    string text = "Held by " + factions.name(owner) + "\nGarrison " + string(hp) + " of " + string(full)
+    int start = garrisons.start(i)
     if start >= 0:
         text = text + "\nUnder siege for " + string(game.day() - start + 1) + " days"
-    if factions.is_capital(galaxy.name(i)):
-        text = text + "\nA capital: it cannot fall"
+    int m = galaxy.minor(i)
+    if m >= 0:
+        text = text + "\nPart of " + factions.regions.names[m]
     return text

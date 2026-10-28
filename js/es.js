@@ -11,14 +11,24 @@
 // This mirrors imports/sdk/es/Mod.dados, the DadoScript base class, method for
 // method. `npm run sync` checks that the two match.
 
-// The mod API version this SDK targets. A game runs mods built for its version
-// or an earlier one and refuses newer ones. Written by `npm run sync`.
-export const MOD_API = 9;
+// The mod API version this SDK targets. A loader runs a mod whose min_api() it
+// speaks (before mod API 10, whose api_version() it speaks). Written by `npm run sync`.
+export const MOD_API = 10;
 
 export class Mod {
-	// The mod API this mod was built against; the game refuses a mismatch. Do not override.
+	// The mod API this mod was built against (the SDK's MOD_API): for information.
+	// Do not override; to say which API the mod needs, override min_api.
 	api_version() {
 		return MOD_API;
+	}
+
+	// (Mod API 10.) The oldest mod API this mod runs on: a loader refuses the mod
+	// only when this is newer than the API it speaks. The default, 1, runs it on
+	// every loader that knows min_api; a mod that cannot do without a newer call
+	// returns that call's API version. For a feature it can do without, check
+	// game.has("<feature>") instead, so the mod still runs on an older game.
+	min_api() {
+		return 1;
 	}
 
 	// The mod's name, used by `log`. Override it.
@@ -67,6 +77,23 @@ export class Mod {
 	// (Mod API 7.) Called when the player clicks a column heading of this mod's
 	// table on its full screen (game.screen_open).
 	on_panel_header(game, column) {}
+
+	// (Mod API 10.) Called just before the game writes the pilot to a file (taking
+	// off, quitting while landed, opening the load panel, the autosave when the
+	// player accepts a mission marked `autosave`, a conversation's start): what
+	// the mod writes with game.set_data now goes into that file. Panels and
+	// dialogs do not work here, and there is no ship snapshot, even in flight. It
+	// may run twice for one save.
+	on_save(game) {}
+
+	// (Mod API 10.) Called once when the player makes or loads another pilot (and
+	// when the mods start with one), after on_load and before any on_day, on_enter
+	// or on_step for that pilot: reset what the mod keeps in memory.
+	on_pilot_loaded(game) {}
+
+	// (Mod API 10.) A notification another mod posted with game.notify, which this
+	// mod listens for (game.listen); `sender` is the posting mod, as the game recorded it.
+	on_notification(game, name, payload, sender) {}
 
 	// Write a line to the game's log, prefixed with the mod's name.
 	log(game, text) {

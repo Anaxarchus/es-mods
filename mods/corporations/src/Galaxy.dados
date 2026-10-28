@@ -8,9 +8,23 @@ import "imports:sdk/es"
 // Who holds a system is read live (system_government), since wars and the
 // story change it.
 
-[]string human = ["Republic", "Free Worlds", "Syndicate", "Pirate", "Independent", "Militia"]
-// The governments that issue contracts, as Diplomacy numbers its factions 1..3.
-[]string powers = ["", "Republic", "Free Worlds", "Syndicate"]
+// Human space is every system reachable over the lanes from the human
+// governments' systems without entering an alien one: so a system held by a
+// government the market has never heard of (a rebel one, from Diplomacy) is
+// human space if it lies there, and uninhabited systems inside it link the
+// rest (jumps count through them). `alien` lists the governments that are not
+// (the game's alien species and their client states); anything else counts as
+// human once it is reached.
+[]string human = ["Republic", "Free Worlds", "Syndicate", "Pirate", "Independent", "Militia", "Merchant", "Navy (Oathkeeper)", "Deep Security", "Neutral"]
+// Alien governments, by the start of their name ("Hai" covers "Hai Merchant",
+// "Kor" every Korath faction, "Quarg (Hai)" too, and so on).
+[]string alien = ["Hai", "Quarg", "Kor", "Wanderer", "Remnant", "Coalition", "Heliarch", "Lunarium", "Ka'het", "Ka'sei", "Sheragi", "Pug", "Drak", "Bunrodea", "Gegno", "Avgi", "Incipias", "Successor", "Aberrant", "Rulei", "Ember Waste", "House ", "Old Houses", "New Houses", "People's Houses", "High Houses", "Hicemus", "Conlatio", "Alpha", "Indigenous", "Silent Ones", "Predecessor", "Builder", "Solitude", "Magic Asteroid", "Wormhole"]
+
+bool is_alien(string government):
+    for a in alien:
+        if government.starts_with(a):
+            return true
+    return false
 
 bool built = false
 []string systems = []
@@ -25,6 +39,9 @@ bool built = false
 // planet that gains a shipyard during a session is stocked from the next one.
 []string yards = []
 {string: bool} is_yard = {}
+// Every planet in human space, for the monthly check for shipyards that
+// opened since (Market.step).
+[]string human_planets = []
 // Systems with at least one bank planet, and the first such planet in each.
 []string served = []
 {string: string} system_planet = {}
@@ -35,11 +52,26 @@ void build(es.Game game):
     if built:
         return
     built = true
+    // Seeds: the human governments' systems; then out over the lanes to every
+    // system not held by an alien government.
+    []string queue = []
     for i in 0..<game.system_count():
         string s = game.system_at(i)
         if human.contains(game.system_government(s)):
             index[s] = systems.len()
             systems.append(s)
+            queue.append(s)
+    int head = 0
+    for head < queue.len():
+        string at = queue[head]
+        head += 1
+        for k in 0..<game.link_count(at):
+            string l = game.link(at, k)
+            if l == "" || index.has(l) || is_alien(game.system_government(l)) || game.system_government(l) == "":
+                continue
+            index[l] = systems.len()
+            systems.append(l)
+            queue.append(l)
     for s in systems:
         []int out = []
         for k in 0..<game.link_count(s):
@@ -50,6 +82,7 @@ void build(es.Game game):
         bool any = false
         for k in 0..<game.planet_count(s):
             string p = game.planet_at(s, k)
+            human_planets.append(p)
             if game.shipyard_count(p) > 0:
                 yards.append(p)
                 is_yard[p] = true

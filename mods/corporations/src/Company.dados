@@ -53,6 +53,28 @@ float offer = 0.0
 int founded = 0
 // Work a day its running contracts take; rebuilt from the contracts, not saved.
 float load = 0.0
+// The market's mood about it: a log offset on its fair value that wanders a
+// little each day and fades slowly (half-life about 170 days). News that moves
+// the price without changing the books (a scandal, a new chief) moves this, so
+// the move lasts instead of reverting on a timetable a trader could exploit.
+float mood = 0.0
+// The work it carried since its last report, summed a day at a time, and the
+// days counted: its average utilisation, restocks and tenders included, is what
+// decides whether it grows or shrinks.
+float busy = 0.0
+int busy_days = 0
+// Hull income since its last report: restock margins and royalties on NPC sales.
+float hull_income = 0.0
+// What drove it lately, for the next earnings line ("after winning the Republic
+// tender"); "" for nothing notable. Cleared at each report.
+string cause = ""
+// Its price the day a buyout bid was announced, which a failed bid falls back toward.
+float pre_offer = 0.0
+// Its normal earnings a report: a slow average of its reports (each moves it
+// NORM_WEIGHT of the way), which fair value rests on, so one wild month does
+// not swing the price and then swing it back.
+float norm = 0.0
+bool has_norm = false
 
 bool listed():
     return status == LISTED || status == DISTRESSED || status == FOR_SALE
@@ -60,8 +82,10 @@ bool listed():
 float market_value():
     return price * float(shares)
 
-string encode():
-    []string f = [string(id), name, "1" if canon else "0", string(sector), home, system, string(status), string(since), string(cash), string(debt), string(capacity), string(efficiency), string(reliability), string(shares), string(price), string(revenue), string(costs), floats(earnings), string(report_at), string(payout), string(dividend), ints(history), string(parent), ints(acquired), string(brought), string(review), string(rescued), string(suitor), string(offer_day), string(offer), string(founded)]
+// A company gone from the listing a month or more keeps no price history or
+// reports in its line (nothing reads them; a spin-off starts afresh).
+string encode(bool full):
+    []string f = [string(id), name, "1" if canon else "0", string(sector), home, system, string(status), string(since), string(cash), string(debt), string(capacity), string(efficiency), string(reliability), string(shares), string(price), string(revenue), string(costs), floats(earnings) if full else "", string(report_at), string(payout), string(dividend), ints(history) if full else "", string(parent), ints(acquired), string(brought), string(review), string(rescued), string(suitor), string(offer_day), string(offer), string(founded), string(mood), string(busy), string(busy_days), string(hull_income), cause, string(pre_offer), string(norm)]
     return f.join("|")
 
 void decode(string line):
@@ -97,6 +121,22 @@ void decode(string line):
     offer_day = f[28].to_int()
     offer = f[29].to_float()
     founded = f[30].to_int()
+    // Saves from before M1 have 31 fields.
+    if f.len() > 36:
+        mood = f[31].to_float()
+        busy = f[32].to_float()
+        busy_days = f[33].to_int()
+        hull_income = f[34].to_float()
+        cause = f[35]
+        pre_offer = f[36].to_float()
+    if f.len() > 37:
+        norm = f[37].to_float()
+        has_norm = true
+
+// Note what drove the company lately (kept to the next report); "|" is the
+// record separator, so it never goes in.
+void note(string why):
+    cause = why.replace_all("|", "/").replace_all("\n", " ")
 
 string floats([]float xs):
     []string out = []

@@ -14,21 +14,72 @@ class Corporations extends es.Mod
 // (Market, "Shipyard stock"). On each landing the landed planet's counts go to
 // the game's shipyard; the next day or landing reads them back, which is how
 // the market sees what the player bought or sold there.
+//
+// Saving (M1). Encoding the market was two thirds of a day's work, so it is
+// no longer done every day. The game writes the pilot file only while the
+// player is landed: when they take off (before the day that takeoff starts),
+// when they quit on a planet, and when the load screen opens on one; the
+// autosave a few missions ask for is a separate file. While landed the market
+// changes only by what the player does (trades, on_number) and by the landing
+// itself (on_enter, which pushes the shipyard's counts), and both save at
+// once. So every pilot file the game writes holds the market as it is.
+// In flight the market is saved every SAVE_EVERY days, and on any day that
+// touched the player's credits (dividends, buyouts, bankruptcies), which only matters for a mission's autosave in
+// flight: loading one replays the days since the last save from the saved
+// random state, so it loses at most the witnessed ship losses and the war's
+// day-by-day state of those few days, never money or stock.
+// The first change after a save gives storage a new "rev" (a cheap write) so
+// an earlier save of the same pilot is still told from the market in memory.
+// A revision is "<n>.<session>": n never repeats within a game session (it
+// is a high-water mark, kept across loads), and the session token (random,
+// drawn once) tells this session's revisions from any other's, so two save
+// histories of one pilot never share a revision.
+// Mod API 10, when the game has it (Game.has("on_save")): on_save runs just
+// before the game writes a pilot file, so the market is saved there and the
+// in-flight cadence is off. This release still builds against API 9, so the
+// calls are made through `api10` (a guarded dynamic call).
 
 import "imports:sdk/es"
+
+int SAVE_EVERY = 10
 
 Galaxy galaxy = Galaxy()
 Market market = Market()
 Exchange exchange = Exchange()
+Press press = Press()
+MapView mapview = MapView()
+// The market changed since it was last saved, and the day it was saved.
+bool dirty = false
+int saved_day = 0
+// Ships destroyed around the player since the last day (from on_step, which
+// alone reads the losses() feed): system, model, and whether the player did it.
+[]string lost_systems = []
+[]string lost_models = []
+[]bool lost_by_player = []
 // The world in memory: the market of the pilot last read, and the save
 // revision it was read at or last saved as ("rev" in storage, bumped by every
 // save). Loading another pilot changes "world"; loading an older snapshot of
 // the same pilot changes "rev". Either way the market is read again.
 string loaded = ""
 string loaded_rev = ""
+int rev_high = 0
+string session = ""
+// Mod API 10 features of this game, found once (false on an API 9 game).
+bool checked_api = false
+bool has_on_save = false
+bool has_notify = false
 
 string name():
     return "corporations"
+
+// Built with the SDK's API 10, it runs on API 9 games: loaders before
+// min_api (es-modloader 0.1.0) check api_version, newer ones min_api. API 10
+// features are used only where Game.has says so.
+int api_version():
+    return 9
+
+int min_api():
+    return 9
 
 // Read the loaded pilot's market, or open one for a pilot that has none.
 // Every hook calls this (on_load runs only once a session, but a pilot can be
@@ -37,6 +88,7 @@ string name():
 bool prepare(es.Game game):
     if game.here() == "":
         return false
+    check_api(game)
     galaxy.build(game)
     string world = game.data("world")
     if world == "":
@@ -45,37 +97,126 @@ bool prepare(es.Game game):
         market.seed_stock(game, galaxy)
         loaded = market.world
         loaded_rev = ""
+        forget_losses()
         save(game)
     else:
         string rev = game.data("rev")
-        if world != loaded || rev != loaded_rev:
+        // Another pilot, an earlier save of this one, or (a mission's autosave
+        // in flight) a save older than the days in memory.
+        if world != loaded || rev != loaded_rev || (dirty && market.day > game.day()):
             market = Market()
             market.decode(game.data("state"))
             loaded = world
             loaded_rev = rev
+            dirty = false
+            saved_day = market.day
+            forget_losses()
             // A save from before shipyard stock: seed the shelves now.
             if market.shelves.len() == 0:
                 market.seed_stock(game, galaxy)
                 save(game)
+    market.notify = has_notify
     return true
 
+// A revision no save history of this pilot has used (see "Saving").
+string next_rev():
+    if session == "":
+        float r = globalThis.Math.random()
+        int token = int(r * 2000000000.0)
+        session = string(token)
+    rev_high += 1
+    return string(rev_high) + "." + session
+
 void save(es.Game game):
-    int n = loaded_rev.to_int() if loaded_rev != "" else 0
-    loaded_rev = string(n + 1)
+    loaded_rev = next_rev()
     game.set_data("state", market.encode())
     game.set_data("world", market.world)
     game.set_data("rev", loaded_rev)
+    dirty = false
+    saved_day = market.day
+    market.must_save = false
+
+// The market in memory moved on from the save: bump "rev" in storage now (not
+// the state), so loading the earlier save reads it again.
+void mark_dirty(es.Game game):
+    if dirty:
+        return
+    dirty = true
+    loaded_rev = next_rev()
+    game.set_data("rev", loaded_rev)
+
+// ---- Mod API 10, guarded (this release builds against API 9) ----
+
+// Whether the game object has a call; an API 9 game has no `has`.
+bool host_has(es.Game game, string call):
+    bool exists = globalThis.Reflect.has(game, call)
+    return exists
+
+void check_api(es.Game game):
+    if checked_api:
+        return
+    checked_api = true
+    if !host_has(game, "has"):
+        return
+    any g = game
+    bool save_hook = g.has("on_save")
+    bool bus = g.has("notify")
+    has_on_save = save_hook
+    has_notify = bus
+    if has_notify:
+        g.listen("diplomacy.*")
+
+void on_load(es.Game game):
+    check_api(game)
+
+// (Mod API 10.) Just before the game writes the pilot: the market goes in it.
+void on_save(es.Game game):
+    if prepare(game) && dirty:
+        save(game)
+
+// (Mod API 10.) Diplomacy's events on the bus (its README): diplomacy.war,
+// .peace, .capture, .battle and .rising, with JSON payloads naming the sides
+// and systems (Market.diplomacy_event). With the bus, read_wars leaves these
+// events to it and reads only which wars run.
+void on_notification(es.Game game, string name, string payload, string sender):
+    if !name.starts_with("diplomacy.") || !prepare(game):
+        return
+    market.diplomacy_event(name[10..<name.len()], payload, game.day())
+    mark_dirty(game)
+
+void forget_losses():
+    lost_systems = []
+    lost_models = []
+    lost_by_player = []
+
+// The losses() feed is there only in the step it happened in: keep it for the day.
+void on_step(es.Game game, int step):
+    int n = game.losses()
+    if n == 0:
+        return
+    string here = game.here()
+    for k in 0..<n:
+        lost_systems.append(here)
+        lost_models.append(game.loss_model(k))
+        lost_by_player.append(game.loss_by_player(k))
 
 void on_day(es.Game game, int day):
     if !prepare(game):
         return
+    for k in 0..<lost_systems.len():
+        market.losses.witness(lost_systems[k], lost_models[k], lost_by_player[k])
+    forget_losses()
     market.read_back(game)
     market.simulate(game, galaxy, day)
+    mark_dirty(game)
     market.push_stock(game, galaxy)
+    press.post(game, market, day)
     for line in market.player_events:
         game.message(line)
     market.player_events = []
-    save(game)
+    // With on_save (API 10) every pilot file the game writes gets the market there.
+    if !has_on_save && (market.must_save || game.planet() != "" || (SAVE_EVERY > 0 && market.day - saved_day >= SAVE_EVERY)):
+        save(game)
     draw_map(game)
 
 void on_enter(es.Game game, string system):
@@ -91,9 +232,15 @@ void on_enter(es.Game game, string system):
         market.push_stock(game, galaxy)
         changed = true
     if changed:
+        mark_dirty(game)
+    // Landed: the game writes the pilot file only now, so it must hold the market.
+    if planet != "" && dirty && !has_on_save:
         save(game)
     game.planet_button("Exchange" if planet != "" && game.planet_service(planet, "bank") else "")
-    // Landed: jobs carrying parts to the companies' running contracts.
+    // Landed: spaceport news told once, and jobs carrying parts to the
+    // companies' running contracts.
+    if planet != "":
+        press.tell(game, galaxy, market)
     if planet != "":
         market.offer_jobs(game, galaxy)
     draw_map(game)
@@ -109,6 +256,9 @@ void on_panel(es.Game game, int button):
 void on_panel_row(es.Game game, int row):
     if prepare(game):
         exchange.row(game, market, row)
+        if exchange.map_changed:
+            exchange.map_changed = false
+            draw_map(game)
 
 void on_panel_header(es.Game game, int column):
     if prepare(game):
@@ -116,18 +266,10 @@ void on_panel_header(es.Game game, int column):
 
 void on_number(es.Game game, int token, int value):
     if prepare(game) && exchange.number(game, market, token, value):
+        dirty = true
         save(game)
 
-// Each system where companies have their home: a quiet ring, and the side
-// panel lists them with their prices.
+// The map: companies' homes, shipyard regions, and the layers the player
+// switched on (MapView).
 void draw_map(es.Game game):
-    game.map_clear()
-    {string: string} lines = {}
-    for c in market.companies:
-        if !c.listed() || c.system == "":
-            continue
-        string line = c.name + ": " + exchange.fmt.price(c.price) + " (" + exchange.change(c, 30) + ")"
-        lines[c.system] = (lines[c.system] + "\n" + line) if lines.has(c.system) else line
-    for system, text in lines:
-        game.map_marker(system, 0.35, 0.7, 0.8, "")
-        game.map_detail(system, "Corporations", text, 0.35, 0.7, 0.8)
+    mapview.draw(game, market, galaxy)

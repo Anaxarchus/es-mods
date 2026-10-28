@@ -1,0 +1,163 @@
+class MapView
+
+import "imports:sdk/es"
+
+// The map (Task C8, M1). Every system where companies have their home gets a
+// ring and a side-panel section listing them with their prices: canonical
+// companies' homes a bright ring 1.5 times a marker's and the company's short
+// name; invented companies a quiet ring. Shipyard systems' sections add their
+// loss index (Losses) and empty shelves.
+//
+// Layers, switched on the exchange's Map tab and kept with the pilot
+// (Game.data "layers", their keys joined by commas):
+// - shortages: a ring at each shipyard system sized by its empty shelves;
+// - orders: a line from the builder's home to the shipyard for each restock
+//   and tender in flight (one line per pair);
+// - losses: a ring at each region whose loss index is up, sized by it;
+// - holdings: a green ring at the home of each company the player holds.
+// A draw makes at most BUDGET map calls; past it, lines and rings are left out.
+
+[]string layer_keys = ["shortages", "orders", "losses", "holdings"]
+[]string layer_names = ["Shortages: rings sized by empty shelves", "Restocks and tenders in flight: lines from builder to shipyard", "Regional losses: rings sized by the loss index", "Your holdings: the homes of companies you hold"]
+int BUDGET = 200
+// Calls made by the last draw, for tests.
+int calls = 0
+
+Fmt fmt = Fmt()
+Names names = Names()
+
+[]string layers(es.Game game):
+    string text = game.data("layers")
+    return text.split(",") if text != "" else []
+
+bool on(es.Game game, string key):
+    return layers(game).contains(key)
+
+// Switch a layer on or off; answers whether it is now on.
+bool toggle(es.Game game, string key):
+    []string now = layers(game)
+    bool was = now.contains(key)
+    []string next = now.filter(bool(string k): return k != key)
+    if !was:
+        next.append(key)
+    game.set_data("layers", next.join(","))
+    return !was
+
+bool spend(int n):
+    if calls + n > BUDGET:
+        return false
+    calls += n
+    return true
+
+void draw(es.Game game, Market market, Galaxy galaxy):
+    calls = 1
+    game.map_clear()
+    []string active = layers(game)
+    // Each system's side-panel text, and its companies.
+    []string systems = []
+    {string: string} lines = {}
+    {string: bool} canon_home = {}
+    for c in market.companies:
+        if !c.listed() || c.system == "":
+            continue
+        string line = c.name + ": " + fmt.price(c.price) + " (" + change(c) + ")"
+        if !lines.has(c.system):
+            systems.append(c.system)
+            lines[c.system] = line
+        else:
+            lines[c.system] = lines[c.system] + "\n" + line
+        if c.canon:
+            // One gold ring a system (Sol is home to two), a label for each company.
+            if !canon_home.has(c.system) && spend(1):
+                game.map_ring(c.system, 1.5, 1.0, 0.82, 0.35)
+            canon_home[c.system] = true
+            if spend(1):
+                game.map_label(c.system, short_name(c.name), 1.0, 0.82, 0.35)
+    for s in systems:
+        if !canon_home.has(s) && spend(1):
+            game.map_marker(s, 0.35, 0.7, 0.8, "")
+    // Shipyard systems: loss index and empty shelves.
+    {string: int} empty = {}
+    {string: []string} empty_models = {}
+    for planet, list in market.planet_shelves:
+        string sys = market.yard_system.get(planet, "")
+        if sys == "":
+            sys = galaxy.system_of(game, planet)
+            market.yard_system[planet] = sys
+        for sh in list:
+            if sh.count == 0:
+                empty[sys] = empty.get(sys, 0) + 1
+                if !empty_models.has(sys):
+                    empty_models[sys] = []
+                if empty_models[sys].len() < 4 && !empty_models[sys].contains(sh.model):
+                    empty_models[sys].append(sh.model)
+    for r in 0..<market.losses.regions.len():
+        string sys = market.losses.regions[r]
+        float x = market.losses.index(r)
+        string why = market.losses.cause(r)
+        string text = "Loss index " + fmt.one_decimal(x) + (" (" + why + ")" if why != "" else " (quiet)")
+        int n = empty.get(sys, 0)
+        if n > 0:
+            text = text + "\nEmpty shelves: " + string(n) + " (" + empty_models[sys].join(", ") + (", ..." if n > empty_models[sys].len() else "") + ")"
+        if !lines.has(sys):
+            systems.append(sys)
+            lines[sys] = text
+        else:
+            lines[sys] = lines[sys] + "\n" + text
+    for s in systems:
+        if spend(1):
+            game.map_detail(s, "Corporations", lines[s], 0.35, 0.7, 0.8)
+    // Layers.
+    if active.contains("holdings"):
+        for id, n in market.holdings:
+            Company c = market.by_id.get(id, Company())
+            if c.id != 0 && c.system != "" && spend(1):
+                game.map_ring(c.system, 1.2, 0.4, 0.95, 0.45)
+    if active.contains("losses"):
+        for r in 0..<market.losses.regions.len():
+            float x = market.losses.index(r)
+            if x >= 1.3 && spend(1):
+                game.map_ring(market.losses.regions[r], clamp(0.4 + 0.4 * x, 0.5, 3.0), 0.95, 0.3, 0.25)
+    if active.contains("shortages"):
+        for sys, n in empty:
+            if spend(1):
+                game.map_ring(sys, clamp(0.6 + 0.3 * float(n), 0.6, 3.0), 1.0, 0.55, 0.15)
+    if active.contains("orders"):
+        {string: bool} drawn = {}
+        for k in market.contracts:
+            if k.status != k.RUNNING || (k.kind != k.RESTOCK && k.kind != k.TENDER):
+                continue
+            Company c = market.by_id.get(k.winner, Company())
+            if c.id == 0 || c.system == "":
+                continue
+            string to = k.system if k.kind == k.TENDER else market.yard_system.get(k.client, "")
+            if to == "" || to == c.system:
+                continue
+            string key = c.system + "|" + to + "|" + string(k.kind)
+            if drawn.has(key):
+                continue
+            drawn[key] = true
+            if !spend(1):
+                break
+            if k.kind == k.TENDER:
+                game.map_line(c.system, to, 0.95, 0.35, 0.3)
+            else:
+                game.map_line(c.system, to, 0.4, 0.75, 0.95)
+
+float clamp(float x, float lo, float hi):
+    return lo if x < lo else (hi if x > hi else x)
+
+// The price's change over 30 days, as the side panel shows it.
+string change(Company c):
+    if c.history.len() == 0:
+        return "new"
+    int back = c.history.len() - 31
+    int then = c.history[back if back >= 0 else 0]
+    if then <= 0:
+        return "new"
+    return fmt.percent(c.price * 100.0 / float(then) - 1.0)
+
+// A canonical company's short name for its map label.
+string short_name(string name):
+    int i = names.canon_names.index_of(name) if names.canon_names.contains(name) else -1
+    return names.canon_short[i] if i >= 0 else name

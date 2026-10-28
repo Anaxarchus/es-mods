@@ -1,0 +1,134 @@
+class Chronicle
+
+// The war's story: named events ("Siege of Alioth, day 6: New Tibet falls
+// to the Republic") kept in World.chronicle (the newest tune.chronicle_cap),
+// and the player's messages. Events that concern the player's faction (a war
+// it fights, a capture in one, one of its minors rising) are messaged at once;
+// everything else waits for the day's digest, one message at the end of the
+// day. The territory history for the War Room's chart, and the service
+// record's medals, are kept here too.
+
+import "imports:sdk/es"
+
+Tuning tune = Tuning()
+Factions factions = Factions()
+Galaxy galaxy = Galaxy()
+World world = World()
+
+// Mod API 10's notification bus, when the game has it (Diplomacy.check_api):
+// events posted for other mods (README.md, "The notification bus").
+bool bus = false
+
+void post(es.Game game, string name, string payload):
+    if bus:
+        game.notify(name, payload)
+
+// The day's events for the digest, not saved.
+[]string digest = []
+// Events chronicled today (the War Room's sidebar shows them).
+int today = 0
+
+[]string month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+[]int month_days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+void wire(Tuning t, Factions f, Galaxy g, World w):
+    tune = t
+    factions = f
+    galaxy = g
+    world = w
+
+// ---- Dates ----
+
+int days_before(int year):
+    int y = year - 1
+    return 365 * y + y / 4 - y / 100 + y / 400
+
+bool leap(int year):
+    return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+
+// The game's day number as a date, "24 Feb 3016".
+string date(int day):
+    if day <= 0:
+        return "?"
+    int year = day * 400 / 146097 + 1
+    for days_before(year + 1) < day:
+        year += 1
+    for year > 1 && days_before(year) >= day:
+        year -= 1
+    int doy = day - days_before(year)
+    int month = 0
+    for month < 11:
+        int len = month_days[month] + (1 if month == 1 && leap(year) else 0)
+        if doy <= len:
+            break
+        doy -= len
+        month += 1
+    return string(doy) + " " + month_names[month] + " " + string(year)
+
+// ---- Events ----
+
+// Chronicle an event. `tell`: message the player now (it concerns their
+// faction); otherwise it goes in the day's digest when `digested`.
+void add(es.Game game, int day, string text, bool tell, bool digested):
+    world.chronicle.append(string(day) + "|" + text)
+    world.chronicle = world.capped(world.chronicle, tune.chronicle_cap)
+    today += 1
+    if tell:
+        game.message(text)
+    else if digested:
+        digest.append(text)
+
+// Message the player without chronicling (in-person events, promotions).
+void say(es.Game game, string text):
+    game.message(text)
+
+// The day's digest: one message for what happened elsewhere.
+void flush(es.Game game):
+    if digest.len() == 0:
+        return
+    string text = "Elsewhere: " + digest[0]
+    if digest.len() == 2:
+        text = text + " Also: " + digest[1]
+    else if digest.len() > 2:
+        text = text + " And " + string(digest.len() - 1) + " more events; see the War Room."
+    game.message(text)
+    digest = []
+
+int entry_day(string entry):
+    int bar = entry.index_of("|") if entry.contains("|") else -1
+    return entry[0..<bar].to_int() if bar > 0 else 0
+
+string entry_text(string entry):
+    int bar = entry.index_of("|") if entry.contains("|") else -1
+    return entry[(bar + 1)..<entry.len()] if bar >= 0 else entry
+
+// ---- The territory history ----
+
+// Sample the territory every tune.history_every days: [day, R, FW, S, rebels].
+void sample(int day):
+    if world.history.len() > 0 && day - world.history[world.history.len() - 1][0] < tune.history_every:
+        return
+    int rebels = 0
+    for s in 5..=factions.sides():
+        rebels += galaxy.territory(s)
+    world.history.append([day, galaxy.territory(1), galaxy.territory(2), galaxy.territory(3), rebels])
+    if world.history.len() > tune.history_cap:
+        world.history.remove_at(0)
+
+// One column of the history, as "a,b,c" for panel_chart.
+string series(int column):
+    []string parts = []
+    for row in world.history:
+        if column < row.len():
+            parts.append(string(row[column]))
+    return parts.join(",")
+
+// ---- Medals ----
+
+// Award a medal: counted in "diplomacy: medal <id>", recorded with its citation.
+void medal(es.Game game, int day, string id, string name, string citation):
+    world.medals.append(id + "|" + string(day) + "|" + name + ": " + citation)
+    world.medals = world.capped(world.medals, tune.medals_cap)
+    game.set_condition("diplomacy: medal " + id, game.condition("diplomacy: medal " + id) + 1)
+    world.stat("medals", 1)
+    game.message("You have been awarded the " + name + ": " + citation)

@@ -1,0 +1,311 @@
+class World
+
+// The simulation's state, in memory, and its saved form: one JSON text kept
+// with the pilot under the key "state" (Game.set_data), apart from the
+// conditions that missions and other plugins read (State publishes those).
+// It is bounded: a fixed number of minors and sides, wars and flotillas under
+// their caps, and capped lists for the chronicle, the history, operations and
+// medals. "world" (a number drawn when the state is made) and "rev" (bumped by
+// every save) tell the mod when another pilot, or an older save of this one,
+// has been loaded, so it reads the state again.
+//
+// Systems are system indices (Galaxy), -1 for none; sides are Factions' sides.
+
+int VERSION = 2
+
+int version = 2
+int world = 0
+int rev = 0
+int day = 0
+int rng = 1
+int activated = 0
+// Wars, the next war's number, no war declared before next_declare, and
+// whether the first war (the border crisis) has come.
+[]War wars = []
+int next_war = 1
+int next_declare = 0
+int first_war = 0
+// Flotillas and raids, and the next one's number.
+[]Flotilla fleets = []
+int next_flotilla = 1
+// Damaged garrisons: [system, hp, siege start, last day besieged].
+[][]int garrisons = []
+// Systems taken since activation: [system, from, by, day, war, patrol side, quiet since].
+[][]int captures = []
+// Systems whose own patrols were swapped out: "system|first owner|fleet;fleet".
+[]string patrols = []
+// Per minor: unrest and neglect (tenths), the last rebellion's day, the day its
+// present split began (0: not split).
+[]int unrest = []
+[]int neglect = []
+[]int rebelled = []
+[]int split_since = []
+// Per minor: the side that last lost systems of it (its claim lasts
+// tune.claim_days), and the day it lost them.
+[]int claimant = []
+[]int claim_day = []
+// Per side: defeats and core shock (tenths).
+[]int defeat = []
+[]int shock = []
+// Per major (1..3) and side: grudge points, truce (no war before this day), last war's end.
+[][]int grudge = []
+[][]int truce = []
+[][]int last_war = []
+// Commanders: per side, a flat [name, personality, wins] per roster place.
+[][]int admirals = []
+// The chronicle ("day|text"), territory history ([day, R, FW, S, rebels]),
+// operations ("key|kind|war|system|flotilla|day"), medals ("id|day|citation").
+[]string chronicle = []
+[][]int history = []
+[]string ops = []
+[]string medals = []
+{string: int} stats = {}
+// The first hour: [crisis day, crisis minor, crisis declared (0 once it is over), intro
+// offered, last war day of the player's faction, the crisis war's id].
+[]int story = [0, -1, 0, 0, 0, 0]
+
+Json json = Json()
+
+// A fresh state for `minors` minors and `sides` sides.
+void reset(int minors, int sides):
+    version = VERSION
+    wars = []
+    next_war = 1
+    next_declare = 0
+    first_war = 0
+    fleets = []
+    next_flotilla = 1
+    garrisons = []
+    captures = []
+    patrols = []
+    unrest = zeros(minors)
+    neglect = zeros(minors)
+    rebelled = zeros(minors)
+    split_since = zeros(minors)
+    claimant = zeros(minors)
+    claim_day = zeros(minors)
+    defeat = zeros(sides + 1)
+    shock = zeros(sides + 1)
+    grudge = []
+    truce = []
+    last_war = []
+    for f in 0..=3:
+        grudge.append(zeros(sides + 1))
+        truce.append(zeros(sides + 1))
+        last_war.append(zeros(sides + 1))
+    admirals = []
+    for s in 0..=sides:
+        admirals.append([])
+    chronicle = []
+    history = []
+    ops = []
+    medals = []
+    stats = {}
+    story = [0, -1, 0, 0, 0, 0]
+
+[]int zeros(int n):
+    []int v = []
+    v.resize(n)
+    v.fill(0)
+    return v
+
+void stat(string key, int delta):
+    stats[key] = stats.get(key, 0) + delta
+
+int get_stat(string key):
+    return stats.get(key, 0)
+
+// ---- Saving ----
+
+string encode():
+    []string f = []
+    f.append("\"v\":" + string(version))
+    f.append("\"world\":" + string(world))
+    f.append("\"rev\":" + string(rev))
+    f.append("\"day\":" + string(day))
+    f.append("\"rng\":" + string(rng))
+    f.append("\"activated\":" + string(activated))
+    [][]int w = []
+    for x in wars:
+        w.append(x.encode())
+    f.append("\"wars\":" + json.rows(w))
+    f.append("\"next_war\":" + string(next_war))
+    f.append("\"next_declare\":" + string(next_declare))
+    f.append("\"first_war\":" + string(first_war))
+    [][]int fl = []
+    for x in fleets:
+        if x.alive():
+            fl.append(x.encode())
+    f.append("\"fleets\":" + json.rows(fl))
+    f.append("\"next_flotilla\":" + string(next_flotilla))
+    f.append("\"garrisons\":" + json.rows(garrisons))
+    f.append("\"captures\":" + json.rows(captures))
+    f.append("\"patrols\":" + json.strings(patrols))
+    f.append("\"unrest\":" + json.ints(unrest))
+    f.append("\"neglect\":" + json.ints(neglect))
+    f.append("\"rebelled\":" + json.ints(rebelled))
+    f.append("\"split_since\":" + json.ints(split_since))
+    f.append("\"claimant\":" + json.ints(claimant))
+    f.append("\"claim_day\":" + json.ints(claim_day))
+    f.append("\"defeat\":" + json.ints(defeat))
+    f.append("\"shock\":" + json.ints(shock))
+    f.append("\"grudge\":" + json.rows(grudge))
+    f.append("\"truce\":" + json.rows(truce))
+    f.append("\"last_war\":" + json.rows(last_war))
+    f.append("\"admirals\":" + json.rows(admirals))
+    f.append("\"chronicle\":" + json.strings(chronicle))
+    f.append("\"history\":" + json.rows(history))
+    f.append("\"ops\":" + json.strings(ops))
+    f.append("\"medals\":" + json.strings(medals))
+    []string keys = []
+    for k, v in stats:
+        keys.append(json.text(k) + ":" + string(v))
+    f.append("\"stats\":{" + keys.join(",") + "}")
+    f.append("\"story\":" + json.ints(story))
+    return "{" + f.join(",") + "}"
+
+// Read a saved state; false if it cannot be read (the caller starts afresh).
+bool decode(string text, int minors, int sides):
+    try any o = json.parse(text) else _:
+        return false
+    reset(minors, sides)
+    version = json.num(o, "v", 0)
+    if version != VERSION:
+        return false
+    world = json.num(o, "world", 0)
+    rev = json.num(o, "rev", 0)
+    day = json.num(o, "day", 0)
+    rng = json.num(o, "rng", 1)
+    activated = json.num(o, "activated", 0)
+    for r in json.int_rows(o, "wars"):
+        War x = War()
+        x.decode(r)
+        if x.id > 0:
+            wars.append(x)
+    next_war = json.num(o, "next_war", 1)
+    next_declare = json.num(o, "next_declare", 0)
+    first_war = json.num(o, "first_war", 0)
+    for r in json.int_rows(o, "fleets"):
+        Flotilla x = Flotilla()
+        x.decode(r)
+        if x.alive():
+            fleets.append(x)
+    next_flotilla = json.num(o, "next_flotilla", 1)
+    garrisons = json.int_rows(o, "garrisons")
+    captures = json.int_rows(o, "captures")
+    patrols = json.string_list(o, "patrols")
+    unrest = fit(json.int_list(o, "unrest"), minors)
+    neglect = fit(json.int_list(o, "neglect"), minors)
+    rebelled = fit(json.int_list(o, "rebelled"), minors)
+    split_since = fit(json.int_list(o, "split_since"), minors)
+    claimant = fit(json.int_list(o, "claimant"), minors)
+    claim_day = fit(json.int_list(o, "claim_day"), minors)
+    defeat = fit(json.int_list(o, "defeat"), sides + 1)
+    shock = fit(json.int_list(o, "shock"), sides + 1)
+    grudge = fit_rows(json.int_rows(o, "grudge"), 4, sides + 1)
+    truce = fit_rows(json.int_rows(o, "truce"), 4, sides + 1)
+    last_war = fit_rows(json.int_rows(o, "last_war"), 4, sides + 1)
+    [][]int a = json.int_rows(o, "admirals")
+    for s in 0..=sides:
+        admirals[s] = a[s] if s < a.len() else []
+    chronicle = json.string_list(o, "chronicle")
+    history = json.int_rows(o, "history")
+    ops = json.string_list(o, "ops")
+    medals = json.string_list(o, "medals")
+    if json.has(o, "stats"):
+        any st = o["stats"]
+        []string keys = globalThis.Object.keys(st)
+        for k in keys:
+            stats[k] = json.num(st, k, 0)
+    []int s = json.int_list(o, "story")
+    for k in 0..<story.len():
+        if k < s.len():
+            story[k] = s[k]
+    return true
+
+// A list made exactly n long (zeros added or extras dropped), for a galaxy
+// whose minors changed since the state was saved.
+[]int fit([]int v, int n):
+    []int out = zeros(n)
+    for k in 0..<n:
+        if k < v.len():
+            out[k] = v[k]
+    return out
+
+[][]int fit_rows([][]int v, int rows, int n):
+    [][]int out = []
+    for k in 0..<rows:
+        out.append(fit(v[k] if k < v.len() else [], n))
+    return out
+
+// ---- Lookups ----
+
+War war_by_id(int id):
+    for x in wars:
+        if x.id == id:
+            return x
+    return War()
+
+Flotilla fleet_by_id(int id):
+    for x in fleets:
+        if x.id == id && x.alive():
+            return x
+    return Flotilla()
+
+bool has_war(int id):
+    return wars.any(bool(War x): return x.id == id)
+
+void remove_war(int id):
+    for k in 0..<wars.len():
+        if wars[k].id == id:
+            wars.remove_at(k)
+            return
+
+void remove_capture(int i):
+    int k = capture_index(i)
+    if k >= 0:
+        captures.remove_at(k)
+
+// The war between sides s and t, or an empty War (id 0).
+War war_between(int s, int t):
+    for x in wars:
+        if x.between(s, t):
+            return x
+    return War()
+
+bool hostile(int s, int t):
+    if s == t || s == 0 || t == 0:
+        return false
+    if s == 4 || t == 4:
+        return true
+    for x in wars:
+        if x.between(s, t):
+            return true
+    return false
+
+// The wars side s fights.
+[]War wars_of(int s):
+    []War out = []
+    for x in wars:
+        if x.involves(s):
+            out.append(x)
+    return out
+
+bool at_war(int s):
+    for x in wars:
+        if x.involves(s):
+            return true
+    return false
+
+// The capture record of system i, as an index into captures, or -1.
+int capture_index(int i):
+    for k in 0..<captures.len():
+        if captures[k][0] == i:
+            return k
+    return -1
+
+// Keep a capped list to its newest `cap` entries.
+[]string capped([]string v, int cap):
+    if v.len() <= cap:
+        return v
+    return v[(v.len() - cap)..<v.len()]

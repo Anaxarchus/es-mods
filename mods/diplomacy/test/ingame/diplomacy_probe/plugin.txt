@@ -1,0 +1,3 @@
+name "Diplomacy Probe"
+version "1"
+about "A probe for the Diplomacy mod's in-game tests: it reports what the tests cannot see in conditions. Not for players."

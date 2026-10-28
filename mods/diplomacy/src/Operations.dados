@@ -1,0 +1,380 @@
+class Operations
+
+// Operations: jobs made from the live war and put on the job board of the
+// planet the player lands on (Game.offer_job, mod API 8). Each is named after
+// what it is about ("Relieve the siege of Alioth"), so the game offers one of
+// each at a time; its "on complete" sets "diplomacy: op <key>" to 1 and its
+// "on fail" adds 2, and the next day the mod reads that and writes the
+// outcome back into the simulation (and awards a medal for a success).
+//
+//   relieve <system>      own system under siege nearby: drive off the besiegers
+//   reinforce <system>    own flotilla besieging an enemy system: bring it supplies
+//   intercept <id>        an enemy flotilla nearby: destroy its van
+//   supply <system>       own system in a war's goals: supply its garrison
+//   hunt <id>             a pirate raid in own space: hunt it down
+//   volunteer <id>        another war, while the player's faction is at peace:
+//                         intercept for the side not hostile to it (a mercenary job)
+//   rebels <id>           a rebel flotilla nearby: hunt it down
+//   envoy, investigate    the Free Worlds Veteran's first operations (the first hour)
+//
+// The static jobs (data/diplomacy jobs.txt and the Dispatches) feed back too:
+// they add to "diplomacy: intel", "diplomacy: blows" and "diplomacy:
+// dispatches", which the mod turns into score for the member's faction.
+
+import "imports:sdk/es"
+
+Tuning tune = Tuning()
+Factions factions = Factions()
+Galaxy galaxy = Galaxy()
+World world = World()
+Rng rng = Rng()
+Garrisons garrisons = Garrisons()
+Simulation sim = Simulation()
+Chronicle chronicle = Chronicle()
+
+void wire(Tuning t, Factions f, Galaxy g, World w, Rng r, Garrisons gs, Simulation s, Chronicle c):
+    tune = t
+    factions = f
+    galaxy = g
+    world = w
+    rng = r
+    garrisons = gs
+    sim = s
+    chronicle = c
+
+// ---- Offering ----
+
+// The player landed: offer the operations the war has for them here.
+void offer(es.Game game, int player, int day):
+    string planet = game.planet()
+    int here = galaxy.find(game.here())
+    if planet == "" || here < 0 || !game.planet_service(planet, "job board"):
+        return
+    int offered = 0
+    // The first hour: the Veteran's two introductory operations.
+    if player == 2 && world.story[3] < 2 && day - world.activated <= 30:
+        if offer_intro(game, planet, here, day):
+            offered += 1
+    if player != 0:
+        for w in world.wars_of(player):
+            int e = w.other(player)
+            for x in world.fleets:
+                if !x.alive() || offered >= tune.ops_per_landing:
+                    continue
+                int d = galaxy.jumps(here, x.at)
+                if d < 0 || d > tune.ops_range:
+                    continue
+                if x.side == e && x.war == w.id && sim.besieging(x) && galaxy.owner(x.goal) == player:
+                    offered += try_offer(game, planet, "relieve", x, w, x.goal, day)
+                else if x.side == player && x.war == w.id && sim.besieging(x):
+                    offered += try_offer(game, planet, "reinforce", x, w, x.goal, day)
+                else if x.side == e && x.war == w.id && x.kind == 0:
+                    offered += try_offer(game, planet, "intercept", x, w, x.at, day)
+            // A garrison on the front to supply.
+            if offered < tune.ops_per_landing:
+                for m in w.goals:
+                    for i in galaxy.minor_systems[m]:
+                        if offered < tune.ops_per_landing && galaxy.owner(i) == player && i != here && galaxy.jumps(here, i) >= 1 && galaxy.jumps(here, i) <= tune.ops_range && supply_planet(game, i, player) != "" && rng.chance(50):
+                            offered += try_offer(game, planet, "supply", Flotilla(), w, i, day)
+    // Raids and rebels nearby, at war or at peace.
+    for x in world.fleets:
+        if !x.alive() || offered >= tune.ops_per_landing:
+            continue
+        int d = galaxy.jumps(here, x.at)
+        if d < 0 || d > tune.ops_range:
+            continue
+        if x.side == factions.pirates() && x.kind == 2 && (player == 0 || galaxy.owner(x.at) == player || !world.at_war(player)):
+            offered += try_offer(game, planet, "hunt", x, War(), x.at, day)
+        else if factions.is_rebel(x.side) && (player == 0 || world.hostile(player, x.side) || !world.at_war(player)):
+            offered += try_offer(game, planet, "rebels", x, sim.war_of(x), x.at, day)
+    // Volunteers: while the player's faction is at peace, another war's flotillas.
+    if player == 0 || !world.at_war(player):
+        for x in world.fleets:
+            if !x.alive() || offered >= tune.ops_per_landing || x.kind != 0 || !factions.is_major(x.side):
+                continue
+            War w = sim.war_of(x)
+            int d = galaxy.jumps(here, x.at)
+            if w.id == 0 || d < 0 || d > tune.ops_range || x.side == player:
+                continue
+            int client = w.other(x.side)
+            if factions.is_major(client) && galaxy.owner(here) == client:
+                offered += try_offer(game, planet, "volunteer", x, w, x.at, day)
+
+// Offer one operation; answers 1 if it is on the board.
+int try_offer(es.Game game, string planet, string kind, Flotilla x, War w, int sys, int day):
+    string key = kind + " " + (galaxy.name(sys) if kind == "relieve" || kind == "reinforce" || kind == "supply" else string(x.id))
+    string body = job(game, planet, kind, key, x, w, sys)
+    if body == "":
+        return 0
+    if !game.offer_job(title(kind, x, sys), body):
+        return 0
+    track(game, key, kind, w.id, sys, x.id, day, title(kind, x, sys))
+    return 1
+
+string title(string kind, Flotilla x, int sys):
+    string where = galaxy.name(sys)
+    if kind == "relieve":
+        return "Relieve the siege of " + where
+    if kind == "reinforce":
+        return "Supply the siege of " + where
+    if kind == "intercept":
+        return "Intercept " + sim.led_by(x) + " at " + where
+    if kind == "supply":
+        return "Supply the garrison at " + where
+    if kind == "hunt":
+        return "Hunt the raiders under " + sim.led_by(x)
+    if kind == "volunteer":
+        return "Volunteer: intercept " + sim.led_by(x)
+    if kind == "rebels":
+        return "Hunt the rebels under " + sim.led_by(x)
+    return kind
+
+// A planet in system i whose government is side s's, for deliveries; "" if none.
+string supply_planet(es.Game game, int i, int s):
+    string sys = galaxy.name(i)
+    for k in 0..<game.planet_count(sys):
+        string p = game.planet_at(sys, k)
+        if !game.planet_service(p, "trading") && !game.planet_service(p, "job board"):
+            continue
+        if game.planet_government(p) == factions.government(s) || (game.planet_government(p) == "" && galaxy.owner(i) == s):
+            return p
+    return ""
+
+string q(string s):
+    return "\"" + s + "\""
+
+// The text of an operation's mission (the body Game.offer_job takes).
+string job(es.Game game, string planet, string kind, string key, Flotilla x, War w, int sys):
+    string cond = q("diplomacy: op " + key)
+    string where = galaxy.name(sys)
+    string enemy_gov = factions.flotilla_government(x.side)
+    string fleet = factions.small_fleet(x.side)
+    if x.side == factions.pirates():
+        fleet = sim.fleets_of(game, x)[0]
+    string body = ""
+    int pay = 0
+    int merit = 0
+    if kind == "relieve":
+        pay = 180000
+        merit = 6
+        body = "description `" + sim.led_by(x) + " is besieging " + where + ". Fly there, break the besiegers' van, and report back here by <date>. Payment is <payment>.`\n"
+        body = body + npc_kill(enemy_gov, where, fleet)
+    else if kind == "intercept":
+        pay = 150000
+        merit = 5
+        body = "description `" + sim.led_by(x) + "'s " + factions.sizes[x.size] + " " + factions.adjective(x.side) + " flotilla is at " + where + ". Destroy its van there and report back here by <date>. Payment is <payment>.`\n"
+        body = body + npc_kill(enemy_gov, where, fleet)
+    else if kind == "hunt" || kind == "rebels" || kind == "volunteer":
+        pay = 120000 if kind == "hunt" else 140000
+        merit = 3 if kind != "volunteer" else 0
+        string who = "pirates" if kind == "hunt" else factions.adjective(x.side) + " ships"
+        body = "description `The " + who + " under " + sim.led_by(x) + " are at " + where + ". Hunt down their van and report back here by <date>. Payment is <payment>.`\n"
+        body = body + npc_kill(enemy_gov, where, fleet)
+    else if kind == "reinforce":
+        pay = 90000
+        merit = 4
+        body = "description `Our flotilla besieging " + where + " is short of munitions. Carry <cargo> to it there and come back here by <date>. Payment is <payment>.`\n"
+        body = body + "cargo \"munitions\" 8\nwaypoint " + q(where) + "\n"
+    else if kind == "supply":
+        string to = supply_planet(game, sys, galaxy.owner(sys))
+        if to == "":
+            return ""
+        pay = 70000
+        merit = 3
+        body = "description `The garrison at " + where + " is on the front of the " + w.kind_name() + " with " + factions.name(w.other(galaxy.owner(sys))) + ". Deliver <cargo> to <destination> by <date>. Payment is <payment>.`\n"
+        body = body + "cargo \"garrison supplies\" 10\ndestination " + q(to) + "\n"
+    else:
+        return ""
+    string text = "name " + q(title(kind, x, sys)) + "\n" + body + "deadline " + string(tune.ops_deadline) + "\n"
+    if kind != "supply":
+        text = text + "destination " + q(planet) + "\n"
+    text = text + "on complete\n\tpayment " + string(pay) + "\n\t" + cond + " = 1\n"
+    if merit > 0:
+        text = text + "\t\"diplomacy: merit\" += " + string(merit) + "\n"
+    text = text + "\tdialog `Done. You are paid <payment>.`\non fail\n\t" + cond + " += 2\n"
+    return text
+
+string npc_kill(string gov, string where, string fleet):
+    return "npc kill\n\tgovernment " + q(gov) + "\n\tsystem " + q(where) + "\n\tpersonality heroic staying target marked\n\tfleet " + q(fleet) + "\n"
+
+// ---- The first hour ----
+
+// The Free Worlds Veteran's introductory operations: escort Alondo's envoy to
+// the border, and look into a raid for Freya. Answers whether one was offered.
+bool offer_intro(es.Game game, string planet, int here, int day):
+    if world.story[3] == 0:
+        // The envoy: to a Free Worlds world on the Dirt Belt border.
+        int to = -1
+        int best = 1000
+        for m in 0..<factions.regions.count():
+            if !galaxy.split(m) || galaxy.held_by(m, 2) == 0:
+                continue
+            for i in galaxy.minor_systems[m]:
+                int d = galaxy.jumps(here, i)
+                if galaxy.owner(i) == 2 && d >= 1 && d < best && supply_planet(game, i, 2) != "":
+                    best = d
+                    to = i
+        if to < 0:
+            return false
+        string dest = supply_planet(game, to, 2)
+        string body = "name " + q("Escort Alondo's envoy to " + galaxy.name(to)) + "\ndescription `Alondo Gruyere, who runs the Free Worlds diplomatic corps now, asks you to carry one of his envoys to <destination> by <date>, to reassure the border worlds that the Free Worlds will stand by them. Payment is <payment>.`\npassengers 1\ndeadline 15\ndestination " + q(dest) + "\non complete\n\tpayment 60000\n\t\"diplomacy: op envoy\" = 1\n\t\"diplomacy: merit\" += 3\n\tdialog `The envoy thanks you and heads for the governor's office. \"Alondo was right about you,\" she says. \"Keep your guns warm, Captain. The Republic has been counting our border worlds again.\"`\non fail\n\t\"diplomacy: op envoy\" += 2\n"
+        if game.offer_job("Escort Alondo's envoy to " + galaxy.name(to), body):
+            track(game, "envoy", "envoy", 0, to, 0, day, "Escort Alondo's envoy to " + galaxy.name(to))
+            return true
+        return false
+    if world.story[3] == 1:
+        // The raid: the nearest system pirates hit in Free Worlds space, or a border system.
+        int at = -1
+        int best = 1000
+        for i in galaxy.human:
+            int d = galaxy.jumps(here, i)
+            if galaxy.owner(i) == 2 && d >= 1 && d <= 4 && garrisons.damaged(i) && d < best:
+                best = d
+                at = i
+        if at < 0:
+            for m in 0..<factions.regions.count():
+                if galaxy.split(m) && galaxy.held_by(m, 2) > 0:
+                    for i in galaxy.minor_systems[m]:
+                        int d = galaxy.jumps(here, i)
+                        if galaxy.owner(i) == 2 && d >= 1 && d < best:
+                            best = d
+                            at = i
+        if at < 0:
+            return false
+        string body = "name " + q("Investigate the raid at " + galaxy.name(at)) + "\ndescription `Freya, back from Pugglemug, has heard that the raiders hitting the border used Navy codes. She asks you to fly to <waypoints>, look over the wreckage, and bring what you find back here by <date>. Payment is <payment>.`\nwaypoint " + q(galaxy.name(at)) + "\ndeadline 15\ndestination " + q(planet) + "\non complete\n\tpayment 50000\n\t\"diplomacy: op investigate\" = 1\n\t\"diplomacy: merit\" += 2\n\tdialog `Freya turns a scorched transponder over in her hands. \"Republic surplus, sold to anyone with credits,\" she says. \"Somebody wants the Free Worlds and the Republic at each other's throats again. I'd watch the Dirt Belt, if I were you.\"`\non fail\n\t\"diplomacy: op investigate\" += 2\n"
+        if game.offer_job("Investigate the raid at " + galaxy.name(at), body):
+            track(game, "investigate", "investigate", 0, at, 0, day, "Investigate the raid at " + galaxy.name(at))
+            return true
+    return false
+
+// ---- Tracking and outcomes ----
+
+// Every successful offer (re)starts the track: the job's deadline runs from the
+// offer the player accepts, which is the last one made (a taken job is not
+// offered again). A new track clears any outcome left over from an earlier
+// job of the same name, so each outcome is applied once, to its own job.
+// "key|kind|war|system|flotilla|day|title".
+void track(es.Game game, string key, string kind, int war, int sys, int flot, int day, string title):
+    string entry = key + "|" + kind + "|" + string(war) + "|" + string(sys) + "|" + string(flot) + "|" + string(day) + "|" + title
+    for k in 0..<world.ops.len():
+        if world.ops[k].starts_with(key + "|"):
+            world.ops[k] = entry
+            return
+    if game.condition("diplomacy: op " + key) != 0:
+        game.set_condition("diplomacy: op " + key, 0)
+    world.ops.append(entry)
+    // Over the cap: forget the oldest track whose job is not taken.
+    if world.ops.len() > tune.ops_tracked:
+        for k in 0..<world.ops.len():
+            if !taken(game, world.ops[k]):
+                world.ops.remove_at(k)
+                return
+
+// Whether the player has the track's job (the game counts "<mission>: active").
+bool taken(es.Game game, string op):
+    []string f = op.split("|")
+    if f.len() < 7:
+        return false
+    return game.condition("diplomacy: " + f[6].replace_all("\"", "'") + ": active") > 0
+
+// Each day: read what became of the operations, and write it back. A track
+// with no outcome is kept while its job is taken, and otherwise for the job's
+// deadline and a margin after its last offer.
+void outcomes(es.Game game, int player, int day):
+    for op in world.ops.copy():
+        []string f = op.split("|")
+        if f.len() < 6:
+            world.ops.remove_at(world.ops.index_of(op))
+            continue
+        string key = f[0]
+        int v = game.condition("diplomacy: op " + key)
+        int age = day - f[5].to_int()
+        if v == 0 && (age <= tune.ops_deadline + tune.ops_margin || taken(game, op)):
+            continue
+        if v != 0:
+            game.set_condition("diplomacy: op " + key, 0)
+        world.ops.remove_at(world.ops.index_of(op))
+        if v % 2 == 1:
+            succeed(game, player, f[1], f[2].to_int(), f[3].to_int(), f[4].to_int(), day)
+        else if v != 0:
+            world.stat("ops failed", 1)
+    static_jobs(game, player)
+
+void succeed(es.Game game, int player, string kind, int war, int sys, int flot, int day):
+    world.stat("ops done", 1)
+    world.stat("ops " + kind, 1)
+    War w = world.war_by_id(war)
+    Flotilla x = world.fleet_by_id(flot)
+    string where = galaxy.name(sys)
+    if kind == "relieve" || kind == "intercept" || kind == "hunt" || kind == "rebels" || kind == "volunteer":
+        if x.alive():
+            x.strength = x.strength * 55 / 100
+            if x.strength < tune.destroy_below:
+                x.strength = 0
+                sim.lost(game, x, day, player)
+                sim.tidy()
+        if w.id != 0 && player != 0 && w.involves(player):
+            w.add_score(player, tune.score_relief)
+    if kind == "relieve":
+        int full = sim.full_strength(game, sys)
+        if garrisons.damaged(sys):
+            garrisons.set(sys, garrisons.hp(sys, full) + full * 30 / 100, day - 1)
+        chronicle.add(game, day, "Relief of " + where + ": you drive off the besiegers' van.", false, false)
+        chronicle.medal(game, day, "relief", "Relief Star", "for the relief of " + where + ".")
+    else if kind == "intercept":
+        chronicle.medal(game, day, "intercept", "Interceptor's Ribbon", "for intercepting a flotilla at " + where + ".")
+    else if kind == "hunt":
+        chronicle.medal(game, day, "raiders", "Raider's Bane", "for hunting pirate raiders at " + where + ".")
+    else if kind == "rebels":
+        chronicle.medal(game, day, "rebels", "Loyalty Medal", "for hunting rebels at " + where + ".")
+    else if kind == "volunteer":
+        chronicle.medal(game, day, "volunteer", "Volunteer's Ribbon", "for volunteer service at " + where + ".")
+    else if kind == "reinforce":
+        if x.alive():
+            x.strength = x.strength + x.full * 20 / 100
+        int full = sim.full_strength(game, sys)
+        garrisons.set(sys, garrisons.hp(sys, full) - full * 25 / 100, day - 1)
+        chronicle.medal(game, day, "siege", "Siege Cross", "for supplying the siege of " + where + ".")
+    else if kind == "supply":
+        int full = sim.full_strength(game, sys)
+        int k = garrisons.find(sys)
+        if k >= 0:
+            garrisons.release(sys)
+        garrisons.place(sys, full, day)
+        world.garrisons[garrisons.find(sys)][1] = full * 130 / 100
+        chronicle.medal(game, day, "supply", "Quartermaster's Medal", "for supplying the garrison at " + where + ".")
+    else if kind == "envoy":
+        world.story[3] = 1
+        int m = galaxy.minor(sys)
+        if m >= 0:
+            world.unrest[m] = world.unrest[m] / 2
+        chronicle.add(game, day, "Alondo's envoy reaches " + where + ": the border worlds are reassured, for now.", false, false)
+        chronicle.medal(game, day, "envoy", "Envoy's Commendation", "for escorting the Free Worlds' envoy to " + where + ".")
+    else if kind == "investigate":
+        world.story[3] = 2
+        chronicle.add(game, day, "The raid at " + where + " was made with Republic surplus codes: someone wants a war on the border.", false, false)
+        chronicle.medal(game, day, "investigate", "Investigator's Citation", "for the inquiry into the raid at " + where + ".")
+
+// The static jobs' feedback: scouting and courier kills ("intel"), warship
+// kills ("blows") and dispatches score for the member's faction in its first war.
+void static_jobs(es.Game game, int player):
+    int intel = game.condition("diplomacy: intel")
+    int blows = game.condition("diplomacy: blows")
+    int dispatches = game.condition("diplomacy: dispatches")
+    if intel == 0 && blows == 0 && dispatches == 0:
+        return
+    game.set_condition("diplomacy: intel", 0)
+    game.set_condition("diplomacy: blows", 0)
+    game.set_condition("diplomacy: dispatches", 0)
+    world.stat("intel", intel)
+    world.stat("blows", blows)
+    world.stat("dispatches", dispatches)
+    if player == 0:
+        return
+    []War ws = world.wars_of(player)
+    if ws.len() == 0:
+        return
+    War w = ws[0]
+    w.add_score(player, intel + 2 * blows)
+    w.add_exhaustion(player, -10 * dispatches)
+    w.add_exhaustion(w.other(player), 10 * blows)

@@ -1,0 +1,24 @@
+class DiplomacyProbe extends es.Mod
+
+// A probe for Diplomacy's in-game tests (test/ingame/run.sh installs it):
+// on every arrival and landing it sets "test: luna sells <model>" to 1 for
+// each of the Navy Advanced hulls Luna's shipyard sells (mod API 9's
+// shipyard listing), which the game's test conditions cannot see.
+
+import "imports:sdk/es"
+
+string name():
+    return "diplomacy probe"
+
+// Mod API 9, whatever the SDK: loader 0.1.0 checks only api_version.
+int api_version():
+    return 9
+
+int min_api():
+    return 9
+
+void on_enter(es.Game game, string system):
+    for k in 0..<game.shipyard_count("Luna"):
+        string model = game.shipyard_model("Luna", k)
+        if model == "Frigate" || model == "Cruiser" || model == "Carrier" || model == "Auxiliary":
+            game.set_condition("test: luna sells " + model, 1)

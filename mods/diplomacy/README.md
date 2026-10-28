@@ -1,205 +1,408 @@
 # Diplomacy
 
-A light diplomacy layer for Endless Sky, written in DadoScript for the Dado
-mod loader (es-modloader, installed in the game's `modloaders` folder). It is
-built against the SDK's mod API, so it needs a loader that speaks that API or a
-newer one (an older one refuses it); the newest API feature it uses is from
-API 4 (`map_detail`). Once the Free Worlds campaign is over, the
-Republic, the Free Worlds and the Syndicate now and then go to war over their
-borders, pirates raid the settled worlds, and named commanders lead the fleets. See [DESIGN.md](DESIGN.md) for the plan this follows.
+A diplomacy layer for Endless Sky, written in DadoScript for the Dado mod
+loader (es-modloader, installed in the game's `modloaders` folder). Once the
+Free Worlds campaign is over, human space is carved into **three major
+factions** (the Republic, the Free Worlds, the Syndicate), **thirteen minor
+regions** they compete for, and three pirate holdings. Wars over the minors run
+side by side and end in peace terms that move borders; regions rise against
+their rulers, either seceding as rebel factions or going over to a neighbour;
+pirates raid; named commanders lead the fleets; and the War Room tells the
+story. See [DESIGN.md](DESIGN.md) for the plan and the milestones.
+
+It is built against the SDK's mod API and needs **mod API 9** (tables, full
+screens and charts, job-board jobs, per-pilot storage, map rings and labels).
+`api_version()` and `min_api()` both say **9**, whatever SDK it is built with:
+loader 0.1.0 checks only `api_version()` and refuses a newer one, and a loader
+of mod API 10 checks `min_api()`. The API 10 calls (the notification bus,
+`on_pilot_loaded`) are made only when the game has them (`Game.has`, itself
+looked up first, since an API 9 game has no `has`).
 
 It lives in the `es-mods` repository, in `mods/diplomacy`, and builds, checks,
 tests and deploys with the SDK's commands, which that repository carries (run
-them from its root; the SDK's own `mods/diplomacy` is a copy):
+them from its root):
 
 ```sh
 npm run check -- mods/diplomacy      # build, then run its hooks against the fake game
-npm test                             # every test, including test/sim.test.mjs (4000 simulated days)
+npm test                             # every test, including this mod's (test/*.test.mjs)
 npm run deploy -- mods/diplomacy     # build and install into the game's plugins folder
 npm run package -- mods/diplomacy    # build dist/Diplomacy.zip to share
 ```
+
+## Quick start
+
+To try Diplomacy without playing the whole Free Worlds campaign, start a new
+pilot (New Pilot on the main menu, or in Load / Save) and choose **Free Worlds
+Veteran (Diplomacy)** from the list of starts. It begins on Earth on 24 Feb 3016,
+the day the campaign ends, as if you had just finished it:
+
+* **The galaxy** of a finished campaign: every event the campaign applies, in
+  order (the war, the southern and northern expansions, Bloodsea, Albatross,
+  Tarazed joining, the armistice, the Pug invasion and its defeat, Algenib,
+  and the shipyards and outfitters they open). The ones still pending at the
+  end (the last Pug link restorations, the Navy leaving Algenib, Greenrock's
+  recovery, the stack core) are scheduled at their remaining offsets. The Free
+  Worlds hold 57 systems.
+* **The conditions** the campaign leaves set: `free worlds plot completed`,
+  `main plot completed`, `free worlds reconciliation`, `chosen sides`, karma 3,
+  every campaign mission done, the Free Worlds salary of 8,900 a day, and the
+  Pilot's and Militia licenses. Reputations are the campaign's (Republic 1,
+  Syndicate 1; the Pug make peace on the first landing, as for any finisher).
+* **A ship and money**: an Osprey with the Jump Drive the campaign fits, the
+  Syndicate extremists' Cloaking Device in the hold (it does not fit), and
+  5,000,000 credits (Parliament's commendation, paid the day the campaign
+  ends). No debt.
+
+What it skips: the campaign's missions themselves (none is offered again) and
+its side plots (the Wolf Pack, the Conservatory, the stack core hunt). The
+post-campaign content still comes: the epilogue missions, the war reactions,
+the Deep memorial, Geminus and Martini rebuilt. The path it reproduces is the
+Reconciliation ending (the defector rescued at New Tibet) on the honorable
+branches: the Susquehanna's word accepted at Hope, diplomacy at Thule instead
+of the attack on Greenrock, the Navy prisoners released, Poisonwood liberated
+with the Oathkeepers, and Bloodsea joining the Free Worlds.
+
+You start landed on Earth, where the Council's commission opens (it needs the
+Dado loader, like the rest of the mod); **Accept the commission** makes you a
+Free Worlds Commodore, and the first hour begins (see "The first hour").
+
+The start also applies Diplomacy's own event `diplomacy: luna navy yard`: Luna
+sells the Navy Advanced hulls (see "Luna's Navy yard").
+
+The start is `data/diplomacy fw veteran.txt`, generated from the game's data by
+`tools/fw-veteran/emit.py` (the path it follows, and why, is in
+`tools/fw-veteran/path.py`). After the game's campaign changes, make it again
+and check it (Python 3, standard library only):
+
+```sh
+python3 mods/diplomacy/tools/fw-veteran/emit.py <endless-sky>/data
+python3 mods/diplomacy/tools/fw-veteran/check.py <endless-sky>/data
+```
+
+`check.py` confirms the file is current, that every event and condition the
+campaign's missions apply is reproduced or is on a branch the path does not
+take (it lists each with its reason), that every name exists in the game's
+data, and that the territory gives each faction its capital.
 
 ## Layout
 
 ```
 mods/diplomacy/
   plugin.txt          the plugin's name and description
-  data/               diplomacy.txt (flotilla governments, Dispatches jobs) and
-                      diplomacy jobs.txt (generated by tools/gen-jobs.mjs)
+  data/               diplomacy.txt (flotilla governments, Dispatches jobs, the Luna yard event),
+                      diplomacy factions.txt (rebel governments and fleets, generated),
+                      diplomacy jobs.txt (faction jobs, generated by tools/gen-jobs.mjs),
+                      diplomacy news.txt (spaceport news) and
+                      diplomacy fw veteran.txt (the Free Worlds Veteran start, generated)
   src/                the mod, in DadoScript: Diplomacy.dados is the entry class
-                      (extends es.Mod), and the other classes it uses
+                      (extends es.Mod), and the other classes it uses; Regions.dados is generated
   debug/              the separate "Diplomacy Debug" plugin (plugin.txt and data,
                       no code): see Debug mode
   test/
-    sim.test.mjs      the simulation test, run by `npm test`
-    mock.mjs          the mock Game it drives the mod with
-    galaxy.mjs        reads the galaxy from the game's data files
-    galaxy.json       the galaxy the test uses, a snapshot made by tools/make-galaxy.mjs
+    sim.test.mjs      the long simulation test (4000 days of invariants)
+    factions.test.mjs the faction model's tests (minors, rebellion, wars, peace, operations...)
+    harness.mjs       builds the mod once and drives a mock game; mock.mjs is the mock Game
+    galaxy.mjs        reads the galaxy from the game's data (the Veteran start's territory)
+    galaxy.json       the galaxy the tests use, a snapshot made by tools/make-galaxy.mjs
     ingame/           in-game tests: need a game build and the Dado loader
   tools/
+    regions/          regions.mjs (the minors, hand-kept) and build.mjs (checks them, writes
+                      src/Regions.dados, data/diplomacy factions.txt and the table below)
     gen-jobs.mjs      writes data/diplomacy jobs.txt (and the in-game tests' copies)
     make-galaxy.mjs   writes test/galaxy.json from the game's data
+    qjs-time.mjs      times on_day in QuickJS, the game's engine
     deploy-debug.mjs  installs the Diplomacy Debug plugin
+    fw-veteran/       emit.py writes the Free Worlds Veteran start, check.py checks it
 ```
 
 `npm run build -- mods/diplomacy` writes the plugin to `dist/Diplomacy/`
-(`plugin.txt`, `data/`, and the mod as `scripts/diplomacy.js`). The plugin's
-name comes from `plugin.txt`, and the mod's id, `diplomacy`, from this
-folder's name.
+(`plugin.txt`, `data/`, and the mod as `scripts/diplomacy.js`).
+
+## Factions and minors
+
+Human space (every Republic, Free Worlds, Syndicate, pirate and independent
+system of the Free Worlds Veteran galaxy, 195 systems) is divided into
+**minors**. A major's territory is its **core** (the minor around its capital:
+the major itself) plus the other minors it holds. Each non-core minor has a
+**default parent** (who held it at the end of the campaign, or before the war
+for the Dirt Belt's middle), may be **split** between two sides, and may
+**rebel**. Pirate holdings belong to no major and are never taken (the pirates
+raid from them).
+
+**Capitals:** the Republic's is **Sol** (Earth, its Parliament), the Free
+Worlds' **Gamma Corvi** (Bourne, "the capital of the Free Worlds" in the
+prologue), the Syndicate's **Markab** (Hephaestus, its headquarters in "FW
+Syndicate Diplomacy 1"). A capital is never captured, ceded or handed over.
+
+The table is made from `tools/regions/regions.mjs` by `tools/regions/build.mjs`,
+which checks it against the game's map (every human system in exactly one
+minor, each minor contiguous over its own lanes but for pirate dens, each core
+holding its capital) and writes `src/Regions.dados` and the rebels' data. The
+counts are the Veteran galaxy's (four months in, after the start's scheduled
+events: the Navy leaves Algenib, which the pirates take back).
+
+<!-- regions -->
+| Minor | Default parent | Systems | Key systems | Rebels |
+|---|---|---|---|---|
+| Earth | **Republic (core)** | 13 (Republic 13) | capital **Sol**; Sol, Alpha Centauri, Sirius, Eteron, Altair, Vega, Nocte, Denebola, Fingol, Merak, Regulus, Porrima, Muphrid | — |
+| The Paradise Worlds | Republic | 15 (Republic 15) | Procyon, Capella, Aldebaran, Menkalinan, Pollux, Castor, Talita, Alhena, Miaplacidus, Alphard, Tejat, Kursa, Wazn, Phurad, Elnath | Paradise Secession |
+| The Deep | Republic | 13 (Republic 13) | Wezen, Naos, Aludra, Suhail, Regor, Avior, Markeb, Aspidiske, Epsilon Leonis, Adhara, Gomeisa, Zosma, Dubhe | Deep Compact |
+| The Far North | Republic | 12 (Republic 12) | Gorvi, Mintaka, Tortor, Alnitak, Saiph, Rigel, Mebsuta, Betelgeuse, Mirzam, Alheka, Canopus, Phact | Northern Free States |
+| The Northern Rim | Republic | 9 (Republic 9) | Hassaleh, Danoa, Sumar, Rajak, Ultima Thule, Cardax, Volax, Sospi, Nihal | Thule League |
+| The Western Dirt Belt | Republic | 15 (Republic 15) | Algieba, Tania Australis, Lolami, Mora, Fala, Phecda, Delta Velorum, Turais, Algorel, Gacrux, Cor Caroli, Muhlifain, Limen, Orbona, Terminus | Dirt Belt Union |
+| The Central Dirt Belt | Republic | 14 (Republic 7, Free Worlds 7) | Mizar, Ipsing, Arcturus, Holeb, Rutilicus, Vindemiatrix, Sarin, Alioth, Alphecca, Boral, Seginus, Wei, Alnasl, Eber | Belt Free Worlds |
+| The Eastern Dirt Belt | Free Worlds | 12 (Republic 4, Free Worlds 8) | Menkent, Cebalrai, Hintar, Kaus Borealis, Rasalhague, Zeta Aquilae, Orvala, Ascella, Naper, Peacock, Tais, Kaus Australis | Eastern Belt Alliance |
+| The Rim | **Free Worlds (core)** | 16 (Free Worlds 16) | capital **Gamma Corvi**; Gamma Corvi, Spica, Minkar, Mimosa, Kraz, Acrux, Izar, Zeta Centauri, Hadar, Alkaid, Kochab, Zubeneschamali, Ildaria, Zubenelgenubi, Sabik, Unukalhai | — |
+| The South | Free Worlds | 11 (Free Worlds 11) | Kornephoros, Aldhibain, Sargas, Lesath, Rastaban, Girtab, Dschubba, Atria, Han, Alpha Arae, Delta Sagittarii | Southern Pact |
+| The Southern Frontier | Free Worlds | 7 (Free Worlds 6, Republic 1) | Alniyat, Antares, Pherkad, Yed Prior, Kappa Centauri, Beta Lupi, Graffias | Bloodsea Free Captains |
+| Tarazed's Reach | Free Worlds | 9 (Free Worlds 9) | Tarazed, Umbral, Dabih, Lurata, Albireo, Sadr, Albaldah, Eltanin, Nunki | Tarazed Directorate |
+| The Core | **Syndicate (core)** | 16 (Syndicate 16) | capital **Markab**; Markab, Ankaa, Fomalhaut, Delta Capricorni, Scheat, Al Dhanab, Alpheratz, Ruchbah, Algol, Hamal, Alpha Hydri, Achernar, Polaris, Schedar, Mirach, Gamma Cassiopeiae | — |
+| The Upper Core | Syndicate | 6 (Syndicate 6) | Moktar, Mirfak, Bellatrix, Menkar, Zaurak, Sheratan | Upper Core Cooperative |
+| The Earthward Worlds | Syndicate | 4 (Syndicate 4) | Acamar, Kugel, Diphda, Caph | Earthward Assembly |
+| The Lower Core | Syndicate | 4 (Syndicate 4) | Matar, Alnair, Alderamin, Persian | Lower Core Syndics |
+| The Northern Pirate Worlds | pirates | 5 (Pirate 5) | Arneb, Unagi, Hatysa, Almaaz, Alnilam | — |
+| The Core Pirate Worlds | pirates | 7 (Pirate 7) | Alcyone, Oblate, Durax, Misam, Almach, Gienah, Algenib | — |
+| The Southern Pirate Worlds | pirates | 7 (Pirate 6, Independent 1) | Citadelle, Alpherg, Belenos, Fumalsamakah, Thuban, Men, Shaula | — |
+<!-- /regions -->
+
+Why these lines: the names are the game's own regions (planet attributes
+"paradise", "deep", "north", "dirt belt", "rim", "south", "core", "near earth",
+and the map's labels), and each minor follows the lanes. Lore notes are in
+`regions.mjs`. In short: the **Central and Eastern Dirt Belt** are where the
+war's front ran and stay split between the Republic and the Free Worlds; the
+**Southern Frontier** holds Bloodsea (Antares), which joined the Free Worlds,
+and Poisonwood (Graffias), still the Republic's; **Tarazed's Reach** joined the
+Free Worlds late; the **Earthward Worlds** are the Syndicate's worlds one jump
+from Sol. The Free Worlds and the Syndicate share no border at first.
+
+**Rebel factions** are sides of their own (`Factions`: 5 + the minor's index),
+with a government defined in `data/diplomacy factions.txt` (display name and
+colour, the parent's swizzle) and two fleets, "Small <rebels>" and "Large
+<rebels>", copied from the parent's "Small"/"Large" fleets under the rebels'
+flag. They are minor-sized: no core and no capital. Promoting a long-lived one
+to a major is left for later milestones.
 
 ## What it does
 
 * **Turning it on.** It is opt-in, so it can be installed on a save that has
   already finished the Free Worlds campaign. While `free worlds plot
-  completed` is set and Diplomacy is not on yet, landing (or loading a save on
-  a planet) opens the **Diplomacy** offer in the planet screen. The planet
-  button shows **Diplomacy** too. It offers **Turn on Diplomacy**, **Not now**
-  (no offer on landing until the game restarts, though the button stays) and
-  **Never** (off for that pilot). Turning it on makes the pilot a member of the
-  Free Worlds at **Commodore**, the rank their part in the war earned, at the
-  same 8,900 credits a day the campaign pays. From then on it runs every day
-  for that pilot. The test override `diplomacy: force active` and debug mode
-  turn it on without asking, with no membership.
-* **Wars.** Now and then (4% a day, after a truce of 40–120 days) two factions
-  go to war for 30–70 days, then make a truce. One war runs at a time. A war
-  is only declared between two factions where at least one could take
-  something from the other. **The Free Worlds and the Syndicate share no border
-  within reach, so they never fight.** In practice the wars are Republic vs
-  Free Worlds and Republic vs Syndicate.
-* **Flotillas.** A faction at war launches flotillas (small 70, medium 140,
-  large 250 strength; at most 3 per faction) from its system nearest the
-  objective. The objective is one of the 4 capturable enemy systems nearest its
-  present border. A flotilla moves one jump a day by the shortest lane path. If
-  an enemy flotilla is fewer jumps away than its objective, it goes after that
-  flotilla instead. Hostile flotillas in one system fight each day.
-* **Sieges and captures.** At its objective a flotilla besieges the garrison.
-  The garrison is derived from the planets' defense fleets (the ones a player
-  fights to dominate them), scaled down to 140–400 strength. Each day both
-  sides lose strength. While an enemy flotilla is in the system the siege
-  pauses. A siege takes about 6 days, and anywhere from 2 to about 4 weeks, so
-  an enemy flotilla a few jumps away can arrive in time. When the garrison
-  falls the system changes hands for real: its government changes through a
-  world change that is saved with the pilot and repaints the map. Garrisons
-  recover 10% a day when nobody besieges them.
-* **Limits.** Capitals (Sol, Gamma Corvi, Markab) are never taken. A faction
-  can only take systems within 2 jumps of its *original* territory: what it
-  held when the diplomacy began, counting systems it has lost since. So
-  nobody is ever pushed back more than 2 jumps, and a faction can always
-  retake its own lost systems.
-* **Truce.** War flotillas go home and borders stay where the war left them.
-* **Commanders.** Every flotilla and raid is led by a named commander: an
-  Admiral of the Republic, a Commodore of the Free Worlds, a Director of the
-  Syndicate, a pirate Captain. Each side keeps a roster of 5, saved with the
-  pilot, and each commander has a personality:
-  * **bold:** hits 20% harder, and chases enemies up to 2 jumps farther than its objective;
-  * **cautious:** takes 20% less damage, won't chase much stronger enemies, and turns for home below 40% strength (pirates: cut the raid short when hunted);
-  * **methodical:** presses sieges 30% harder (pirates: always stay the full 3 days, and plunder harder);
-  * **reckless:** hits 35% harder and takes 25% more damage.
+  completed` is set and Diplomacy is not on yet, landing opens **A Council
+  commission**: Alondo Gruyere writes that the Senate's defense committee has
+  kept your commission open. **Accept the commission** makes the pilot a Free
+  Worlds **Commodore** at the campaign's 8,900 credits a day; **Not now** (no
+  offer on landing until the game restarts; the planet button stays) and
+  **Never** (off for that pilot). The test override `diplomacy: force active`
+  and debug mode turn it on without asking, with no membership.
+* **Several wars at once.** Up to **3** wars run side by side (a rebellion or
+  a defection, which cannot wait, may make it **4**; at 4 a rising is put down
+  for now). A new war is declared at most once every 8-20 days, and none
+  against a faction already fighting two. **Never two wars between one
+  pair:** a rising or a forced war between a pair already at war widens that
+  war instead (new goals, up to 4, and a later end; a crisis becomes the
+  rising's kind of war). Each war has two sides, one or two
+  **goals** (minors), a reason ("split", "claim", "border", "defection"...), a
+  **score** and each side's **exhaustion**, and a kind: a **border crisis**
+  (limited: one goal, 25-45 days, over at a score of 30), a **war** (40-90
+  days, sometimes with a counter-goal for the defender), a **rebellion**, a
+  **defection war** (60-120 days) or a **reconquest** of a rebel minor.
+* **The war-likelihood rule.** Each pair of factions has a war pressure, a
+  chance per day:
+  * each minor **both hold part of** adds **0.40%**, growing by half again for
+    every 120 days the split goes without a war between them, up to 3 times;
+  * each minor one side **claims** (its default parent, or a minor it lost
+    systems of in the last 1500 days) that the other holds, on its border,
+    adds **0.12%**;
+  * each **whole** minor of the other's on its border adds only **0.04%**, or
+    **0.40%** while the other is at war and tiring (exhaustion 20%+): an
+    opportunity;
+  * a major facing rebels who hold a minor it claims adds **0.45%**;
+  * **grudges** (6 points per system lost in a war, decaying one point every
+    15 days) multiply it by (20 + grudge) / 20;
+  * a **truce** of 25-70 days follows every peace (200-400 days of recognised
+    independence after a rebellion the rebels did not lose), when it is 0;
+  * the player's faction, quiet for 45 days, has its pressures quadrupled, so
+    there is always something going on.
 
-  Commanders count their victories. One whose flotilla is destroyed dies half
-  the time, and a new name takes their post.
-* **Pirate raids.** Each day there is a 12% chance (up to 4 at once) that a
-  raid sets out from a pirate system. It visits 2–3 inhabited faction systems
-  within 4 jumps of home, nearest first, staying 1–3 days at each, then goes
-  home and disbands. While it stays unopposed it plunders: the system's
-  garrison loses strength, which makes it easier to capture in a war. The
-  raiders are the home system's own pirate fleets (Core, Northern or Southern
-  pirates), under the real Pirate government.
-* **Relief flotillas.** When a raid reaches a faction's system, that faction
-  decides once whether to send a relief flotilla after it: 60% of the time at
-  peace, 10% at war, and only with a free flotilla slot. It sets out from the
-  nearest other system it holds, chases the raid, fights it, and goes home when
-  the raid is gone, home, or 12 days have passed. Members are told when their
-  faction's space is raided and when relief goes out.
-* **Sim score.** Every fight rolls a winner each day with odds
-  score_a : score_b. Score = strength × quality × the commander's attack.
-  Quality comes from the real ships of the fleets each side spawns as:
-  √((hull + shields) × dps) × (speed ÷ average speed)^0.5, per strength point,
-  normalised so that an average faction is 1.0. The game's log prints each
-  side's quality once per session. The day's winner takes 60% of the usual
-  losses and the loser 140%. Sieges roll against the garrison's score, whose
-  quality comes from the system's own defense fleets.
-* **Fleet sizes make up most of the difference.** With the base game's ships
-  the Republic's fleets are far stronger per point than the Free Worlds' (the
-  log shows about 141% against 58%, with the Syndicate at 92%). A faction whose
-  ships are weaker therefore fields bigger flotillas. They are sized so that
-  strength × quality reaches 85% of the best faction's, which today means the
-  Free Worlds at about 2× and the Syndicate at about 1.3×. The Republic keeps
-  an edge. Over 6,000 simulated days with the real fleet stats, the Republic
-  ends 8–19 systems up and the Free Worlds 3–11 down; without the scaling it
-  was +23–26 and −16–17. The log line shows the sizes in use.
-* **Sieges always take time.** A garrison loses at most 40% of its full
-  strength a day. No system falls before its besiegers have spent 2 days at it,
-  even one whose garrison raids have worn down.
-* **On the map.** Each flotilla and raid gets a marker in its side's colour
-  (pirates in magenta) with a short label, `Free Worlds flotilla (small)` or
-  `Pirate raiders (medium)`, and a line to where it is heading. A besieged
-  system gets a `Siege: 40%` marker. Select a system and the map's side panel,
-  below the map key, lists what is there:
+  In the tests, with the Veteran galaxy's three split minors the Republic and
+  the Free Worlds go to war after a median of 59 days; with the same minors
+  whole, 326.
+* **Goals and fronts.** A war's goal is the defender's minor on the
+  attacker's border that scores best: split ones first, then the attacker's
+  claims, then the rest; a core now and then (it scores about level with a
+  plain whole minor: about 1 war in 10 is over a core, never its capital), and
+  near the player for the first war. Flotillas attack only systems in the war's goals; a side with
+  nothing to take there holds its goal system nearest the enemy and intercepts.
+* **Peace terms.** When a war ends (by its date, a side's exhaustion reaching
+  100%, a crisis decided, or a side holding nothing), a side with a score of
+  **15** or more wins. Core systems taken **in that war** go back to their
+  major, unless the side that took them won with a score of **60** or more (on
+  a draw they stay where they are). The loser gives back what it took from
+  the winner in that war. A winner holding **60%** of a goal minor's systems (of
+  those the two hold) is ceded the rest of it. An old parent that wins a
+  rebellion or a defection war gets back every system that rose (they count as
+  taken in that war). Without a winner
+  each keeps what it holds (a defected minor stays with its patron, split if
+  the old parent took part of it); a rebellion the rebels did not lose ends in
+  recognised independence. The chronicle gives the terms:
+  "Peace: The Free Worlds win the war over the Central Dirt Belt against the
+  Republic; the Republic give back 1 system; the Republic cede the Central
+  Dirt Belt (5 systems)."
+* **Unrest.** Every non-core minor has an unrest (0-100) that drifts 3% of the
+  gap a day toward a target: 8, plus 2 per jump from its owner's capital past
+  3, plus **22 under foreign rule** (an owner that is not its default parent),
+  plus 8 if split, plus 4 per war its owner fights and its owner's worst
+  exhaustion / 5, plus the owner's **defeats** (20 per war lost, 5 per system
+  lost, decaying 1 a day), its **core shock** (25 per core system lost,
+  decaying 1 every 2 days) and the minor's **neglect** (3 per day pirates
+  plunder it unopposed, at most 20, decaying 1 a day).
+* **Rebellion.** Above unrest **40** a minor held by a major (two systems or
+  more) may rise: a chance per day of (unrest − 40)² / 400 percent, at most
+  once in 600 days. **A core never rises.** How it goes, by weight:
+  * **secession**, weight 100: the owner's systems in it go to its rebel
+    faction (a real government), at war with its old parent at once over the
+    minor (a rebellion); other majors may later go to war with the rebels to
+    take it (a reconquest). It stays independent until it is taken back;
+  * **defection** to a major on its border, weight 40 each, +60 if that major
+    is its default parent, +30 if it already holds part of it, halved if that
+    major already fights two wars, scaled by the two majors' sizes: its systems
+    go to the new patron, and the old parent declares war at once with the
+    minor as the goal ("Bloodsea defects to the Republic (7 systems); the Free
+    Worlds declare war to take it back."). Its garrisons fight for the patron.
+    With no major on its border, it secedes;
+  * a separatist faction losing its war (exhaustion 60%+) may ask a major on
+    its border for **protection** (1.5% a day): it is annexed, and its war
+    becomes a defection war between that major and the old parent.
 
-  ```
-  Free Worlds flotilla (medium)
-  Commodore Navarro, bold
-  2 victories
-  Strength 210 of 285
-  Besieging Alioth, day 3 (40% done)
-  Out 9 days, from Zeta Aquilae
-  ```
-
-  Raids show their route (`Raiding Vega (day 2 of 3); then Sol, Alcyone` or
-  `Bound for …`), relief flotillas their quarry (`Hunting the pirate raiders
-  at …`), and a siege the garrison left and how long it has held.
+  Over 4000 days a pilot sees about 4-5 risings (13 secessions and 8
+  defections over 5 test pilots, and 1 annexation).
+* **Flotillas.** A side at war launches flotillas (small 70, medium 140, large
+  250 strength, scaled for ship quality; rebels at 70%) from its system nearest
+  the objective: at most 4 per major and 2 per rebel faction (flotillas going
+  home do not count), and in any one war at most 3 or its share of those among
+  the wars it fights (2 each in two wars). The wars take turns launching first,
+  and a war a side has no flotilla in yet launches twice as readily. A flotilla moves one jump a day by the shortest lane path inside
+  human space (distances are cached; the lanes are re-read when an event cuts
+  or restores them). If an enemy flotilla is nearer than its objective it goes
+  after it. Hostile flotillas in one system fight each day.
+* **Sieges, captures and consolidation.** At its objective a flotilla besieges
+  the garrison (from the planets' defense fleets, 140-400 strength; rebels hold
+  theirs at 80%). A siege takes about 5 days, never under 2. When the garrison
+  falls the system changes hands (a world change, saved with the pilot). A
+  fresh capture **consolidates**: its garrison starts at 60%, stands at 150% of
+  full for 20 days and recovers 15% a day, so it is not simply taken back the
+  next week. After 10 days without a siege its **patrols** become the new
+  owner's: the first time a system leaves its original owner, every fleet named
+  for that owner (its patrols, "Republic Logistics", "Navy Surveillance", the
+  Oathkeepers and Deep Security; the Free Worlds' militia) is removed and kept,
+  and the new owner's "Small"/"Large" fleets are added; between later owners
+  those two are swapped; back with its original owner, the system gets its own
+  fleets again (at standard periods, since the game does not say what theirs
+  were). The captures, swaps and attitude changes of a
+  day go to the game as **one** world change (one saved event a day at most).
+  Over 4000 days a war flips about 8 systems and moves 3-4 for good (the old
+  version flipped 22 and moved 3).
+* **Pirate raids**, **relief flotillas** and **commanders** work as before:
+  raids (12% a day, up to 4) visit 2-3 inhabited systems of the factions and
+  rebels within 4 jumps of a pirate system (read from the day's owners, so a
+  system that turns pirate, like Gienah and Algenib 47 days into the Veteran
+  start, raids from the next day), plundering the garrisons (and
+  adding to the minor's neglect); a major whose space is raided sends relief
+  (60% at peace, 10% at war). Every flotilla and raid has a named commander
+  (bold, cautious, methodical, reckless) from its side's roster of 5; rebels'
+  are "Commander"s. Commanders count victories and may die with their
+  flotillas.
+* **Sim score.** Every fight rolls a winner each day with odds score_a :
+  score_b, score = strength × quality × the commander's attack; quality from
+  the real ships of each side's fleets (rebels: their parent's), normalised so
+  that an average faction is 1.0, and fleet sizes balance most of the
+  difference (the Free Worlds field about 2× the strength, the Syndicate 1.3×).
 * **In person.** A player who flies to a flotilla's system finds its ships
-  there. They are spawned from the faction's "Small …" and "Large …" fleets,
-  sized to the flotilla's strength. During a siege the system's defense fleets
-  are there too, scaled to the garrison's strength. Every second the mod reads
-  back how much of each tagged group can still fight and lowers the
-  simulation's strengths to match. A flotilla the player sees destroyed is
-  destroyed. Defenders the player helps wipe out hand the system to the
-  besieger. The ships exist only while the player is in that system.
-* **Joining.** On a planet in any system the three factions hold, the planet
-  screen has a **Faction** button. It opens the faction's panel in the planet
-  screen's content area, where the bank and trading panels go. The panel
-  shows territory (held, gained, lost), war, its flotillas and their
-  commanders, raids in its space, and your standing, with **Join** or
-  **Leave** (keys 1 and 2). To join one faction you have to leave the other first. A member's
-  reputation is +10 with its faction's flotilla government, −10 with the
-  flotillas of factions at war with it (so they attack you), and +1 with the
-  rest.
-* **Rank and salary.** Members earn 1 merit per enemy flotilla or garrison ship
-  they disable or destroy and lose 3 per ship of their own faction. Faction
-  jobs add more (see below). Ranks: Recruit 0, Ensign 10, Lieutenant 25,
-  Commander 50, Captain 100, Commodore 200, Admiral 400 merit. Each raider a
-  member destroys is worth 1 merit. Salary rises on a curve: 200, 600, 1,800,
-  3,600, 6,000, 8,900 (Commodore, matching the end of the Free Worlds
-  campaign) and 12,000 credits a day. The game pays it as the condition
-  `salary: Republic commission` or `salary: Syndicate commission`, and for the
-  Free Worlds through the campaign's own `salary: Free Worlds`, so a veteran
-  never draws two. Leaving resets merit and rank and stops the salary.
-* **Republic licenses.** The Republic issues its members Navy licenses as they
-  climb: **Navy** at Lieutenant, **Navy Auxiliary** at Captain, **Navy
-  Cruiser** at Commodore and **Navy Carrier** at Admiral. These are the base
-  game's `license: …` conditions, so Navy shipyards sell to you. Like any
-  license they are kept after leaving. The faction panel names the next one.
-* **Faction jobs.** While a member's faction is at war, its job boards offer
-  work against the enemy, each adding merit:
+  there, and during a siege the defenders; what the player sees destroyed is
+  gone from the simulation, and defenders the player helps wipe out hand the
+  system to the besieger.
+* **The Faction panel.** In a system a faction or rebel faction holds, the
+  planet screen has a **Faction** button. Its panel gives the faction's wars
+  and standing and a **table of its minors** (held, unrest, status: held,
+  split, war goal, rebels, lost), with **Join**/**Leave**, **War Room**,
+  **Service Record** and **Close** (keys 1, 2, ...).
+* **The War Room** is a full screen: **Wars** (a row per war: sides, goals,
+  score, day; choose one for its exhaustion, captures and who holds its goals)
+  with a chart of each major's territory over time; **Forces** (every flotilla,
+  raid and siege); **Minors** (owner, holdings, unrest; a split minor shows
+  both sides) with a chart of the rebels' territory; and **Chronicle** (the
+  newest 60 named events: "Siege of Alioth, day 6: Alioth falls to the
+  Republic.", "Peace: ...", risings, defections, commanders fallen, reliefs).
+* **On the map** each flotilla and raid has a marker and a line, a siege a
+  "Siege: 40%" marker, every system still to be taken in a war a ring in the
+  attacker's colour, and every minor a label: "Paradise Worlds (Republic)",
+  "Rim (Free Worlds core)", "Central Dirt Belt (split)", or "East Dirt Belt,
+  front: Republic / Free Worlds" while a war is about it. The side panel gives
+  the details.
+* **Messages.** Events that concern the player's faction (its wars declared
+  and ended, captures in its wars, its minors rising, its commanders fallen)
+  are messaged at once; everything else goes into one **daily digest**
+  ("Elsewhere: ... And 2 more events; see the War Room.").
+* **Spaceport news** (`data/diplomacy news.txt`): people talk about their
+  faction's war, the border crisis on Dirt Belt worlds, the split Belt and the
+  rebellions, by the conditions below.
+* **Operations.** On landing, the job board offers work made from the live
+  war, near the player (4 jumps), up to 3 at a time:
 
-  | Job | Target | Pay | Merit | From rank |
-  |---|---|---|---|---|
-  | Dispatches | carry dispatches 2–5 jumps within your territory | 20,000 + 150/jump | 5 | Recruit |
-  | Intercept a courier | a lone courier (Flivver or Sparrow) 1–3 jumps away in enemy space | 60,000 | 3 | Recruit |
-  | Destroy a scout | a fast scout (Raven, Hawk or Quicksilver) | 70,000 | 3 | Recruit |
-  | Scout systems | fly through enemy systems 1–3 jumps away and report back | 40,000 + 400/jump | 4 | Recruit |
-  | Destroy a warship | a medium warship (Frigate, Osprey or Manta) 1–4 jumps away | 220,000 | 6 | Ensign |
-  | Destroy a capital ship | a heavy warship (Cruiser, Falcon or Vanguard) | 600,000 | 12 | Lieutenant |
-  | Break a warfleet | the enemy's full "Large" fleet | 1,800,000 | 30 | Commander |
+  | Operation | When | Outcome written back |
+  |---|---|---|
+  | Relieve the siege of X | an enemy besieges your faction's system | the besiegers lose 45%; the garrison +30%; score +3; Relief Star |
+  | Supply the siege of X | your flotilla besieges an enemy system | it gains 20% strength, the garrison −25%; Siege Cross |
+  | Intercept (commander) at X | an enemy flotilla in your war | it loses 45%; score +3; Interceptor's Ribbon |
+  | Supply the garrison at X | your system in a war's goals | its garrison stands at 130%; Quartermaster's Medal |
+  | Hunt the raiders under (captain) | a pirate raid nearby | the raid loses 45%; Raider's Bane |
+  | Hunt the rebels under (commander) | a rebel flotilla nearby | it loses 45%; Loyalty Medal |
+  | Volunteer: intercept (commander) | your faction at peace, another war nearby | as Intercept, for the other side; Volunteer's Ribbon |
 
-  Kill jobs pay on the kill and are done, as the game's own bounties are. The
-  targets fly under the enemy's flotilla government, which is hostile only to
-  members of its enemies. The jobs are generated by `tools/gen-jobs.mjs` into
-  `data/diplomacy jobs.txt`, one copy for each side of each possible
-  war. Each is offered by `diplomacy: member`, `diplomacy: enemy` and
-  `diplomacy: rank`.
+  Each job's "on complete" sets `diplomacy: op <key>` to 1 (its "on fail" adds
+  2); the next day the mod applies the outcome, clears the condition and
+  awards the medal. The mod tracks each job it offers (24 at most); every new
+  offer of the same job renews its track (the deadline, 20 days, runs from the
+  offer the player takes), a track is kept while its job is taken and for 45
+  days after its last offer, and a new track clears any outcome left from an
+  earlier job of that name, so each outcome is applied once, to its own job. The static jobs feed the war too: scouting and courier
+  kills add to `diplomacy: intel`, warship kills to `diplomacy: blows` and
+  Dispatches to `diplomacy: dispatches`, turned into score (and less
+  exhaustion) for the member's faction in its first war.
+* **Medals and the service record.** Each operation done earns its named
+  decoration (`diplomacy: medal <id>` counts them: relief, siege, intercept,
+  supply, raiders, rebels, volunteer, envoy, investigate). The **Service
+  Record** screen lists them with their dates and citations (the newest 40),
+  with the member's rank, merit and operations done.
+* **The first hour** (the Free Worlds Veteran, or any campaign veteran who
+  accepts): an uneasy peace. On landing in the first month the job board offers
+  two introductory operations: **escort Alondo's envoy** to a Free Worlds
+  world on the split border (it halves that minor's unrest), then **Freya's
+  inquiry** into a raid made with Republic surplus codes. **Between days 10 and
+  20** a **border crisis** breaks out between the player's faction and its
+  likeliest rival over a minor they share, the one nearest the player
+  (`diplomacy: crisis minor`). No other war comes before it. While the
+  Reconciliation is young (`free worlds reconciliation`, the first 300 days),
+  every war between majors is a limited border crisis.
+* **Luna's Navy yard.** The campaign wrecks Geminus (event "war begins" clears
+  its shipyard), the only world selling the Navy Advanced hulls (Frigate,
+  Cruiser, Carrier, Auxiliary), until "geminus rebuilt" 90 days after the
+  campaign; and in Diplomacy Geminus (Castor, in the Paradise Worlds) can change
+  hands. So Luna, in Sol, which is never taken, sells them too: the event
+  `diplomacy: luna navy yard` (a planet's `shipyard` line in an event adds to
+  its yards; Luna keeps its own) is applied by the Veteran start, and for any
+  other pilot the mod applies the same change once (`diplomacy: luna yard`)
+  when the campaign is over or Geminus lies wrecked.
+* **Joining, rank, salary and licenses** work as before: merit per enemy ship
+  (1) and per operation and job; ranks Recruit 0 to Admiral 400 merit; salary
+  200 to 12,000 a day (Commodore 8,900, through `salary: Free Worlds` for the
+  Free Worlds); the Republic's Navy licenses at Lieutenant, Captain, Commodore
+  and Admiral. Members are allies of their faction's flotillas (+10) and
+  enemies of the flotillas and rebels it is at war with (−10).
+* **Faction jobs** (`data/diplomacy jobs.txt`, generated by
+  `tools/gen-jobs.mjs`): while the member's faction is at war with another
+  major (`diplomacy: enemy`), its job boards offer courier and scout kills,
+  scouting, warship kills and breaking a warfleet, as before; there are now
+  copies for the Free Worlds and the Syndicate against each other too.
 
 ## Deploying
 
@@ -229,9 +432,8 @@ so that it is replaced.
 ## Debug mode
 
 Debug mode is a second plugin, **Diplomacy Debug**, kept in `debug/`. It has
-no code of its own (a `plugin.txt` that requires Diplomacy, and a data file),
-so `npm run deploy` does not install it: `tools/deploy-debug.mjs` does, beside
-Diplomacy:
+no code of its own, so `npm run deploy` does not install it:
+`tools/deploy-debug.mjs` does, beside Diplomacy:
 
 ```sh
 npm run deploy -- mods/diplomacy                                   # Diplomacy first
@@ -240,249 +442,273 @@ node mods/diplomacy/tools/deploy-debug.mjs --to <game-root>/plugins
 node mods/diplomacy/tools/deploy-debug.mjs --remove [--to ...]     # take it out again
 ```
 
-While it is enabled:
-
-* the mod runs on any pilot from day 0, without waiting for the Free Worlds
-  campaign to end;
-* if the Free Worlds hold no systems yet (any pilot before the war breaks out in
-  July 3014), they are given the 28 systems of the campaign's `war begins`
-  event;
-* the Republic and the Free Worlds go to war at once, and again after every
-  truce, which lasts three days;
-* a flotilla launches whenever a faction has a free slot;
-* once per pilot, the whole map is revealed (every system is marked visited)
-  and 100,000,000 credits are added to the account;
-* every launch and every siege is announced in the message log
-  (`[Diplomacy debug] …`), and the mod's log says `debug mode on`.
-
-Turn it off in Preferences → Plugins and restart the game to play normally.
-Debug mode changes the galaxy of whatever pilot you play, and those changes
-are saved with that pilot, so use a test pilot. The switch is just the plugin
-being enabled: the mod asks `game.plugin_enabled("Diplomacy Debug")`, and the
-settings it changes are at the end of `src/Tuning.dados`.
+While it is enabled the mod runs on any pilot from day 0; if the Free Worlds
+hold no systems yet they are given the 28 systems of the campaign's `war
+begins` event; the Republic and the Free Worlds are kept at war (a 3-day truce
+at most); a flotilla launches whenever a faction has room; once per pilot the
+map is revealed and 100,000,000 credits are added; and every launch and siege
+is announced (`[Diplomacy debug] …`). Use a test pilot: the changes are saved
+with it.
 
 ## Testing
 
 ```sh
-npm test                                                     # from the SDK folder: every test, this one included
-node --test mods/diplomacy/test/sim.test.mjs                 # just this one
+npm test                                                   # from es-mods: every test
+node --test mods/diplomacy/test/sim.test.mjs               # the long simulation test
+node --test mods/diplomacy/test/factions.test.mjs          # the faction model's tests
 DIPLOMACY_DAYS=6000 node --test mods/diplomacy/test/sim.test.mjs
+node mods/diplomacy/tools/regions/build.mjs --check        # the minors against the map
 ```
 
-`test/sim.test.mjs` builds the mod with the SDK (`tools/esmod.mjs build`, as
-the other mods' tests do), imports `dist/Diplomacy/scripts/diplomacy.js`, and
-simulates 4000 days (or `DIPLOMACY_DAYS`). Without `dadoc` it is skipped; if the mod does not compile, it fails. The
-test constructs `new Diplomacy()` and drives `on_load`, `on_day`, `on_enter`,
-`on_step`, `on_planet_button` and `on_panel` with a mock `Game`
-(`test/mock.mjs`) that implements the `Game` methods Diplomacy uses. The mock uses the real
-galaxy: the game's `data/map systems.txt` and `data/map planets.txt`, with
-the territory from the campaign events `war begins`, `fw southern expansion`
-and `fw northern expansion` applied. That galaxy is kept in
-`test/galaxy.json`, so the test needs nothing from the game's repository. After
-the game's map changes, make it again with
+The tests build the mod with the SDK (once per run: `test/harness.mjs`) and
+drive it with a mock `Game` (`test/mock.mjs`, every method the mod uses, API
+2-9) over the real galaxy: `test/galaxy.json`, the game's map with the **Free
+Worlds Veteran start's** territory (the game's dated events up to its start,
+the events its intro applies, then those it schedules; the Free Worlds hold
+57 systems). Make it again after the game's map or the start changes with
 `node mods/diplomacy/tools/make-galaxy.mjs <endless-sky>/data`, or set
-`ES_DATA=<endless-sky>/data` to have the test read the data files directly.
-The player hops around, visits flotillas and fights beside them, joins a
-faction, gains merit, and leaves. After every day the test checks:
+`ES_DATA=<endless-sky>/data` to read the data directly. Without `dadoc` the
+tests are skipped.
 
-* capitals never change hands;
-* every capture is between factions at war, goes through `game.change`, and
-  lands within 2 jumps of the capturer's original territory;
-* flotilla counts, strengths, sizes and systems stay valid;
-* interception targets are live enemies;
-* attitudes and the `at war` flags match the war;
-* the overlay has a marker per flotilla and per siege, and none in peace;
-* the planet button matches the system;
-* reputations and salary match membership and rank;
-* state stays bounded.
+`sim.test.mjs` runs the offer, the commission, leaving and joining, and 4000
+days with the player hopping around and fighting beside flotillas, and checks
+every day: systems change hands only in a war over their minor, by treaty or in
+a rising; capitals never; one world change a day; the cap on wars; the `at
+war` flags, the flotilla attitudes and `war a`/`war b` (what Corporations
+reads) match the wars; flotilla counts, strengths and places; markers, rings
+(war goals only) and a label per minor; the planet button, reputations and
+salary; the War Room's tabs, rows and charts; and the bounds on conditions,
+saved state and messages.
 
-At the end it also checks that a day going backwards does nothing, that
-another pilot starts clean, that the force overrides work, and that the
-statistics are sensible. A typical run (4000 days):
+`factions.test.mjs`: the minors are valid, contiguous, cover human space and
+keep the capitals in the cores (and `src/Regions.dados` is current); a core
+never rises; a secession forms its government, at war with its parent, which
+takes it back (6 of 6 runs in part, all of it in 5); a defection hands the
+minor to a bordering major and starts a war with it as the goal; with no major
+on its border a minor secedes; both outcomes occur (30 risings of the Southern
+Frontier: 14 secessions, 16 defections); several wars at once; war comes much
+sooner over split minors than whole ones (median 59 days against 326, 20 pilots
+each); peace terms cede a goal minor, return core systems, and a white peace
+leaves borders be; losing a core system raises unrest in the major's other
+minors; territory moves over 4000 days without a side swallowing the rest (5
+pilots: 14-29 systems end with another owner; each major stays between 45%
+and 180% of its start); operations write back (a relief weakens the besiegers
+and awards the Relief Star; intel is read); the first hour (the envoy, the
+inquiry, the crisis by day 20 over a shared minor); captures outside the
+player's wars only in the digest; the chronicle, history, medals and
+operations stay capped, conditions under 320 and the state under 40 KB; an old
+save is migrated; and, from the review of M1: a reload of an earlier save of
+the same pilot (or a second Veteran pilot accepting the same day) reads its
+own world; re-offered operations renew their track and each outcome is
+applied once; the pirates' attitudes name no government `""`; a second rising
+widens the war a pair fights instead of starting another; the bus events (with
+an API 10 mock game), and none on an API 9 game; Corporations' flotilla slots
+and destroyed count; a system that turns pirate raids from the next day; patrols
+follow the flag and come back with it; `diplomacy: crisis` returns to 0; core
+systems are returned only when taken in that war and not on a draw; and a
+capital is never taken even in a war over its core (removing the capital guard
+in `Simulation.can_take` fails it).
 
-```
-wars: 29, truces: 28, days at war: 1386 (35%)
-flotillas launched: 580, most at once: 7
-battles (flotilla-days of fighting): 525, interception orders: 366, interceptions made: 870
-sieges begun: 661, captures: 445 (Republic 233, Free Worlds 146, Syndicate 66), recaptures of original territory: 210
-average siege: 4.4 days (mod), 4.4 days (seen by the test); shortest 2, longest 18
-wars by pair: Free Worlds vs Republic 14, Republic vs Syndicate 15
-```
+`tools/qjs-time.mjs` times `on_day` in QuickJS (see its header for building
+`qjs`): about 2.5 ms a day, 7 ms at worst (the loader's watchdog stops a hook
+at 250 ms).
 
 ### In the game
 
 ```sh
-mods/diplomacy/test/ingame/run.sh <game-binary> <game-root> [test name...]
+ES_MODLOADER_LIB=<es-modloader>/build-release/linux-aarch64/libesdado.so \
+  mods/diplomacy/test/ingame/run.sh <game-binary> <game-root> [test name...]
 ```
 
-These need the real game, so `npm test` does not run them.
-`test/ingame/run.sh` runs the game's own test framework (`<game-root>` is an
-Endless Sky checkout, for its `tests/integration`) against a game build
-(Linux, under Xvfb; it also needs Node, `dadoc` and a built loader in
-`../es-modloader`). Each test gets a fresh config: a copy of the game's
-integration-test config (for its helper tests), the Dado loader in its
-`modloaders` folder (`npm run install-loader`), this mod built and installed with the SDK's
-`npm run deploy -- mods/diplomacy --to <config>/plugins`, and the test plugin
-in `test/ingame/plugin`, whose
-save starts a pilot at Earth after the Free Worlds war broke out, with the mod
-forced active and a Republic–Free Worlds war forced for the first day.
+They pass on **loader 0.1.0** (mod API 9). The mod and the probe declare
+`api_version()` 9, so a build made with the API 10 SDK still loads there.
 
-* **Diplomacy - War Begins**: the mod activates on landing and the war starts
-  on the first day.
-* **Diplomacy - Flotilla In Person**: a Free Worlds flotilla launched in the
-  next system the player arrives in is there as real ships, and the war goes
-  on day by day over several jumps.
-* **Diplomacy - Join And Leave**: on Earth, the planet screen's Faction button
-  (key K) opens the panel; Join (key 1) makes the player a member with a
-  salary and the Republic flotillas' trust, and Leave undoes it.
-* **Diplomacy - Licenses And Jobs**: a Republic member with Admiral's merit,
-  on a border world (Dancer, in Rastaban), holds all four Navy licenses at
-  load. Once the war with the Free Worlds starts, `diplomacy: enemy` is 2. Test
-  copies of the six jobs, offered on landing instead of on the job board, each
-  find a target or waypoints, so each is accepted.
-* **Diplomacy - Veteran Offer**: a pilot who finished the campaign is offered
-  Diplomacy in the planet screen on loading. Key 1 turns it on, and the pilot
-  is a Free Worlds Commodore at 8,900 a day.
-* **Diplomacy - Pirate Raid In Person**: a raid forced into Vega is there as
-  real pirate ships when the player jumps in.
-* **Diplomacy - Debug Mode**: with the debug plugin installed, a brand-new
-  pilot at the game's start date finds the mod active at once, the Republic
-  and the Free Worlds at war, flotillas launching on the first day, the map
-  revealed (systems far apart, such as Markab, Heia Due and Waypoint, are
-  visited) and 100 million credits in the account. The
-  runner installs the debug plugin (`debug/`) only for tests with "Debug" in
-  their name.
+```sh
+```
+
+`run.sh` runs the game's test framework (Linux, under Xvfb) with a fresh
+config per test: the integration tests' config, the Dado loader, this mod, the
+test plugin and the **Diplomacy Probe** (`test/ingame/diplomacy_probe`, a tiny
+mod that sets `test: luna sells <model>` from Luna's shipyard listing).
+`<game-root>` must not have a `Diplomacy` in its `plugins`.
+
+* **War Begins**, **Flotilla In Person**, **Join And Leave**, **Licenses And
+  Jobs**, **Veteran Offer**, **Pirate Raid In Person**, **Debug Mode**: as
+  before (the panel's first button is still Join, and Accept).
+* **Veteran Start**: the Free Worlds Veteran start's conditions, events,
+  reputations, ship and credits; the commission makes a Commodore; Luna sells
+  the Frigate, Cruiser and Carrier.
+* **Border Crisis**: on the Veteran start, the crisis is set for 10-20 days
+  after the commission; brought forward (`diplomacy: force crisis`), it is a
+  border crisis (war kind 1) of the Free Worlds over a minor (`diplomacy: crisis
+  minor`). (Waiting the days out by taking off and landing is stopped at random
+  by the campaign's landing conversations.)
 
 ## How it works
 
 | File | |
 |---|---|
-| `src/Diplomacy.dados` | the entry class (`extends es.Mod`): wires the parts together and routes hooks |
+| `src/Diplomacy.dados` | the entry class: wires the parts, routes the hooks, loads and saves the state, migrates old saves, the Luna yard |
 | `src/Tuning.dados` | **every tunable number** |
-| `src/Factions.dados` | the three factions: governments, capitals, fleets, colours, ranks |
-| `src/State.dados` | reading and writing the `diplomacy: ` conditions; war helpers |
-| `src/Rng.dados` | a deterministic Park–Miller generator. DadoScript has no random function. Its state is the condition `diplomacy: rng`, so runs are reproducible |
-| `src/Galaxy.dados` | the cached lane graph, BFS distances, ownership, the depth rule, garrison strengths |
-| `src/Flotilla.dados` | one flotilla or raid slot, loaded from and saved to conditions |
-| `src/Admirals.dados` | the named commanders: rosters, personalities, victories and deaths |
-| `src/Quality.dados` | the sim score: a side's quality from its fleets' hull, shields, dps and speed (`game.fleet_stat`) |
-| `src/Garrisons.dados` | damaged garrisons, in a fixed number of slots |
-| `src/Simulation.dados` | one day: wars, launches, raids and relief, movement and interception, score-weighted battles, sieges, plunder, captures, homecomings |
-| `src/Battlefield.dados` | spawning flotillas and defenders in person, and syncing their strength back |
-| `src/Service.dados` | the Faction button and panel, join/leave, merit, rank, salary, reputations |
+| `src/Regions.dados` | the minors (generated by `tools/regions/build.mjs`) |
+| `src/Factions.dados` | the sides: majors, pirates, rebel factions; governments, capitals, fleets, colours, ranks |
+| `src/World.dados` | the state in memory, and its JSON (`Game.data("state")`) |
+| `src/State.dados` | the conditions published for missions and other plugins; clearing an old save's |
+| `src/Json.dados`, `src/Rng.dados` | JSON writing and reading; a deterministic Park-Miller generator |
+| `src/Galaxy.dados` | the lane graph inside human space, cached distances, ownership, minors' holdings |
+| `src/War.dados`, `src/Flotilla.dados` | one war; one flotilla or raid |
+| `src/Politics.dados` | unrest, rebellion, defection, protection; war pressure, goals, declaring; peace terms; captures; patrol swaps |
+| `src/Simulation.dados` | launches, raids and relief, movement, battles, sieges, plunder, homecomings |
+| `src/Garrisons.dados`, `src/Admirals.dados`, `src/Quality.dados` | damaged garrisons; commanders; the sim score |
+| `src/Changes.dados` | the day's world changes, sent as one `game.change` |
+| `src/Chronicle.dados` | the chronicle, the daily digest, the territory history, medals, dates |
+| `src/Operations.dados` | jobs from the live war, the first hour's operations, outcomes |
+| `src/Battlefield.dados` | spawning flotillas and defenders in person, syncing their strength back |
+| `src/Service.dados` | the Faction panel, the War Room and the Service Record; membership, merit, rank, salary, reputations |
 | `src/MapView.dados` | the map overlay |
-| `data/diplomacy.txt` | the three flotilla governments and the three Dispatches jobs |
-| `data/diplomacy jobs.txt` | the faction jobs, generated by `tools/gen-jobs.mjs` (edit that, then run `node mods/diplomacy/tools/gen-jobs.mjs`) |
-| `debug/` | the Diplomacy Debug plugin: `plugin.txt` and `data/diplomacy debug.txt` |
 
-Hooks: `on_day` simulates each new day once, then redraws the map and the
-planet button. A day earlier than the last one simulated, which can happen
-after loading another pilot, only resets the clock. `on_enter` spawns what is
-in the system. `on_step` re-spawns after a day that passed without an arrival
-(taking off). Every 60 steps it syncs strengths and polls the player's kills.
-`on_planet_button` and `on_panel` run the panel.
+**The state.** Everything the simulation keeps is one JSON text stored with
+the pilot (`Game.data("state")`, mod API 6), about 11 KB: the wars, flotillas,
+garrisons, captures, per-minor unrest and claims, per-side defeats, grudges
+and truces, the rosters, the chronicle (60), the history (120 samples), the
+operations (24) and medals (40), and statistics. `world` (a random number
+drawn when the pilot's world is made) and `rev` (also in storage) tell the mod
+when another pilot, or an older save of this one, was loaded: a revision is
+`"<n>.<session>"`, where n is a high-water mark that only grows in a game
+session (it is never reset on a load) and the session token is drawn once per
+session, so no two save histories of a pilot share one (Corporations' scheme).
+On mod API 10, `on_pilot_loaded` also makes the mod read the state again. It
+is written after every simulated day and every change in person.
 
-**Wars never touch the game's politics.** Flotilla ships fly under the plugin's
-governments `Republic Flotilla`, `Free Worlds Flotilla` and `Syndicate
-Flotilla`. Each looks like its faction, is friendly to its real faction, and is
-neutral to the other flotillas. A war is a pair of `game.change` events setting
-their `attitude toward` each other to −1, and peace sets it back to 0. A
-capture is `game.change("system \"X\"\n\tgovernment \"<Faction>\"")`, on the
-real government. Both are saved with the pilot.
+**Wars never touch the game's own politics.** Major flotillas fly under the
+plugin's `Republic Flotilla`, `Free Worlds Flotilla` and `Syndicate Flotilla`
+governments; a war sets those pairs hostile. A rebel faction's government owns
+its systems and its flotillas fly under it; while it is at war with a major,
+it and that major's real government are hostile too, so the navy's patrols
+fight it. A capture is `system "X"` / `government "<owner>"` on the real
+government, saved with the pilot.
 
 ## Conditions
 
-All state is in the player's conditions, so it is saved with the pilot and is
-per pilot. Systems are stored as their index in the game's sorted system list
-(`game.system_at`) **plus one**, so that 0 means none.
+The conditions are what missions and other plugins read; the mod writes each
+only when it changes. About 150 are written in a typical game, at most about 310.
 
 | Condition | Meaning |
 |---|---|
-| `diplomacy: active`, `diplomacy: activated` | 1 once active; the day it activated |
-| `diplomacy: declined` | 1 if the player chose Never: no offer for this pilot |
-| `diplomacy: pirate attitudes` | 1 once the Pirate government has been made hostile to the flotillas |
-| `diplomacy: last day` | the last day simulated |
-| `diplomacy: rng` | the random generator's state |
-| `diplomacy: war a`, `war b` | the factions at war (1 Republic, 2 Free Worlds, 3 Syndicate; 0 = peace) |
-| `diplomacy: war since`, `war until` | the day the war began, and the day it ends |
-| `diplomacy: at war 1`, `2`, `3` | 1 while that faction is at war (for missions) |
-| `diplomacy: next war` | no war starts before this day |
-| `diplomacy: flotilla <f>.<s> strength` | slot `s` of side `f`: 1..3 for the factions, 4 for the pirates (slots 1..4); 0 = empty |
-| `… size`, `… kind`, `… admiral`, `… full` | 1–3; 0 war flotilla, 1 relief, 2 raid, 3 going home; its commander's roster slot; strength at launch |
-| `… at`, `… goal`, `… home`, `… target`, `… siege`, `… launched` | system; objective or destination; where it set out from; chased flotilla or raid (`f*10+s`); days besieging; launch day |
-| `… stop 1`..`stop 3`, `… leg`, `… dwell`, `… plan`, `… alerted` | a raid's stops; the stop it is bound for; days at it and days it means to stay; factions it has alerted (bits 1, 2, 4) |
-| `diplomacy: admiral <f>.<k> name`, `personality`, `wins` | commander `k` (1..5) of side `f`: surname (1 + index), personality 1–4, victories; name 0 = vacant |
-| `diplomacy: garrison <k> system`, `hp`, `start`, `last` | damaged garrison slot `k` (1..12): system, strength, siege start day, last day besieged |
-| `diplomacy: origin <system>` | the original owner of a system captured since activation (0 when its owner holds it again) |
-| `diplomacy: ships here` | how many flotilla and garrison ships were spawned in the player's system on arrival |
-| `diplomacy: member` | the faction the player serves, or 0 |
-| `diplomacy: enemy` | the faction the member's faction is at war with, or 0 (the faction jobs are offered by it) |
-| `diplomacy: merit`, `diplomacy: rank` | merit (missions add to it) and the rank last announced (0–6) |
+| `diplomacy: active`, `activated`, `declined`, `last day` | on (1); the day it started; Never chosen; the last day simulated |
+| `diplomacy: member`, `merit`, `rank`, `enemy` | the major the player serves (1 Republic, 2 Free Worlds, 3 Syndicate); merit (missions add to it); rank (0-6); the major the member's faction is at war with first (the faction jobs go by it) |
+| `diplomacy: war a`, `war b`, `war since` | **one** war between two majors, the player's faction's first, as before: Corporations reads these |
+| `diplomacy: at war 1`, `2`, `3` | 1 while that major fights any war |
+| `diplomacy: wars` | how many wars are running |
+| `diplomacy: war <k> a`, `b`, `goal`, `score`, `kind` | war slot k (1-4): its sides (sides: 1-3 majors, 5 + minor index a rebel faction), its first goal (minor index + 1, in the table's order), its score (positive: a is winning), its kind + 1 (1 crisis, 2 war, 3 rebellion, 4 defection, 5 reconquest) |
+| `diplomacy: minor <short name> owner`, `contested`, `unrest`, `core`, `rebel` | per minor (`Paradise Worlds`, `Central Dirt Belt`...): the side holding most of it; 1 if split; unrest 0-100; 1 for a major's core; 1 while rebels hold part of it |
+| `diplomacy: rebels` | rebel factions holding territory |
+| `diplomacy: crisis`, `crisis day`, `crisis minor` | the first hour: the day the border crisis broke out (back to 0 once it is over); the day it is set for; its goal (minor index + 1) |
+| `diplomacy: flotilla <s>.<k> strength`, `kind`, `at`, `goal` | side s's flotillas and raids, in slots k = 1..4 (1..2 for a rebel faction): strength; kind (0 war flotilla, 1 relief, 2 raid, 3 going home); system index + 1 (`game.system_at`) where it is and where it is bound; empty slots 0 |
+| `diplomacy: medal <id>` | medals of each kind (relief, siege, intercept, supply, raiders, rebels, volunteer, envoy, investigate) |
+| `diplomacy: op <kind> <target>` | set by an operation's job (1 done, 2 failed), read and cleared by the mod the next day |
+| `diplomacy: intel`, `blows`, `dispatches` | added to by the faction jobs and Dispatches, read and cleared each day |
+| `diplomacy: stat wars`, `launches`, `raids`, `captures`, `rebellions`, `defections`, `separatists`, `flotillas destroyed` | running counts (the rest of the statistics are in the state) |
+| `diplomacy: ships here` | flotilla and garrison ships spawned in the player's system on arrival |
+| `diplomacy: luna yard`, `pirate attitudes` | applied once: Luna's Navy yard; the pirates' hostility to the flotillas and rebels |
 | `salary: Republic commission`, `salary: Free Worlds`, `salary: Syndicate commission` | the daily salary, paid by the game |
-| `diplomacy: stat …` | running statistics: `wars`, `truces`, `launches`, `battles`, `intercepts ordered`, `interceptions`, `sieges`, `captures`, `captured by <f>`, `siege days`, `timed sieges`, `kills`, `promotions`, `licenses`, `destroyed in person`, `raids`, `raids completed`, `raids destroyed`, `plunder days`, `reliefs`, `pirate battles`, `pirate kills`, `flotillas destroyed`, `commanders killed`, `retreats`, `returned home` |
+
+### For Corporations (and other plugins)
+
+The exact names to read, all bounded (Diplomacy writes at most about 310 conditions, most of them 0):
+
+* `diplomacy: active` (1 while Diplomacy runs for the pilot).
+* `diplomacy: wars` = n, and for k = 1..n: `diplomacy: war <k> a`, `diplomacy: war <k> b` (the two sides), `war <k> goal`, `war <k> score`, `war <k> kind`. Slots above n are 0. (`diplomacy: war a` / `war b` still name one war between majors, the player's faction's first, for readers of the old pair.)
+* Sides: 1 the Republic, 2 the Free Worlds, 3 the Syndicate, 4 the pirates, and 5 + m the rebels of minor m, whose government is:
+
+  | Side | Government | | Side | Government |
+  |---|---|---|---|---|
+  | 6 | Paradise Secession | | 14 | Southern Pact |
+  | 7 | Deep Compact | | 15 | Bloodsea Free Captains |
+  | 8 | Northern Free States | | 16 | Tarazed Directorate |
+  | 9 | Thule League | | 18 | Upper Core Cooperative |
+  | 10 | Dirt Belt Union | | 19 | Earthward Assembly |
+  | 11 | Belt Free Worlds | | 20 | Lower Core Syndics |
+  | 12 | Eastern Belt Alliance | | | |
+
+  (Sides 5, 13, 17, 21, 22 and 23 are cores and pirate holdings, which never rebel; there are 23 sides, so a scan of sides 1..16 misses the Syndicate's rebels: scan 1..23.)
+* `diplomacy: flotilla <s>.<k> strength`, `kind`, `at`, `goal` for s = 1..23, k = 1..4 (rebels 1..2): the live flotillas and raids of each side fill its first slots.
+* `diplomacy: stat captures`, `diplomacy: stat flotillas destroyed`: running counts (an increase means a capture or a flotilla destroyed that day).
+
+### The notification bus (mod API 10)
+
+When the game has it (`Game.has("notify")`), Diplomacy posts these events, each
+with a JSON payload (sides as above, systems by name, minors by short name):
+
+| Event | When | Payload |
+|---|---|---|
+| `diplomacy.war` | a war is declared | `{"id":3,"a":1,"b":2,"a_government":"Republic","b_government":"Free Worlds","kind":"war","goals":["Central Dirt Belt"],"reason":"split","until":1100300}` (kind: border crisis, war, rebellion, defection war, reconquest) |
+| `diplomacy.peace` | a war ends | `{"id":3,"a":1,"b":2,"winner":2,"moved":5,"score":-22}` (winner 0 on a draw; moved: systems changing hands by its terms) |
+| `diplomacy.capture` | a siege takes a system | `{"system":"Alioth","by":1,"from":2,"war":3,"core":false}` |
+| `diplomacy.battle` | hostile forces fight in a system (a day) | `{"system":"Holeb","a":1,"b":2,"loss_a":40,"loss_b":72}` (strength lost, before personalities) |
+| `diplomacy.rising` | a minor rises | `{"minor":"Paradise Worlds","outcome":"separatist","from":1,"to":6,"from_government":"Republic","to_government":"Paradise Secession"}` (outcome: separatist, defection, annexation) |
 
 Test overrides, which in-game tests and the console can set:
 
 | Condition | |
 |---|---|
 | `diplomacy: force active` | non-zero: activate without the campaign |
-| `diplomacy: force war` | `a*10+b` (e.g. 12, 13, 23): end any war and start `a` against `b` on the next day |
-| `diplomacy: force peace` | non-zero: end the war on the next day |
-| `diplomacy: force flotilla` | `f` (1–3, at war): launch a medium flotilla of faction `f` in the next system the player arrives in |
-| `diplomacy: force raid` | non-zero: a medium pirate raid in the next system the player arrives in, staying 3 days |
+| `diplomacy: force war` | `a*10+b` (12, 13, 23...): start a war of a on b the next day (ending one between them first), whatever the cap |
+| `diplomacy: force peace` | non-zero: end every war the next day, with no terms |
+| `diplomacy: force flotilla` | `f`: a medium flotilla of major f (at war) in the next system the player arrives in |
+| `diplomacy: force raid` | non-zero: a medium pirate raid in the next system the player arrives in |
+| `diplomacy: force rebellion` | minor index + 1: that minor rises the next day (a core does not); with `force outcome` 1 it secedes, 2 it defects if it can |
+| `diplomacy: force crisis` | non-zero: the first hour's border crisis comes the next day |
+
+**Old saves.** A pilot of the old version (active, with its state all in
+conditions and none stored) is **migrated** on load: its standing is kept
+(active, member, merit, rank, licenses, salary), its old war state is cleared
+(flotillas, garrisons, commanders, origins, the war and its attitudes, the old
+statistics), borders stay where they are, and a new world starts that day,
+with a border crisis 10-20 days later.
 
 ## Tunables
 
-All of them are in `src/Tuning.dados`, with comments. The main ones:
+All of them are in `src/Tuning.dados`, with comments. The main ones besides
+those above: `max_wars` 3 / `hard_max_wars` 4, `declare_gap_min`/`max` 8-20,
+`split_pressure` 40, `claim_pressure` 12, `whole_pressure` 4,
+`opportunity_pressure` 40, `reclaim_pressure` 45, `truce_min_days`/`max`
+25-70, war lengths, `win_score` 15, `cession_share` 60, the unrest weights,
+`rebellion_unrest` 40, `rebellion_divisor` 400, `rebellion_cooldown` 600, the
+rising weights, `capture_hp` 60, `consolidation` 150 for 20 days, `swap_days`
+10, `max_flotillas` 4, `per_war` 3, `rebel_flotillas` 2, and the caps on the
+chronicle (60), history (120), medals (40) and operations (24).
 
-* **Wars:** `war_chance` 4%/day; `war_min_days`/`war_max_days` 30–70;
-  `truce_min_days`/`truce_max_days` 40–120; `first_war_min`/`first_war_max`
-  5–20.
-* **Flotillas:** `max_flotillas` 3 per faction; `launch_chance` 30%/day;
-  strengths 70/140/250; size odds 40/35/25%; `objective_choices` 4;
-  `destroy_below` 20.
-* **Fights:** `battle_rate` 35%; `siege_attack` 18% and `siege_defense` 6% a
-  day, each times the score roll's 60% or 140% and ×0.9–1.1.
-* **Garrisons:** `garrison_base` 140 + (defense fleet value / `garrison_unit`
-  1M credits), capped at +`garrison_cap` 260; `garrison_recovery` 10%/day.
-* **Depth:** `max_depth` 2.
-* **In person:** `large_fleet_points` 100, `small_fleet_points` 40,
-  `max_spawn_fleets` 6, `max_defense_fleets` 4, `sync_steps` 60.
-* **Commanders:** `admirals_per_side` 5; `admiral_death_chance` 50%;
-  `bold_attack` 120%, `reckless_attack` 135%, `cautious_damage` 80%,
-  `reckless_damage` 125%, `methodical_siege` 130%, `cautious_retreat` 40%,
-  `bold_reach` 2.
-* **Sim score:** `win_losses` 60%, `lose_losses` 140%, `speed_weight` 50 (a
-  square root); `balance_target` 85% and `max_fleet_scale` 250% (flotilla
-  sizes); `siege_max_per_day` 40%, `min_siege_days` 2.
-* **Raids:** `max_raids` 4, `raid_chance` 12%/day, `raid_range` 4 jumps,
-  `raid_max_dwell` 3 days, strengths 60/110/180 (odds 50/35/15%),
-  `plunder_rate` 8%; relief `relief_chance` 60% / `relief_chance_war` 10%,
-  `relief_days` 12.
-* **The player:** `merit_per_kill` 1, `merit_per_friendly_kill` 3,
-  `merit_per_pirate_kill` 1, `salaries` 200/600/1,800/3,600/6,000/8,900/12,000,
-  `veteran_rank` 5 (Commodore), reputations +10 / −10 / +1.
+### Raising the number of wars at once
+
+Two or more wars run on about 8% of days. The knobs that would raise it
+(none is changed by default; the open question is the user's):
+
+* `whole_pressure` (4, in hundredths of a percent a day per whole minor on a
+  border): wars over whole minors, so more pairs fight, not only split ones;
+* `opportunity_pressure` (40) and `opportunity_exhaustion` (20%): neighbours
+  joining in against a major already at war and tiring, which is what makes
+  wars overlap;
+* `truce_min_days`/`truce_max_days` (25-70): shorter truces bring rematches
+  sooner, and longer wars (`war_min_days`/`war_max_days`, 40-90) overlap more;
+* `rebellion_unrest` (40) and `rebellion_divisor` (400): lower either and more
+  minors rise, each rising adding a rebellion or defection war (allowed past
+  the cap, to 4);
+* `max_wars` (3) and `faction_war_limit` (2) cap it.
 
 ## Known limits
 
-* **One war at a time.** The Free Worlds and the Syndicate never fight: their
-  original territories are more than 2 jumps apart.
-* **A system's own traffic is not changed.** A captured system keeps the
-  `fleet` lines from its data, so its old owner's patrols still spawn there.
-  Its planets keep their defense fleets too. Only the system's government
-  changes.
-* **Flotillas abstract the war.** They exist as ships only while the player is
-  in their system, and flotillas don't fight the real faction navies.
-* **In person, the read-back only lowers strength.** Ships don't heal. Leaving
-  and coming back respawns the group at its current strength.
-* **Missions are jobs only.** Members get the job board work above, but there
-  are no story missions, hails or conversations about the wars. The conditions
-  above are there for other plugins to build on.
+* **The Free Worlds and the Syndicate share no border** at first; they fight
+  only once a defection, an annexation or a conquest gives them one.
+* **Pirate holdings are never taken**, and pirates hold no minor of a major's.
+* **Flotillas abstract the war.** They exist as ships only while the player
+  is in their system, and they don't fight the real navies (the patrol swap
+  only changes who patrols a captured system).
+* **Planets keep their defense fleets** after a capture; only the system's
+  government and patrols change.
+* **Corporations** reads the conditions above; until it scans sides past 16,
+  it misses the Syndicate's rebels' flotillas.
+* **Operations and jobs** are on the job board only; there are no hails or
+  conversations about the wars beyond the first hour's two dialogs.
 * **Merit** counts ships the loader reports as disabled or destroyed by the
-  player. If the loader counts a ship first disabled and then destroyed
-  twice, it pays twice.
-* **No news, hails or conversations.** Messages cover wars, truces, captures,
-  promotions, and flotillas destroyed in front of the player.
-* **Origins are pilot state.** If another plugin moves borders with its own
-  events, the mod treats the new owner as original for systems it never
-  captured.
+  player.

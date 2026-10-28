@@ -1,48 +1,16 @@
 // A realistic galaxy for the mock game, read from the game's own data files:
 // systems, governments, lanes and planets from "map systems.txt", planet
-// defense fleets from "map planets.txt", and the Free Worlds territory from
-// the campaign's events, so the map looks as it does after the campaign.
+// defense fleets from "map planets.txt", and the territory of the Free Worlds
+// Veteran start, so the map looks as it does after the campaign.
 
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-// Tokenise one line of Endless Sky data: quoted, backticked or bare words.
-export function tokens(line) {
-	const out = [];
-	let i = 0;
-	while (i < line.length) {
-		const c = line[i];
-		if (c === ' ' || c === '\t') { i++; continue; }
-		if (c === '#') break;
-		if (c === '"' || c === '`') {
-			const end = line.indexOf(c, i + 1);
-			const stop = end < 0 ? line.length : end;
-			out.push(line.slice(i + 1, stop));
-			i = stop + 1;
-			continue;
-		}
-		let j = i;
-		while (j < line.length && line[j] !== ' ' && line[j] !== '\t') j++;
-		out.push(line.slice(i, j));
-		i = j;
-	}
-	return out;
-}
+import { tokens, nodes } from './datafile.mjs';
+export { tokens, nodes };
 
-// Lines as { depth, tokens }, skipping blank and comment lines.
-export function nodes(text) {
-	const out = [];
-	for (const raw of text.split('\n')) {
-		const t = tokens(raw);
-		if (t.length === 0) continue;
-		let depth = 0;
-		while (depth < raw.length && raw[depth] === '\t') depth++;
-		out.push({ depth, tokens: t });
-	}
-	return out;
-}
-
-export function loadGalaxy(dataDir) {
+export function loadGalaxy(dataDir, startFile) {
 	const systems = new Map();   // name -> { government, links: [], planets: [] }
 	let cur = null;
 	for (const n of nodes(readFileSync(join(dataDir, 'map systems.txt'), 'utf8'))) {
@@ -92,26 +60,97 @@ export function loadGalaxy(dataDir) {
 		}
 	}
 
-	// The campaign's territory: the Free Worlds' secession and expansions.
-	const applied = [];
-	const events = nodes(readFileSync(join(dataDir, 'human', 'campaign events.txt'), 'utf8'));
-	for (const name of ['war begins', 'fw southern expansion', 'fw northern expansion']) {
-		let inEvent = false;
-		let sys = null;
-		for (const n of events) {
-			if (n.depth === 0) {
-				inEvent = n.tokens[0] === 'event' && n.tokens[1] === name;
-				sys = null;
-				if (inEvent) applied.push(name);
-				continue;
+	// The territory of the Free Worlds Veteran start (data/diplomacy fw
+	// veteran.txt): the game's dated events up to its start date, then the
+	// events its intro applies at once ("event <name> 0"), in order. That is
+	// the galaxy a pilot who finished the campaign has: the Free Worlds hold 57
+	// systems. The events it schedules for later are applied too, after those.
+	// Government, lane and patrol-fleet changes are applied.
+	const applied = applyVeteranEvents(dataDir, systems, startFile);
+	return { systems, planets, events: applied };
+}
+
+// Every data file under the game's data folder, recursively.
+function dataFiles(dir) {
+	const out = [];
+	for (const e of readdirSync(dir, { withFileTypes: true })) {
+		const p = join(dir, e.name);
+		if (e.isDirectory()) out.push(...dataFiles(p));
+		else if (e.name.endsWith('.txt')) out.push(p);
+	}
+	return out.sort();
+}
+
+// The top-level nodes of a data file as trees: { tokens, children }.
+export function tree(text) {
+	const root = { tokens: [], children: [], depth: -1 };
+	const stack = [root];
+	for (const n of nodes(text)) {
+		const node = { tokens: n.tokens, children: [], depth: n.depth };
+		while (stack[stack.length - 1].depth >= n.depth) stack.pop();
+		stack[stack.length - 1].children.push(node);
+		stack.push(node);
+	}
+	return root.children;
+}
+
+export const VETERAN_START = join(dirname(fileURLToPath(import.meta.url)), '..', 'data', 'diplomacy fw veteran.txt');
+
+function applyVeteranEvents(dataDir, systems, startFile = VETERAN_START) {
+	const events = new Map();
+	for (const f of dataFiles(dataDir))
+		for (const n of tree(readFileSync(f, 'utf8')))
+			if (n.tokens[0] === 'event' && n.tokens.length > 1) events.set(n.tokens[1], n);
+	const start = tree(readFileSync(startFile, 'utf8'));
+	const s = start.find(n => n.tokens[0] === 'start');
+	const conv = start.find(n => n.tokens[0] === 'conversation');
+	const date = s.children.find(n => n.tokens[0] === 'date').tokens.slice(1).map(Number);
+	const key = d => d[2] * 10000 + d[1] * 100 + d[0];
+	const dated = [];
+	for (const [name, n] of events) {
+		const d = n.children.find(c => c.tokens[0] === 'date');
+		if (d && key(d.tokens.slice(1).map(Number)) <= key(date)) dated.push([key(d.tokens.slice(1).map(Number)), name]);
+	}
+	dated.sort((x, y) => x[0] - y[0]);
+	// Applied at once, then the ones the start schedules (the last Pug lane
+	// restorations, the Navy leaving Algenib, Greenrock), in the order they fall:
+	// the galaxy as it stands four months in, and for the rest of the game.
+	const now = [], later = [];
+	for (const a of conv.children) if (a.tokens[0] === 'action')
+		for (const g of a.children) if (g.tokens[0] === 'event') {
+			const at = Number(g.tokens[2] || 0);
+			if (at === 0) now.push(g.tokens[1]); else later.push([at, g.tokens[1]]);
+		}
+	later.sort((x, y) => x[0] - y[0]);
+	const order = dated.map(d => d[1]).concat(now, later.map(l => l[1]));
+	const link = (a, b, on) => {
+		const x = systems.get(a), y = systems.get(b);
+		if (!x || !y) return;
+		if (on) { if (!x.links.includes(b)) x.links.push(b); if (!y.links.includes(a)) y.links.push(a); }
+		else { x.links = x.links.filter(l => l !== b); y.links = y.links.filter(l => l !== a); }
+	};
+	for (const name of order) {
+		const e = events.get(name);
+		if (!e) continue;
+		for (const c of e.children) {
+			const t = c.tokens;
+			if ((t[0] === 'link' || t[0] === 'unlink') && t.length >= 3) { link(t[1], t[2], t[0] === 'link'); continue; }
+			if (t[0] !== 'system' || !systems.has(t[1])) continue;
+			const sys = systems.get(t[1]);
+			let fleetsReset = false;
+			for (const g of c.children) {
+				const u = g.tokens;
+				if (u[0] === 'government') sys.government = u[1];
+				else if (u[0] === 'link') link(t[1], u[1], true);
+				else if (u[0] === 'remove' && u[1] === 'link') link(t[1], u[2], false);
+				else if (u[0] === 'fleet') { if (!fleetsReset) { sys.fleets = []; fleetsReset = true; } sys.fleets.push(u[1]); }
+				else if (u[0] === 'add' && u[1] === 'fleet') sys.fleets.push(u[2]);
+				else if (u[0] === 'remove' && u[1] === 'fleet') sys.fleets = u.length > 2 ? sys.fleets.filter(f => f !== u[2]) : [];
 			}
-			if (!inEvent) continue;
-			if (n.depth === 1) sys = n.tokens[0] === 'system' ? n.tokens[1] : null;
-			else if (n.depth === 2 && sys && n.tokens[0] === 'government' && systems.has(sys))
-				systems.get(sys).government = n.tokens[1];
 		}
 	}
-	return { systems, planets, events: applied };
+	return order;
+
 }
 
 // The galaxy as plain JSON, and back. test/galaxy.json is a snapshot of

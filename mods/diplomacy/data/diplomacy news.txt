@@ -1,0 +1,142 @@
+# Copyright (c) 2026 by Anaxarchus
+#
+# Endless Sky is free software: you can redistribute it and/or modify it under the
+# terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later version.
+#
+# Endless Sky is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+# PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+# Spaceport news for the Diplomacy plugin: what people say about the wars, the
+# split Dirt Belt and the rebellions, shown by the conditions the mod keeps
+# ("diplomacy: at war <f>", "diplomacy: minor <name> contested", "diplomacy:
+# rebels", "diplomacy: crisis"; see README.md, "Conditions").
+
+news "diplomacy: republic at war"
+	location
+		government "Republic"
+	to show
+		"diplomacy: active" == 1
+		"diplomacy: at war 1" == 1
+	name
+		word
+			"Dockworker"
+			"Navy reservist"
+			"Spaceport clerk"
+	message
+		word
+			`"`
+		word
+			"They've called up my brother's reserve squadron. Again."
+			"The Navy is buying every hull the shipyards can turn out. Good for business, they say."
+			"Every news feed is maps and arrows. I just want to know if the freighters will still run."
+			"Parliament says it will be over in weeks. Parliament always says that."
+		word
+			`"`
+
+news "diplomacy: free worlds at war"
+	location
+		government "Free Worlds"
+	to show
+		"diplomacy: active" == 1
+		"diplomacy: at war 2" == 1
+	name
+		word
+			"Militia volunteer"
+			"Farmer"
+			"Dock foreman"
+	message
+		word
+			`"`
+		word
+			"We fought one war to be free of Parliament. I didn't think we'd need a second so soon."
+			"The militia is asking for pilots with their own ships. Pays well, if you live to collect."
+			"My cousin on the border says the Navy flotillas are back. They never really left, did they?"
+			"The Senate argues and the flotillas fly. Same as it ever was."
+		word
+			`"`
+
+news "diplomacy: syndicate at war"
+	location
+		government "Syndicate"
+	to show
+		"diplomacy: active" == 1
+		"diplomacy: at war 3" == 1
+	name
+		word
+			"Syndicate accountant"
+			"Contractor"
+	message
+		word
+			`"`
+		word
+			"War is a line item. A large one, this quarter."
+			"Security has doubled the escort fees. Somebody's profiting, and it isn't me."
+			"The board says the fighting is a 'regional adjustment.' My shipments say otherwise."
+		word
+			`"`
+
+news "diplomacy: the border crisis"
+	location
+		government "Free Worlds" "Republic"
+		attributes "dirt belt"
+	to show
+		"diplomacy: active" == 1
+		"diplomacy: crisis" > 0
+		"diplomacy: wars" > 0
+	name
+		word
+			"Dirt Belt farmer"
+			"Local councilor"
+	message
+		word
+			`"`
+		word
+			"They signed the peace in a palace on Earth. Out here, the border is wherever the flotillas say it is today."
+			"Half my village flies the Free Worlds flag, half the Republic's. We used to share a well."
+			"Nobody asked the Dirt Belt whose it wanted to be. Nobody ever does."
+		word
+			`"`
+
+news "diplomacy: split dirt belt"
+	location
+		attributes "dirt belt"
+	to show
+		"diplomacy: active" == 1
+		or
+			"diplomacy: minor Central Dirt Belt contested" == 1
+			"diplomacy: minor East Dirt Belt contested" == 1
+	name
+		word
+			"Trader"
+			"Freighter captain"
+	message
+		word
+			`"`
+		word
+			"Two customs offices on one lane. You pay both, or you go the long way round."
+			"The Belt is still split down the middle. That can't last."
+			"Every time a system changes flags, the prices change with it."
+		word
+			`"`
+
+news "diplomacy: rebels"
+	location
+		government "Republic" "Free Worlds" "Syndicate"
+	to show
+		"diplomacy: active" == 1
+		"diplomacy: rebels" > 0
+	name
+		word
+			"Spacer"
+			"Retired officer"
+	message
+		word
+			`"`
+		word
+			"Another region has declared itself free. The old governments will want it back."
+			"The rebels say they only want to be left alone. That's what everyone says, at first."
+			"I hear the rebel captains fly the same ships as the Navy. Same ships, different flag."
+		word
+			`"`

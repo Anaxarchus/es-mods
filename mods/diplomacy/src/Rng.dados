@@ -1,41 +1,62 @@
 class Rng
 
-import "imports:sdk/es"
-
 // A small deterministic random number generator (Park-Miller, the "minimal
-// standard" LCG). DadoScript has no random function, and keeping the state in
-// the condition "diplomacy: rng" makes a pilot's wars reproducible and lets
-// tests replay them.
+// standard" LCG). DadoScript has no random function, and keeping the state
+// with the pilot (World.rng) makes a pilot's wars reproducible and lets tests
+// replay them.
+
+World world = World()
 
 int modulus = 2147483647
 int multiplier = 48271
 
-// Seed the generator from a day, unless it already has a state.
-void seed(es.Game game, int day):
-    if game.condition("diplomacy: rng") <= 0:
-        int s = (day * 7919 + 12345) % modulus
-        if s <= 0:
-            s = 1
-        game.set_condition("diplomacy: rng", s)
+void wire(World w):
+    world = w
 
-int next(es.Game game):
-    int s = game.condition("diplomacy: rng")
+// Seed the generator from a day and a salt.
+void seed(int day, int salt):
+    int s = (day * 7919 + 12345 + salt * 104729) % modulus
+    if s <= 0:
+        s = 1
+    world.rng = s
+
+int next():
+    int s = world.rng
     if s <= 0 || s >= modulus:
         s = 1
     s = s * multiplier % modulus
-    game.set_condition("diplomacy: rng", s)
+    world.rng = s
     return s
 
 // An integer in [lo, hi].
-int range(es.Game game, int lo, int hi):
+int range(int lo, int hi):
     if hi <= lo:
         return lo
-    return lo + next(game) % (hi - lo + 1)
+    return lo + next() % (hi - lo + 1)
 
 // True with the given chance in percent.
-bool chance(es.Game game, int percent):
-    return range(game, 0, 99) < percent
+bool chance(int percent):
+    return range(0, 99) < percent
+
+// True with the given chance in hundredths of a percent.
+bool chance_bp(int basis_points):
+    return range(0, 9999) < basis_points
 
 // A factor in [lo%, hi%], as a float (75..125 gives 0.75..1.25).
-float factor(es.Game game, int lo, int hi):
-    return float(range(game, lo, hi)) / 100.0
+float factor(int lo, int hi):
+    return float(range(lo, hi)) / 100.0
+
+// An index weighted by `weights` (all >= 0); -1 if they sum to 0.
+int weighted([]int weights):
+    int total = 0
+    for w in weights:
+        total += w if w > 0 else 0
+    if total <= 0:
+        return -1
+    int roll = range(0, total - 1)
+    for k in 0..<weights.len():
+        int w = weights[k] if weights[k] > 0 else 0
+        if roll < w:
+            return k
+        roll -= w
+    return weights.len() - 1

@@ -5,9 +5,9 @@
     "source_hash": "5d9bedfb85e50bf658f20a3cd9abe12c3a5c428e04beeb89514e8a68b0a3a804"
   },
   "diplomacy": {
-    "version": "0.2.0",
-    "tag": "diplomacy-v0.2.0",
-    "source_hash": "b0161ea5a9e414aab2cb981f81a6c4df7f1d2559e8fb6e5fabe0739487ec541c"
+    "version": "0.2.1",
+    "tag": "diplomacy-v0.2.1",
+    "source_hash": "d801d8911fa85158aa4f9559b5b3cd49a6b232d163fbc35f5c3b4100f14188ae"
   },
   "outfit_integration": {
     "version": "0.1.0",

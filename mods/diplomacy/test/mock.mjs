@@ -309,6 +309,11 @@ export class MockGame {
 				if (!this.shipyards.has(top[1])) this.shipyards.set(top[1], []);
 				this.shipyards.get(top[1]).push(l.t[1]);
 				applied = true;
+			} else if (top[0] === 'government' && l.depth === 1 && l.t[0] === 'color') {
+				if (l.t.length !== 2 && !(l.t.length === 4 && l.t.slice(1).every(v => !Number.isNaN(parseFloat(v))))) throw new Error('change: bad color ' + JSON.stringify(text));
+				this.governmentColors = this.governmentColors || new Map();
+				this.governmentColors.set(top[1], l.t.slice(1).join(' '));
+				applied = true;
 			} else if (top[0] === 'government' && l.depth === 1 && l.t[0] === 'attitude toward') {
 				sub = 'attitude';
 			} else if (top[0] === 'government' && l.depth === 2 && sub === 'attitude') {

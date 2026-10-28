@@ -20,6 +20,9 @@ Regions regions = Regions()
 []string adjectives = ["", "Republic", "Free Worlds", "Syndicate", "Pirate"]
 []string capitals = ["", "Sol", "Gamma Corvi", "Markab", ""]
 []string flotilla_governments = ["", "Republic Flotilla", "Free Worlds Flotilla", "Syndicate Flotilla", "Pirate"]
+// The game's own colours of the majors' governments (data/governments.txt), put
+// back when a member leaves (Service.mark_worlds).
+[]string government_colors = ["", "governments: Republic", "governments: Free", "governments: Syndicate", "governments: Pirate"]
 // Pirates use their home system's own pirate fleets; these are the fallback.
 []string small_fleets = ["", "Small Republic", "Small Free Worlds", "Small Syndicate", "Small Core Pirates"]
 []string large_fleets = ["", "Large Republic", "Large Free Worlds", "Large Syndicate", "Large Core Pirates"]

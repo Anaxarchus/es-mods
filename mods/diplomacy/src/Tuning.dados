@@ -245,6 +245,15 @@ int veteran_rank = 5
 float rep_own = 10.0
 float rep_enemy = -10.0
 float rep_neutral = 1.0
+// A member's standing with its faction's own government (the one that owns its
+// worlds, not its flotillas') is kept at least this high, so every world of the
+// faction lets the member land: Earth asks for 2, Hermes 10, Arachne and Huginn
+// Stations 20, Alexandria, Pilot and Carbuncle Station 100. What this adds is
+// taken back on leaving (Service.keep_standing).
+float rep_member = 100.0
+// The colour ("r g b") a member's faction's worlds take on the map while a
+// member: its government's colour. The faction's own comes back on leaving.
+string member_color = "1 0.35 0.85"
 
 // ---- Commanders ----
 // Each side (the three factions and the pirates) keeps this many named

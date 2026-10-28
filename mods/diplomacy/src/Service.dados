@@ -74,6 +74,51 @@ void apply_reputations(es.Game game):
         else if m != 0 && world.hostile(m, f):
             rep = tune.rep_enemy
         game.set_reputation(factions.flotilla_government(f), rep)
+    keep_standing(game)
+    mark_worlds(game)
+
+// A member is welcome on every world of its faction: standing with the
+// faction's own government (which owns its systems; the flotillas fly under
+// another) is raised to tune.rep_member, whatever it was before joining, and
+// kept there. What was added is remembered ("standing granted", in
+// hundredths) so leaving takes it back.
+void keep_standing(es.Game game):
+    int m = state.member(game)
+    if !factions.is_major(m):
+        return
+    string gov = factions.governments[m]
+    float now = game.reputation(gov)
+    if now >= tune.rep_member:
+        return
+    state.add(game, "standing granted", int((tune.rep_member - now) * 100.0 + 0.5))
+    game.set_reputation(gov, tune.rep_member)
+
+// Leaving faction m: the standing membership added goes, but an old grudge
+// does not come back (no lower than neutral, unless it is lower already).
+void give_back_standing(es.Game game, int m):
+    int granted = state.get(game, "standing granted")
+    state.put(game, "standing granted", 0)
+    if granted <= 0 || !factions.is_major(m):
+        return
+    string gov = factions.governments[m]
+    float now = game.reputation(gov)
+    float back = now - float(granted) / 100.0
+    float least = now if now < tune.rep_neutral else tune.rep_neutral
+    game.set_reputation(gov, back if back > least else least)
+
+// The member's faction's worlds stand out on the map: its government takes
+// tune.member_color while the player is a member ("colored" remembers whose),
+// and its own colour back on leaving.
+void mark_worlds(es.Game game):
+    int m = state.member(game)
+    int shown = state.get(game, "colored")
+    if shown == m:
+        return
+    if factions.is_major(shown):
+        game.change("government \"" + factions.governments[shown] + "\"\n\tcolor \"" + factions.government_colors[shown] + "\"")
+    if factions.is_major(m):
+        game.change("government \"" + factions.governments[m] + "\"\n\tcolor " + tune.member_color)
+    state.put(game, "colored", m if factions.is_major(m) else 0)
 
 void update_enemy(es.Game game):
     int e = enemy(game)
@@ -170,6 +215,7 @@ void leave(es.Game game):
     int m = state.member(game)
     if m == 0:
         return
+    give_back_standing(game, m)
     state.put(game, "member", 0)
     state.put(game, "merit", 0)
     state.put(game, "rank", 0)

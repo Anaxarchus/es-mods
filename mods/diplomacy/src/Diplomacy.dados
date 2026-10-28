@@ -549,6 +549,7 @@ void simulate(es.Game game, int day):
     if changed:
         service.apply_reputations(game)
     service.check_rank(game)
+    service.keep_standing(game)
     chronicle.flush(game)
 
 void on_enter(es.Game game, string system):

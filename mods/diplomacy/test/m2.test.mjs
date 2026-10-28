@@ -38,6 +38,27 @@ test('src/Trade.dados is what tools/regions/build.mjs makes from the galaxy', ()
 	assert.equal(readFileSync(join(HERE, '..', 'src', 'Trade.dados'), 'utf8'), tradeDados(json));
 });
 
+// ---- Membership: landing and the map ----
+
+test('a member can land on every world of its faction, which stands out on the map', { skip }, () => {
+	const { game, mod } = atWar();
+	assert.ok(game.reputation('Free Worlds') >= 100, 'a Free Worlds member is welcome on every Free Worlds world');
+	assert.equal(game.governmentColors.get('Free Worlds'), '1 0.35 0.85');
+	mod.service.leave(game);
+	assert.equal(game.reputation('Free Worlds'), 1, 'leaving takes back the standing membership gave');
+	assert.equal(game.governmentColors.get('Free Worlds'), 'governments: Free', 'and the faction\'s own colour');
+	game.set_reputation('Republic', -30);
+	mod.service.join(game, 1);
+	assert.ok(game.reputation('Republic') >= 100, 'joining the Republic clears an old grudge and opens Earth, Hermes and the stations');
+	assert.equal(game.governmentColors.get('Republic'), '1 0.35 0.85');
+	game.set_reputation('Republic', 40);
+	mod.on_enter(game, 'Sol');
+	assert.ok(game.reputation('Republic') >= 100, 'standing lost while a member is restored on the next jump');
+	mod.service.leave(game);
+	assert.equal(game.reputation('Republic'), 1, 'leaving: no lower than neutral, and the grudge stays forgiven');
+	assert.equal(game.governmentColors.get('Republic'), 'governments: Republic');
+});
+
 // ---- Squadrons ----
 
 test('a Commodore commands one squadron from the War Room; it follows an attack order', { skip }, () => {

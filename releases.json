@@ -1,8 +1,8 @@
 {
   "corporations": {
-    "version": "0.1.0",
-    "tag": "corporations-v0.1.0",
-    "source_hash": "2ab71a5cd3a379b96f69cb4146963673026ceac42fd6d7ef17704bc21047428d"
+    "version": "0.2.0",
+    "tag": "corporations-v0.2.0",
+    "source_hash": "5d9bedfb85e50bf658f20a3cd9abe12c3a5c428e04beeb89514e8a68b0a3a804"
   },
   "diplomacy": {
     "version": "0.1.0",

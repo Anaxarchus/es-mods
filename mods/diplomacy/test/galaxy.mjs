@@ -17,7 +17,7 @@ export function loadGalaxy(dataDir, startFile) {
 		if (n.depth === 0) {
 			cur = null;
 			if (n.tokens[0] === 'system' && n.tokens.length > 1) {
-				cur = { government: '', links: [], planets: [], fleets: [] };
+				cur = { government: '', links: [], planets: [], fleets: [], trade: {} };
 				systems.set(n.tokens[1], cur);
 			}
 			continue;
@@ -27,6 +27,7 @@ export function loadGalaxy(dataDir, startFile) {
 		if (n.depth === 1 && key === 'government') cur.government = n.tokens[1];
 		else if (n.depth === 1 && key === 'link') cur.links.push(n.tokens[1]);
 		else if (n.depth === 1 && key === 'fleet' && n.tokens.length > 1) cur.fleets.push(n.tokens[1]);
+		else if (n.depth === 1 && key === 'trade' && n.tokens.length > 2) cur.trade[n.tokens[1]] = parseInt(n.tokens[2], 10);
 		else if (key === 'object' && n.tokens.length > 1) cur.planets.push(n.tokens[1]);
 	}
 	// Lanes are two-way.
@@ -145,6 +146,7 @@ function applyVeteranEvents(dataDir, systems, startFile = VETERAN_START) {
 				else if (u[0] === 'remove' && u[1] === 'link') link(t[1], u[2], false);
 				else if (u[0] === 'fleet') { if (!fleetsReset) { sys.fleets = []; fleetsReset = true; } sys.fleets.push(u[1]); }
 				else if (u[0] === 'add' && u[1] === 'fleet') sys.fleets.push(u[2]);
+				else if (u[0] === 'trade' && u.length > 2) { sys.trade = sys.trade || {}; sys.trade[u[1]] = parseInt(u[2], 10); }
 				else if (u[0] === 'remove' && u[1] === 'fleet') sys.fleets = u.length > 2 ? sys.fleets.filter(f => f !== u[2]) : [];
 			}
 		}

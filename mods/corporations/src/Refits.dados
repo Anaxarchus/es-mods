@@ -1,0 +1,169 @@
+class Refits
+
+import "imports:sdk/es"
+
+// (M3) Refit product lines: the upgrade outfitter. A company in Outfits,
+// Engines or Electronics sells a refit of the outfits in its line, done in
+// the outfitter (the "Refit" button, Mod API 5: outfitter_button,
+// can_outfitter, confirm, ship_integrate): the outfit is built into the hull,
+// keeping SCALE of its mass and outfit space for good. A canonical maker's
+// line is its own outfitters' (Outfits: Deep Sky, Lovelace Labs, Delta V,
+// Syndicated Systems, Kraz), sold where they are; any other company's is its
+// kind of outfit (weapons; engines; systems and power) within REACH jumps of
+// its home. The fee follows the supplier's health: RATE of the outfit's cost,
+// more as its reliability falls, HEALTH_SURCHARGE more while distressed; a
+// supplier for sale, bankrupt or in a crisis offers none (supplier failure).
+// The fee is the supplier's revenue.
+// On a game with outfit stock (API 10, game.has("outfit_stock")), a
+// canonical maker in a crisis or distressed leaves its line SHORT at the
+// planets that sell it (pushed on landing, as shipyard stock is; set back
+// to untracked once it recovers; Market.outfit_limited remembers what was set,
+// as "planet~outfit"). Only the outfits that maker alone makes, never
+// ammunition, and set only when it changes.
+
+float SCALE = 0.8
+float RATE = 0.15
+float HEALTH_SURCHARGE = 0.5
+int REACH = 2
+int SHORT = 1
+int TOKEN = 20
+
+Outfits outfits = Outfits()
+
+// What the player is about to confirm.
+string pending_ship = ""
+string pending_outfit = ""
+int pending_fee = 0
+int pending_company = 0
+
+// Counted since the mod started (not saved), for tests and tools.
+int done = 0
+
+bool in_line(es.Game game, Market m, Company c, string outfit, string planet, Galaxy galaxy):
+    int i = outfits.companies.index_of(c.name) if c.canon && outfits.companies.contains(c.name) else -1
+    if i >= 0:
+        return outfits.lines[i].split(";").contains(outfit) && outfits.planets[i].split(";").contains(planet)
+    int j = galaxy.jumps(galaxy.system_of(game, planet), c.system)
+    if j < 0 || j > REACH:
+        return false
+    string cat = game.outfit_category(outfit)
+    if c.sector == 1:
+        return game.outfit_is_weapon(outfit)
+    if c.sector == 2:
+        return cat == "Engines"
+    if c.sector == 3:
+        return cat == "Systems" || cat == "Power"
+    return false
+
+bool healthy(Market m, Company c):
+    if !c.listed() || c.status == c.FOR_SALE:
+        return false
+    for x in m.crises:
+        if x.company == c.id:
+            return false
+    return true
+
+int fee(es.Game game, Company c, string outfit):
+    float cost = game.outfit_attribute(outfit, "cost")
+    float rate = RATE * (1.0 + (1.0 - c.reliability)) * (1.0 + HEALTH_SURCHARGE if c.status == c.DISTRESSED else 1.0)
+    int f = globalThis.Math.round(cost * rate)
+    return f if f > 100 else 100
+
+// The cheapest healthy supplier of a refit of this outfit here, or none.
+Company supplier(es.Game game, Market m, Galaxy galaxy, string outfit):
+    string planet = game.planet()
+    Company best = Company()
+    int best_fee = 0
+    if planet == "" || outfit == "":
+        return best
+    for c in m.companies:
+        if c.sector < 1 || c.sector > 3 || !healthy(m, c) || !in_line(game, m, c, outfit, planet, galaxy):
+            continue
+        int f = fee(game, c, outfit)
+        if best.id == 0 || f < best_fee:
+            best = c
+            best_fee = f
+    return best
+
+// Whether the outfitter's button is enabled for this outfit.
+bool can(es.Game game, Market m, Galaxy galaxy, string outfit):
+    if outfit == "" || game.outfitter_ship_count() == 0 || game.outfit_category(outfit) == "Ammunition":
+        return false
+    string ship = game.outfitter_ship(0)
+    if game.ship_outfit_count(ship, outfit) <= game.ship_integrated_count(ship, outfit):
+        return false
+    return supplier(game, m, galaxy, outfit).id != 0
+
+// The button: confirm the refit and its fee.
+void ask(es.Game game, Market m, Galaxy galaxy, string outfit):
+    pending_ship = ""
+    if !can(game, m, galaxy, outfit):
+        return
+    Company c = supplier(game, m, galaxy, outfit)
+    string ship = game.outfitter_ship(0)
+    pending_ship = ship
+    pending_outfit = outfit
+    pending_fee = fee(game, c, outfit)
+    pending_company = c.id
+    game.confirm(c.name + " will refit one " + game.outfit_name(outfit) + " on the " + game.fleet_ship_name(ship) + " into its hull for " + m.fmt.credits(float(pending_fee)) + " credits: it will keep " + m.fmt.whole_percent(SCALE) + " of its mass and outfit space, and can never be removed, sold or plundered again.", TOKEN)
+
+// Confirmed: integrate and pay. Answers whether it was done.
+bool apply(es.Game game, Market m):
+    if pending_ship == "":
+        return false
+    string ship = pending_ship
+    pending_ship = ""
+    Company c = m.by_id.get(pending_company, Company())
+    if c.id == 0 || !healthy(m, c) || game.condition("credits") < pending_fee:
+        return false
+    if !game.ship_integrate(ship, pending_outfit, SCALE):
+        return false
+    m.credit(game, -float(pending_fee))
+    c.cash += float(pending_fee)
+    c.revenue += float(pending_fee)
+    done += 1
+    m.must_save = true
+    return true
+
+// Landed (API 10 outfit stock): a troubled maker's line runs short here.
+void push(es.Game game, Market m):
+    string planet = game.planet()
+    if planet == "" || !m.api_outfits:
+        return
+    bool any = false
+    for i in 0..<outfits.companies.len():
+        if !outfits.planets[i].split(";").contains(planet):
+            continue
+        Company c = m.canon_by_name(outfits.companies[i])
+        bool short = c.id != 0 && (!healthy(m, c) || c.status == c.DISTRESSED)
+        for o in own(game, i):
+            string key = planet + "~" + o
+            if short:
+                if !any:
+                    game.outfit_stock_on(true)
+                    any = true
+                // Only when it changes: a purchase below SHORT is not refilled on landing.
+                if !m.outfit_limited.contains(key):
+                    game.set_outfit_stock(planet, o, SHORT)
+                    m.outfit_limited.append(key)
+            else if m.outfit_limited.contains(key):
+                game.set_outfit_stock(planet, o, -1)
+                m.outfit_limited = m.outfit_limited.filter(bool(string k): return k != key)
+
+// (M3 review) The outfits only maker i makes: its line less any other
+// maker's outfits, and no ammunition (cached).
+{int: []string} own_cache = {}
+[]string own(es.Game game, int i):
+    if own_cache.has(i):
+        return own_cache[i]
+    []string out = []
+    for o in outfits.lines[i].split(";"):
+        bool shared = false
+        for j in 0..<outfits.lines.len():
+            if j != i && outfits.lines[j].split(";").contains(o):
+                shared = true
+                break
+        if !shared && game.outfit_category(o) != "Ammunition":
+            out.append(o)
+    own_cache[i] = out
+    return out

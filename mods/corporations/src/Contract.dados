@@ -25,6 +25,11 @@ int RESTOCK = 3
 // system, the shipyard system shortest of the model. Winner 0 while running
 // means no builder could bid: the government's own yards build them, slowly.
 int TENDER = 4
+// (M2) The player's order for hulls from the builder that owns their design,
+// placed at its home planet (Orders): client "player"; `price` the full price
+// of all units, `budget` the deposit paid; RUNNING while built, DELIVERED once
+// ready (waiting for the player to pay the rest and take them), then removed.
+int ORDER = 5
 
 int id = 0
 // Who issued it: a government's or a planet's name, or a company's id as text.
@@ -55,12 +60,22 @@ int parent = 0
 // A restock or a tender: the hull model (its true name) and how many.
 string model = ""
 int units = 0
+// (M2) Convoys: hulls on their way from the builder's home to the shipyard
+// (restocks and tenders) or the client (ships contracts), for war-zone and
+// pirate-adjacent destinations. 0: no convoy (or not yet left); 1: under way
+// since `depart`. While under way the contract stays RUNNING, takes no yard
+// capacity, and is paid on arrival.
+int convoy = 0
+int depart = 0
+// The system it left from (the builder's home then), so a convoy whose
+// contract passes to another company keeps its place on its route.
+string origin = ""
 
 bool done():
     return status == DELIVERED || status == FAILED || status == LAPSED
 
 string encode():
-    []string f = [string(id), client, string(kind), string(sector), system, string(load), string(days), string(budget), string(issued), string(closes), string(status), string(winner), string(price), string(cost), string(start), string(ends), string(bidders), string(runner_up), string(runner_price), "1" if reissued else "0", string(parent), model, string(units)]
+    []string f = [string(id), client, string(kind), string(sector), system, string(load), string(days), string(budget), string(issued), string(closes), string(status), string(winner), string(price), string(cost), string(start), string(ends), string(bidders), string(runner_up), string(runner_price), "1" if reissued else "0", string(parent), model, string(units), string(convoy), string(depart), origin]
     return f.join("|")
 
 void decode(string line):
@@ -90,3 +105,9 @@ void decode(string line):
     if f.len() > 22:
         model = f[21]
         units = f[22].to_int()
+    // Saves from before M2 have 23 fields.
+    if f.len() > 24:
+        convoy = f[23].to_int()
+        depart = f[24].to_int()
+    if f.len() > 25:
+        origin = f[25]

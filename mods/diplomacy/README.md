@@ -95,12 +95,14 @@ mods/diplomacy/
                       diplomacy news.txt (spaceport news) and
                       diplomacy fw veteran.txt (the Free Worlds Veteran start, generated)
   src/                the mod, in DadoScript: Diplomacy.dados is the entry class
-                      (extends es.Mod), and the other classes it uses; Regions.dados is generated
+                      (extends es.Mod), and the other classes it uses; Regions.dados and
+                      Trade.dados (data prices of food, medicine, clothing) are generated
   debug/              the separate "Diplomacy Debug" plugin (plugin.txt and data,
                       no code): see Debug mode
   test/
     sim.test.mjs      the long simulation test (4000 days of invariants)
     factions.test.mjs the faction model's tests (minors, rebellion, wars, peace, operations...)
+    m2.test.mjs       M2's tests (squadrons, rivals, fog, supply, occupation, prices, the bus, on_save)
     harness.mjs       builds the mod once and drives a mock game; mock.mjs is the mock Game
     galaxy.mjs        reads the galaxy from the game's data (the Veteran start's territory)
     galaxy.json       the galaxy the tests use, a snapshot made by tools/make-galaxy.mjs
@@ -404,6 +406,100 @@ to a major is left for later milestones.
   scouting, warship kills and breaking a warfleet, as before; there are now
   copies for the Free Worlds and the Syndicate against each other too.
 
+## Command and consequence (M2)
+
+**Squadrons.** From Commodore up, a member commands squadrons: one at
+Commodore, two at Admiral and Fleet Admiral, three at High Admiral (two new
+ranks above Admiral, 700 and 1100 merit, named per faction: Fleet Admiral and
+Grand Admiral, Vice Marshal and Marshal of the Free Worlds, Senior Director and
+Executive Director; salaries 15,500 and 19,000). In the War Room's **Command**
+tab (shown only when the rank allows one) the player picks a squadron, or "Form
+a new squadron", and an order: **attack** an enemy system of a war, **relieve**
+one of the faction's besieged systems, **hunt** an enemy flotilla or a pirate
+raid, or **hold**. A squadron takes one of the faction's flotilla places (when
+every place is taken, the faction's flotilla nearest the target comes under the
+player's command); it forms at the faction's system nearest the target and
+fights like a flotilla (a flotilla taken over keeps no siege or relief: those
+are never taken). Its strength is a medium flotilla's plus one point per
+50,000 credits of the player's own fleet, its ships counted at half a new
+one's price (`model_cost`; the API has no resale value) and, on mod API 10,
+parked ships left out; at most 200. Each day it is held to the lower of its
+strength at formation and what the fleet would give now, so selling the fleet
+weakens it. It fights at 130% while the player is in its system (its ships are
+friendly to the player). Orders name only forces the faction can see (fog of
+war); a hunted force that slips out of sight is followed to where it was last
+seen, and the squadron holds there. An order carried out (the system
+taken, the siege lifted, the quarry gone) leaves it holding, with a message.
+Losing one costs 15 merit and 5 reputation with the faction, is in the
+chronicle, and no new one forms for 30 days. A peace leaves squadrons holding where they are; leaving the faction
+or falling in rank stands the extra ones down.
+
+**Rival commanders.** Each named commander keeps a history with the player
+(3 a battle against the player's squadron or the player in person, 1 a ship the
+player destroys). At 12 a commander becomes a **rival** (one per side, two at
+most) with a trait: *grudge* (125% against the player's squadron), *learned
+tactics* (takes 80% of the damage from the player's squadron), *veteran* (attack 115%), *siege engineer*
+(sieges 135%) or *ambusher* (reaches 4 jumps farther after the squadron).
+Rivals seek out the player's squadron; their side puts a price on the player's
+head (bounty hunters may come looking: "diplomacy: bounty", which clears if the
+player comes to serve that side; one hunters' mission at a time), and the player's
+faction posts a bounty job on the rival. Destroying a rival in person always
+kills them, and earns the **Nemesis Star**. Commanders are promoted at 5 and 10
+victories and die in battle; both are in the chronicle and the spaceport news.
+
+**Fog of war.** The map and the Forces tab show enemy flotillas only within 1
+jump of the faction's territory or its flotillas (2 jumps of the player for a
+non-member), or in scouted systems; others keep a faded "seen N days ago" label
+for 20 days where they were last seen (at most 32). A scouting job reveals the
+system and its neighbours for 10 days.
+
+**Supply.** A flotilla within 2 jumps of one of its side's depots (an inhabited
+system it holds) fights at full strength, 8% less per jump farther, down to
+70%. A depot raid job puts a depot out for 20 days; a blockade run reinforces a
+besieged garrison.
+
+**Occupation and reconstruction.** A system that changes hands gets occupation
+unrest (60, or 25 in a minor the occupier calls home), and a capture adds 30
+damage; unrest falls 0.5 a day and damage 0.2. The garrison stands at 100 −
+unrest/2 percent, the minor's unrest rises a little (at most 4 points), and
+jobs appear nearby: put down the resistance (or arm it, for the side that lost
+the system), carry refugees, haul reconstruction materials. Damage, by tiers of
+30, raises food, medicine and clothing prices there by 12% a tier (batched into
+the day's one event) and, unless another mod manages shipyard stock, trims the
+shipyards (untracked hulls to 1 at tier 1, none from tier 2; untracked again
+when repaired) and, on mod API 10, the outfitters' munitions (Meteor and
+Sidewinder missiles, Javelins, Heavy Rockets, Torpedoes: 10 at tier 1, none
+from tier 2). A count another mod set is never touched. A side down to under 60% of its home systems **rallies**: its
+garrisons stand at 150%, its minors do not rise, it declares no war and none is
+declared on it, a war it is in ends once it has run 30 days, captures from it
+count half, and no peace takes minors from it; and at most one rising against a
+side comes in 240 days.
+
+### Prices: the convention
+
+Diplomacy and Corporations both change commodity prices with `trade` events,
+which write absolute prices. So:
+
+* Diplomacy changes a price only by **its own delta**: it reads the price now
+  (mod API 10's `trade_base_price`; on API 9 the data price, from the generated
+  `src/Trade.dados`, plus its own delta), takes its own delta off, and writes
+  that plus the new delta. Restoring writes the price without its delta. A
+  change another mod made meanwhile stays (on API 10).
+* It never writes a price Corporations has raised in a **crisis** it announced on
+  the bus (`corporations.crisis`: that system and its neighbours, those
+  commodities, until 5 days after the crisis ends), and catches up afterwards
+  (prices are checked every 5 days).
+* On an **API 9 game with Corporations enabled** it changes no prices and no
+  shipyard stock at all, since it cannot see Corporations' crises there.
+* **Corporations turned on later:** on the first day it is enabled, Diplomacy
+  untracks every hull and outfit count it set that is still the count it set
+  (one a sale or Corporations has changed since is left alone), takes every
+  price delta it wrote off again on API 9, and keeps out from then on.
+* Corporations, restoring a crisis, writes back the price from before it, which
+  includes Diplomacy's delta then; Diplomacy's next check puts its own delta
+  right. Another mod can follow the same rule: only its own deltas, never a
+  price reserved by someone else's announced crisis.
+
 ## Deploying
 
 You need the SDK set up (`npm install`, and `dadoc` on your `PATH`: see the
@@ -456,19 +552,21 @@ with it.
 npm test                                                   # from es-mods: every test
 node --test mods/diplomacy/test/sim.test.mjs               # the long simulation test
 node --test mods/diplomacy/test/factions.test.mjs          # the faction model's tests
+node --test mods/diplomacy/test/m2.test.mjs                # M2: squadrons, rivals, fog, occupation, prices, the bus
 DIPLOMACY_DAYS=6000 node --test mods/diplomacy/test/sim.test.mjs
 node mods/diplomacy/tools/regions/build.mjs --check        # the minors against the map
 ```
 
 The tests build the mod with the SDK (once per run: `test/harness.mjs`) and
 drive it with a mock `Game` (`test/mock.mjs`, every method the mod uses, API
-2-9) over the real galaxy: `test/galaxy.json`, the game's map with the **Free
+2-9, and with `{ api10: true }` mod API 10's `has`, `notify`, `listen`,
+`timing_section`, trade prices and outfit stock) over the real galaxy: `test/galaxy.json`, the game's map with the **Free
 Worlds Veteran start's** territory (the game's dated events up to its start,
 the events its intro applies, then those it schedules; the Free Worlds hold
 57 systems). Make it again after the game's map or the start changes with
 `node mods/diplomacy/tools/make-galaxy.mjs <endless-sky>/data`, or set
 `ES_DATA=<endless-sky>/data` to read the data directly. Without `dadoc` the
-tests are skipped.
+tests fail, saying so (set `DIPLOMACY_ALLOW_SKIP=1` to skip them instead).
 
 `sim.test.mjs` runs the offer, the commission, leaving and joining, and 4000
 days with the player hopping around and fighting beside flotillas, and checks
@@ -535,6 +633,12 @@ mod that sets `test: luna sells <model>` from Luna's shipyard listing).
 * **War Begins**, **Flotilla In Person**, **Join And Leave**, **Licenses And
   Jobs**, **Veteran Offer**, **Pirate Raid In Person**, **Debug Mode**: as
   before (the panel's first button is still Join, and Accept).
+* **Squadron Command** (M2): a Republic Commodore (set by conditions) gets a
+  squadron from `diplomacy: force squadron` on the next arrival, and the
+  `diplomacy: squadrons` / `squadron 1 ...` conditions report it attacking.
+* **Squadron Command Panel** (M2): the same, joining through the Faction panel
+  and opening the War Room's Command tab. Panels are closed with their Close
+  button, never Escape (which opens the game's main menu over a mod panel).
 * **Veteran Start**: the Free Worlds Veteran start's conditions, events,
   reputations, ship and credits; the commission makes a Commodore; Luna sells
   the Frigate, Cruiser and Carrier.
@@ -596,7 +700,7 @@ only when it changes. About 150 are written in a typical game, at most about 310
 | Condition | Meaning |
 |---|---|
 | `diplomacy: active`, `activated`, `declined`, `last day` | on (1); the day it started; Never chosen; the last day simulated |
-| `diplomacy: member`, `merit`, `rank`, `enemy` | the major the player serves (1 Republic, 2 Free Worlds, 3 Syndicate); merit (missions add to it); rank (0-6); the major the member's faction is at war with first (the faction jobs go by it) |
+| `diplomacy: member`, `merit`, `rank`, `enemy` | the major the player serves (1 Republic, 2 Free Worlds, 3 Syndicate); merit (missions add to it); rank (0-8); the major the member's faction is at war with first (the faction jobs go by it) |
 | `diplomacy: war a`, `war b`, `war since` | **one** war between two majors, the player's faction's first, as before: Corporations reads these |
 | `diplomacy: at war 1`, `2`, `3` | 1 while that major fights any war |
 | `diplomacy: wars` | how many wars are running |
@@ -612,6 +716,11 @@ only when it changes. About 150 are written in a typical game, at most about 310
 | `diplomacy: ships here` | flotilla and garrison ships spawned in the player's system on arrival |
 | `diplomacy: luna yard`, `pirate attitudes` | applied once: Luna's Navy yard; the pirates' hostility to the flotillas and rebels |
 | `salary: Republic commission`, `salary: Free Worlds`, `salary: Syndicate commission` | the daily salary, paid by the game |
+| `diplomacy: squadrons`, `squadron <k> at`, `goal`, `strength`, `order` | (M2) the player's squadrons, k = 1..3: system index + 1 where it is and where it is bound, strength, order (1 attack, 2 relieve, 3 hunt, 4 hold); empty slots 0 |
+| `diplomacy: rivals`, `bounty` | (M2) rivals alive; 1 while one has a price on the player's head |
+| `diplomacy: commander news` | (M2) 1 for 10 days after a commander's promotion or death |
+| `diplomacy: occupied`, `damaged` | (M2) systems under occupation unrest; systems with damage |
+| `diplomacy: stat squadrons lost`, `squadrons formed`, `rivals killed` | (M2) running counts |
 
 ### For Corporations (and other plugins)
 
@@ -648,6 +757,28 @@ with a JSON payload (sides as above, systems by name, minors by short name):
 | `diplomacy.battle` | hostile forces fight in a system (a day) | `{"system":"Holeb","a":1,"b":2,"loss_a":40,"loss_b":72}` (strength lost, before personalities) |
 | `diplomacy.rising` | a minor rises | `{"minor":"Paradise Worlds","outcome":"separatist","from":1,"to":6,"from_government":"Republic","to_government":"Paradise Secession"}` (outcome: separatist, defection, annexation) |
 
+Diplomacy **listens** for `corporations.*` (its payloads are in Corporations'
+README) and answers:
+
+| Event | Effect |
+|---|---|
+| `corporations.tender_delivered` | that government's next flotilla goes out at 125%, at most once in 60 days (an award alone does nothing; Corporations M3 tenders only for the Republic, whose Navy hulls are the only military ones) |
+| `corporations.tender_failed` | its next flotilla goes out at 75% |
+| `corporations.bankrupt` | a profiteering scandal: 6 defeat points (unrest at home) for each major at war, and a chronicle line |
+| `corporations.convoy_lost` | in a war zone (held by a side at war, or a flotilla within a jump): a chronicle line |
+| `corporations.crisis` | the prices it raised are left alone (see Prices: the convention) |
+| `corporations.shortfall` | (Corporations M3) the side's warship shortfall, 0-100: its new flotillas are `shortfall × 40 / 100` percent weaker. With Corporations enabled the mod also reads `corporations: shortfall <side>` each day, so this works on API 9 too |
+
+On an API 9 game (loader 0.1.0) there is no bus: nothing is posted or heard,
+and Corporations' crises cannot be seen (hence the price rule above).
+
+**Saving (mod API 10).** With `on_save` the state is written only when the game
+writes the pilot; a day only writes a new revision the first time something
+changes after a save, so an older save loaded later is always told apart (and
+read). On API 9 the state is written every day, as in M1. `timing_section`
+splits `on_day` into `politics`, `war`, `squadron`, `operations` and
+`occupation` in the game's timing report.
+
 Test overrides, which in-game tests and the console can set:
 
 | Condition | |
@@ -659,6 +790,7 @@ Test overrides, which in-game tests and the console can set:
 | `diplomacy: force raid` | non-zero: a medium pirate raid in the next system the player arrives in |
 | `diplomacy: force rebellion` | minor index + 1: that minor rises the next day (a core does not); with `force outcome` 1 it secedes, 2 it defects if it can |
 | `diplomacy: force crisis` | non-zero: the first hour's border crisis comes the next day |
+| `diplomacy: force squadron` | system index + 1: on arriving in the next system, a member gets a squadron ordered to attack it (or their first war's first target), room or not |
 
 **Old saves.** A pilot of the old version (active, with its state all in
 conditions and none stored) is **migrated** on load: its standing is kept
@@ -677,7 +809,17 @@ those above: `max_wars` 3 / `hard_max_wars` 4, `declare_gap_min`/`max` 8-20,
 `rebellion_unrest` 40, `rebellion_divisor` 400, `rebellion_cooldown` 600, the
 rising weights, `capture_hp` 60, `consolidation` 150 for 20 days, `swap_days`
 10, `max_flotillas` 4, `per_war` 3, `rebel_flotillas` 2, and the caps on the
-chronicle (60), history (120), medals (40) and operations (24).
+chronicle (60), history (120), medals (40) and operations (24). M2's:
+`squadrons_by_rank`, `squadron_credits` 50,000, `squadron_fleet_cap` 200,
+`squadron_presence` 130, `squadron_loss_merit` 15 / `standing` 5; `history_battle`
+3, `history_kill` 1, `rival_threshold` 12, `max_rivals` 2 and the trait bonuses;
+`visibility_range` 1, `scout_days` 10, `sighting_days` 20; `supply_free` 2,
+`supply_per_jump` 8, `supply_floor` 70, `depot_raid_days` 20;
+`occupation_unrest` 60/25, `capture_damage` 30, `damage_tier` 30, `damage_price`
+12, `occupation_minor_cap` 4; `rally_below` 60, `rally_garrison` 150,
+`rising_gap` 240; `tender_boost` 125, `tender_penalty` 75,
+`scandal_unrest` 6, `crisis_margin` 5, `shortfall_weight` 40; `tender_gap` 60,
+`squadron_cooldown` 30, `squadron_value` 50, `rally_peace_days` 30.
 
 ### Raising the number of wars at once
 
@@ -712,3 +854,9 @@ Two or more wars run on about 8% of days. The knobs that would raise it
   conversations about the wars beyond the first hour's two dialogs.
 * **Merit** counts ships the loader reports as disabled or destroyed by the
   player.
+* **Squadrons are ordered from the War Room only**: no hails, no orders in
+  flight (that needs API 11's hail and boarding slots).
+* **Prices and stock on API 9 with Corporations** are left alone (see Prices:
+  the convention); outfitter trims need API 10.
+* **Fog** hides enemy flotillas on the map and in the Forces tab; the war
+  report, the chronicle and the bus still tell what happened.

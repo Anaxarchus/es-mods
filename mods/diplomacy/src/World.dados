@@ -60,6 +60,34 @@ int next_flotilla = 1
 []string ops = []
 []string medals = []
 {string: int} stats = {}
+// M2. Last sightings of enemy forces ("flotilla id|side|size|system|day"),
+// systems scouted ([system, until]), raided depots ([system, until]).
+[]string sightings = []
+[][]int scouted = []
+[][]int depots_down = []
+// Occupation: [system, unrest (tenths), damage (tenths), damage tier applied].
+[][]int occupation = []
+// Trade deltas this mod applied: "system|commodity|delta" (README, "Prices").
+[]string trade = []
+// Shipyard and outfitter stock it trimmed: "s|planet|model" or "o|planet|outfit".
+[]string stock = []
+// Corporations' crises seen on the bus: "system|commodity|until": prices this
+// mod leaves alone.
+[]string reserved = []
+// Per side: tender boost until (day), and a tender penalty for the next launch (1).
+// Per side: a delivered warship tender (Corporations) boosts its next launch
+// (boost 1), at most once in tune.tender_gap days (boost_day: the last).
+// The day the player last lost a squadron (0: never).
+int squadron_lost = 0
+[]int boost = []
+[]int boost_day = []
+[]int penalty = []
+// The day of the latest commander news (a promotion, a death), for the spaceport news.
+int news_day = 0
+// Per side: the day of the latest rising against it.
+[]int risen = []
+// Per side: Corporations' warship shortfall (0-100), from "corporations: shortfall <side>" or its bus event.
+[]int shortfall = []
 // The first hour: [crisis day, crisis minor, crisis declared (0 once it is over), intro
 // offered, last war day of the player's faction, the crisis war's id].
 []int story = [0, -1, 0, 0, 0, 0]
@@ -102,6 +130,20 @@ void reset(int minors, int sides):
     medals = []
     stats = {}
     story = [0, -1, 0, 0, 0, 0]
+    sightings = []
+    scouted = []
+    depots_down = []
+    occupation = []
+    trade = []
+    stock = []
+    reserved = []
+    squadron_lost = 0
+    boost = zeros(sides + 1)
+    boost_day = zeros(sides + 1)
+    penalty = zeros(sides + 1)
+    news_day = 0
+    risen = zeros(sides + 1)
+    shortfall = zeros(sides + 1)
 
 []int zeros(int n):
     []int v = []
@@ -162,6 +204,20 @@ string encode():
         keys.append(json.text(k) + ":" + string(v))
     f.append("\"stats\":{" + keys.join(",") + "}")
     f.append("\"story\":" + json.ints(story))
+    f.append("\"sightings\":" + json.strings(sightings))
+    f.append("\"scouted\":" + json.rows(scouted))
+    f.append("\"depots_down\":" + json.rows(depots_down))
+    f.append("\"occupation\":" + json.rows(occupation))
+    f.append("\"trade\":" + json.strings(trade))
+    f.append("\"stock\":" + json.strings(stock))
+    f.append("\"reserved\":" + json.strings(reserved))
+    f.append("\"squadron_lost\":" + string(squadron_lost))
+    f.append("\"boost\":" + json.ints(boost))
+    f.append("\"boost_day\":" + json.ints(boost_day))
+    f.append("\"penalty\":" + json.ints(penalty))
+    f.append("\"news_day\":" + string(news_day))
+    f.append("\"risen\":" + json.ints(risen))
+    f.append("\"shortfall\":" + json.ints(shortfall))
     return "{" + f.join(",") + "}"
 
 // Read a saved state; false if it cannot be read (the caller starts afresh).
@@ -217,6 +273,20 @@ bool decode(string text, int minors, int sides):
         []string keys = globalThis.Object.keys(st)
         for k in keys:
             stats[k] = json.num(st, k, 0)
+    sightings = json.string_list(o, "sightings")
+    scouted = json.int_rows(o, "scouted")
+    depots_down = json.int_rows(o, "depots_down")
+    occupation = json.int_rows(o, "occupation")
+    trade = json.string_list(o, "trade")
+    stock = json.string_list(o, "stock")
+    reserved = json.string_list(o, "reserved")
+    squadron_lost = json.num(o, "squadron_lost", 0)
+    boost = fit(json.int_list(o, "boost"), sides + 1)
+    boost_day = fit(json.int_list(o, "boost_day"), sides + 1)
+    penalty = fit(json.int_list(o, "penalty"), sides + 1)
+    news_day = json.num(o, "news_day", 0)
+    risen = fit(json.int_list(o, "risen"), sides + 1)
+    shortfall = fit(json.int_list(o, "shortfall"), sides + 1)
     []int s = json.int_list(o, "story")
     for k in 0..<story.len():
         if k < s.len():
@@ -237,6 +307,24 @@ bool decode(string text, int minors, int sides):
     for k in 0..<rows:
         out.append(fit(v[k] if k < v.len() else [], n))
     return out
+
+int occupation_index(int i):
+    for k in 0..<occupation.len():
+        if occupation[k][0] == i:
+            return k
+    return -1
+
+bool scouted_now(int i, int day):
+    for s in scouted:
+        if s[0] == i && s[1] >= day:
+            return true
+    return false
+
+bool depot_down(int i, int day):
+    for s in depots_down:
+        if s[0] == i && s[1] >= day:
+            return true
+    return false
 
 // ---- Lookups ----
 

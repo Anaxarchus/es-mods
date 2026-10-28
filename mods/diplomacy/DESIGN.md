@@ -123,51 +123,104 @@ patron not already at war twice.
 ## How it is built
 
 The state is one JSON text kept with the pilot (`Game.data`), bounded (about
-11 KB); the conditions are what missions and other plugins read (about 140),
-written only when they change. Distances are cached per source system and
-dropped when the lanes change. `on_day` takes about 2.5 ms in QuickJS
-(`tools/qjs-time.mjs`), far under the loader's 250 ms watchdog.
+14 KB with M2, under 17 KB in the survey); the conditions are what missions and
+other plugins read (about 150, at most about 330), written only when they
+change. Distances are cached per source system and dropped when the lanes
+change; supply's depot distances are kept until an owner changes or a depot
+goes down or back up; the rival check runs only when a commander's history
+with the player grew. `on_day` takes about 3.0 ms in QuickJS
+(`tools/qjs-time.mjs`; 3.5 ms with a busy player commanding three squadrons on
+API 10, `busy`), far under the loader's 250 ms watchdog.
 
 ## Milestones
 
-**M1 (this one):** the faction model; multiple wars; goals and peace terms;
-rebellion, defection and protection; the churn fixes; the War Room, chronicle,
+**M1:** the faction model; multiple wars; goals and peace terms; rebellion,
+defection and protection; the churn fixes; the War Room, chronicle,
 operations, medals and service record; the first hour; the digest, news, the
 Faction table; mod API 9; Luna's Navy yard.
 
-**M2 (next):**
+## M2: command and consequence
 
-* **Mod API 10.** Detect it with `game.has(...)` (or a guarded call) and keep
-  API 9 working. Then:
-  * **the notification bus** (`notify`/`listen`/`on_notification`): publish
-    `diplomacy.war.declared`, `diplomacy.war.ended` (with terms),
-    `diplomacy.capture`, `diplomacy.minor.rebelled`/`defected` and
-    `diplomacy.state` (every war, each side and goal). **Corporations** then
-    listens instead of reading `war a`/`war b`: it can raise demand per war and
-    per front (shipyards near a front, government contracts for both sides of
-    every war), and Diplomacy can listen back (a company's military contracts
-    adding to a side's flotilla strength);
-  * `on_save`: save the state only when the game writes the pilot (as
-    Corporations' TODO describes) instead of every day;
-  * `pilot_loaded` in place of the world/rev check;
-  * `trade_price`: wars and blockades moving commodity prices in front systems.
-* **Pirate suppression:** majors may campaign against pirate holdings (a
-  minor-like war with no peace terms), and pirates may seize a weakly held
-  border system.
-* **Diplomacy proper:** treaties (non-aggression, alliances, a guarantee of a
-  rebel faction), offered and broken; alliances bring a third major into a war
-  (so the Free Worlds and the Syndicate can fight while they share no border).
-* **More operations:** escort a relief flotilla in person (an `npc accompany`
-  of the flotilla's ships), blockade runs, envoys between the factions; story
-  hails and conversations for wars involving the player.
-* **The War Room:** a history of finished wars, per-minor histories, the map
-  centred on a chosen row.
+**What it adds.** Squadrons the player commands (`Squadron`), rival
+commanders (`Rivals`, with `Admirals`' rosters widened to six fields: name,
+personality, wins, history, trait, rival), fog of war (`Intel`), supply
+(`Simulation.supply`), occupation and reconstruction (`Occupation`, with the
+generated `Trade` table), the Corporations link over mod API 10's bus, and
+API 10 housekeeping (`on_save`, `timing_section`). README.md, "Command and
+consequence (M2)", says what the player sees.
 
-**M3 (later):**
+**Decisions.**
 
-* rebel factions that last becoming majors (a capital, a core, minors of their
-  own); a major broken by losses splitting;
-* planets' defense fleets and shipyards following the flag (a captured world's
-  defenses and stock), with Sol's Luna always the Republic's;
-* the other factions' wars beyond human space (the Coalition, the Hai), and
-  player-founded factions.
+* *A squadron is a flotilla.* It holds one of the faction's places (four per
+  major) and moves, fights and besieges through the same code; only its goal
+  comes from the player. When the AI has filled every place, the flotilla
+  nearest the target comes under command rather than a fifth one appearing: the
+  caps that keep the war readable stay true. Its strength counts the player's
+  fleet at half price, capped, and never more than at formation or than the
+  fleet now gives; a lost squadron is not replaced for 30 days. The player still
+  matters: in the reviewer's High-Admiral experiment (three squadrons of a
+  carrier fleet re-sent every 15 days, 2000 days of war, 8 seeds) the Republic
+  ends at 60 systems on average (low 48) against 76 (low 45) without
+  squadrons; 31 squadrons formed and 30 lost a run (47 and 45 before the
+  cooldown).
+* *A delivered tender boosts one launch*, at most once in 60 days per
+  government. Corporations M3 tenders only for the Republic (only Navy hulls
+  are military), about 280 awards and deliveries in 2,500 days; as a 30-day
+  window on every award or delivery the boost was on nearly all the time. With
+  the captured stream replayed (8 seeds × 4000 days) the Republic averages 87
+  systems (low 53), 90 (low 71) with the boost turned off and 79 (low 43) with
+  no posts: the boost itself no longer moves it; the rest is the chaotic
+  trajectory changing with any event.
+* *Rivals are the commanders already there.* No new actors: history accrues
+  on the existing roster, a trait is rolled once, one rival per side and two
+  in all, so the chronicle stays a story.
+* *Fog is a view, not a rule.* The simulation knows everything; the map and the
+  Forces tab show what the faction could know. Sightings fade instead of
+  vanishing, so the map still says where the danger was.
+* *Supply is gentle* (8% a jump past 2, floor 70%). At 10% a jump past 1 with a
+  floor of 60%, sieges dragged on, war weariness rose, and minors rose in
+  cascades (a survey pilot's Syndicate fell to 1 system).
+* *Occupation feeds unrest only a little* (at most 4 points of a minor's
+  target), and brakes stop the spirals that M1 already had now and then (seeds
+  10 and 12 of M1's survey took the Republic to 22-23 systems): at most one
+  rising against a side in 240 days, and a side under 60% of its home rallies:
+  stronger garrisons, no risings, no war declared by it or on it, a war it is
+  in ends after 30 days, captures from it count half, no cessions. A rallying
+  side holds what it has rather than recovering (survey seed 8's Syndicate
+  stops at 12 instead of bleeding to 7).
+* *Prices by delta only*, and never a price another mod announced it raised
+  (README.md, "Prices: the convention"). On API 9 with Corporations enabled
+  Diplomacy leaves prices and stock alone rather than guess.
+* *On API 10, save on `on_save` only*, with a revision written on the first
+  change after a save, so an older save is still told apart; on API 9 the M1
+  daily save stays. `api_version` and `min_api` stay 9: every API 10 call is
+  behind `game.has`.
+
+**Numbers** (5 pilots × 4000 days, test galaxy): days with 0/1/≥2 wars
+51.1% / 43.9% / 5.0% (M1: 44.5 / 48 / 7.4); risings 24 (separatist 8,
+defection 16, annexation 2; M1's base 21 on the same seeds); lowest holdings
+Republic 53, Free Worlds 38, Syndicate 24 of 89/57/30; at most 32 occupation
+records and 45 price deltas; about 75 trade lines a year, batched into the
+day's one change event (about 65 change events a year in all); state at most
+17 KB.
+
+**M3 needs.**
+
+* *Treaties and influence:* non-aggression pacts, alliances and guarantees,
+  offered and broken; influence as a currency the player earns (operations,
+  squadron victories) and spends on them; alliances bring a third major into a
+  war.
+* *Politics and coups:* each major's government as factions (hawks, doves, the
+  military) that unrest, defeats and the player's standing move; coups that
+  change a major's policy or split it; a rebel faction that lasts becoming a
+  major (capital, core, minors).
+* *Capture and prisoner exchange:* a rival's flagship disabled rather than
+  destroyed is captured; prisoners held, traded in peace terms or for the
+  player's lost squadron commanders.
+* *Pirate warlords:* named pirate commanders with holdings that grow and shrink,
+  majors campaigning against them, warlords seizing weakly held border systems
+  and selling their services in wars.
+* *API 11 hail and boarding slots:* ordering a squadron by hailing it in flight,
+  rivals hailing the player before a fight, boarding a rival's disabled
+  flagship for the capture above; a stock convention with Corporations'
+  outfit stock like the one for prices (M2 trims only untracked munitions).

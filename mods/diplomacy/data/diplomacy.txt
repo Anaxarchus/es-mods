@@ -132,3 +132,26 @@ mission "Diplomacy: Syndicate Dispatches"
 event "diplomacy: luna navy yard"
 	planet "Luna"
 		shipyard "Navy Advanced"
+
+# A rival's side puts a price on the player's head ("diplomacy: bounty", M2):
+# now and then, on landing, bounty hunters come looking for the player nearby.
+mission "Diplomacy: A Price on Your Head"
+	invisible
+	repeat
+	to offer
+		"diplomacy: active" == 1
+		"diplomacy: bounty" == 1
+		not "Diplomacy: A Price on Your Head: active"
+		random < 4
+	to fail
+		"diplomacy: bounty" == 0
+	source
+		attributes "spaceport"
+	npc
+		government "Bounty Hunter"
+		personality nemesis heroic
+		system
+			distance 1 2
+		fleet "Bounty Hunters"
+	on offer
+		dialog "A dockhand pulls you aside: hunters have been asking after you by name. Your rival's side has put a price on your head, and someone means to collect it."

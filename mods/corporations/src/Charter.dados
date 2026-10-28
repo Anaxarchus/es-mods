@@ -1,0 +1,293 @@
+class Charter
+
+import "imports:sdk/es"
+
+// (M3) The player's own company. At a planet with a bank the player pays
+// FEE to found one in the Freight or Security sector (half the fee is its
+// first cash). It is a Company like any other (owner 1): it bids in
+// Market.award with its margin policy (Company.policy: -1 low, 0 normal, 1
+// high, 4 points each way) and its chief's trait (hire one for HIRE_FEE).
+// Its capacity comes from the player's ships:
+// - on a game with ship parking (API 10, game.has("ship_parking")): a ship
+//   assigned to it is parked (Game.ship_park), so it cannot also fly, and
+//   gives capacity by its price and kind (ship_capacity); taking it back
+//   unparks it. A ship the player unparks themselves, or sells, leaves the
+//   company the next day (checked with ship_parked and the fleet). A ship
+//   can also be sold to the company for good (Game.ship_remove, with
+//   game.has("call:ship_remove")): permanent capacity, and the company
+//   pays the player SALE_PAY of its price.
+// - on an API 9 game: capacity bought with credits, CAPITAL a unit ("$").
+// Only a private company buys ships (it pays from its own cash, which is the
+// player's money then), and their capacity is worth nothing on dissolving:
+// selling a worn ship to it and dissolving must not beat a shipyard's price.
+// Until its IPO it is private: not traded, never a takeover target, and the
+// player holds every share. The IPO (after IPO_REPORTS reports) issues new
+// shares so the market holds IPO_SHARE; the company gets their price
+// (IPO_DISCOUNT below fair value, which counts only capacity that cannot be
+// taken back: firm) as cash, and the player keeps the rest of the votes: a suitor can then bid
+// for it, and the player defends it with board votes (Board).
+// Dissolving it (while private, or holding DISSOLVE_SHARE or more) unparks its
+// ships and pays the player their share of its books (cash less debt, and
+// half the value of capacity it bought). If it fails or is taken over, its
+// parked ships are unparked the next time the player opens the exchange
+// (unparking needs a hook the player started); nothing is ever lost or doubled.
+
+int FEE = 2000000
+float CAPITAL = 1500000.0
+float SALE_PAY = 0.5
+float IPO_SHARE = 0.6
+float IPO_DISCOUNT = 0.9
+// Reports before an IPO (a price needs a record).
+int IPO_REPORTS = 4
+float DISSOLVE_SHARE = 0.9
+int HIRE_FEE = 300000
+[]int sectors = [6, 7]
+
+// Its capacity that cannot be taken back: the office (0.5), capacity bought
+// and ships sold to it. Ships assigned can be (Market.fair prices on this).
+float firm(Company c):
+    float cap = 0.5
+    for a in assigned(c):
+        []string f = a.split(":")
+        if f[0] == "$" || f[0] == "sold" || f[0] == "-":
+            cap += f[1].to_float()
+    return cap if cap < c.capacity else c.capacity
+
+// Its assigned ships leave it (a takeover, a bankruptcy, the player selling
+// out): their capacity goes, and they are unparked at the player's next visit
+// to the exchange (returns).
+void release(Market m, Company c):
+    []string keep = []
+    for a in assigned(c):
+        []string f = a.split(":")
+        if f[0] == "$" || f[0] == "sold" || f[0] == "-":
+            keep.append(a)
+            continue
+        c.capacity -= f[1].to_float()
+        if !m.charter_returns.contains(f[0]):
+            m.charter_returns.append(f[0])
+    c.ships = keep.join(";")
+    c.capacity = c.capacity if c.capacity > 0.5 else 0.5
+    m.must_save = true
+
+// What the company pays for a ship sold to it.
+int sale_price(es.Game game, string ship):
+    int cost = game.model_cost(game.fleet_ship_model(ship))
+    int p = globalThis.Math.round(float(cost) * SALE_PAY)
+    return p
+
+// The player's company now, or none (id 0).
+Company mine(Market m):
+    for c in m.companies:
+        if c.owner == 1 && c.listed():
+            return c
+    return Company()
+
+bool parking(Market m):
+    return m.api_park
+
+// The capacity a ship gives the player's company: its price over a unit's
+// book value, at most 6; half for a ship not suited to the sector (cargo
+// ships for freight, warships for security).
+float ship_capacity(es.Game game, Company c, string ship):
+    string model = game.fleet_ship_model(ship)
+    int cost = game.model_cost(model)
+    float cap = float(cost) / CAPITAL if cost > 0 else 0.5
+    cap = cap if cap < 6.0 else 6.0
+    string cat = game.model_category(model)
+    bool suited = (cat.contains("Freighter") || cat.contains("Transport")) if c.sector == 6 else (cat.contains("Warship") || cat.contains("Interceptor") || cat.contains("Fighter"))
+    float v = cap if suited else cap * 0.5
+    return v if v > 0.25 else 0.25
+
+// Found it. Answers it, or none.
+Company found(es.Game game, Market m, Galaxy galaxy, int sector, int d):
+    string planet = game.planet()
+    if mine(m).id != 0 || planet == "" || !sectors.contains(sector) || game.condition("credits") < FEE:
+        return Company()
+    m.credit(game, -float(FEE))
+    Company c = m.add_company(m.names.invent(m.rng, sector, m.used), false, sector, planet, galaxy.system_of(game, planet), 0.5, d)
+    c.owner = 1
+    c.efficiency = 1.0
+    c.reliability = 0.85
+    c.cash = float(FEE) * 0.5
+    c.shares = m.shares_for(1.0)
+    c.earnings = []
+    c.ceo = "you"
+    c.trait = 1
+    c.ceo_since = d
+    c.price = m.fair(c)
+    m.holdings[c.id] = c.shares
+    m.basis[c.id] = float(FEE)
+    m.say_tagged(d, "An independent captain charters " + c.name + " (" + m.names.sectors[sector].to_lower() + ", " + game.planet_name(planet) + ").", "c" + string(c.id))
+    return c
+
+[]string assigned(Company c):
+    return c.ships.split(";") if c.ships != "" else []
+
+bool has_ship(Company c, string ship):
+    for a in assigned(c):
+        if a.split(":")[0] == ship:
+            return true
+    return false
+
+void add_entry(Company c, string ship, float cap):
+    []string a = assigned(c)
+    a.append(ship + ":" + string(cap))
+    c.ships = a.join(";")
+    c.capacity += cap
+
+// Assign one of the player's ships (parked: API 10). Answers whether it was.
+bool assign(es.Game game, Market m, Company c, string ship):
+    if !parking(m) || c.id == 0 || has_ship(c, ship) || ship == "" || game.fleet_ship_name(ship) == "":
+        return false
+    if !game.ship_park(ship, true):
+        return false
+    add_entry(c, ship, ship_capacity(game, c, ship))
+    m.must_save = true
+    return true
+
+// Take a ship back (unparked). Answers whether it was.
+bool unassign(es.Game game, Market m, Company c, string ship):
+    []string keep = []
+    bool found = false
+    for a in assigned(c):
+        []string f = a.split(":")
+        if f[0] == ship && !found:
+            found = true
+            c.capacity -= f[1].to_float()
+            if game.ship_parked(ship):
+                game.ship_park(ship, false)
+            continue
+        keep.append(a)
+    c.ships = keep.join(";")
+    c.capacity = c.capacity if c.capacity > 0.5 else 0.5
+    m.must_save = found || m.must_save
+    return found
+
+// Sell a ship to the company for good (API 10 ship_remove).
+bool sell_ship(es.Game game, Market m, Company c, string ship):
+    if !m.api_remove || c.id == 0 || c.ipo || has_ship(c, ship):
+        return false
+    float cap = ship_capacity(game, c, ship)
+    float pay = float(sale_price(game, ship))
+    // (M3 review) It pays in full or not at all.
+    if pay > c.cash:
+        return false
+    if !game.ship_remove(ship):
+        return false
+    c.cash -= pay
+    m.credit(game, pay)
+    add_entry(c, "sold", cap)
+    m.must_save = true
+    return true
+
+// Buy capacity with credits (API 9).
+bool buy_capacity(es.Game game, Market m, Company c, int units):
+    float cost = CAPITAL * float(units)
+    if c.id == 0 || units < 1 || float(game.condition("credits")) < cost:
+        return false
+    m.credit(game, -cost)
+    add_entry(c, "$", float(units))
+    m.basis[c.id] = m.basis.get(c.id, 0.0) + cost
+    m.must_save = true
+    return true
+
+void set_policy(Market m, Company c, int policy):
+    c.policy = policy if policy >= -1 && policy <= 1 else 0
+
+bool hire(es.Game game, Market m, Company c, int trait, int d):
+    if c.id == 0 || game.condition("credits") < HIRE_FEE || trait < 0 || trait > 3:
+        return false
+    m.credit(game, -float(HIRE_FEE))
+    m.execs.newcomer(m, c, trait)
+    c.ceo_since = d
+    m.say_tagged(d, c.name + " hires " + m.execs.label(c) + " as its chief executive.", "c" + string(c.id))
+    return true
+
+// The IPO: new shares so the market holds IPO_SHARE; their price is the company's cash.
+bool may_ipo(Company c):
+    return c.id != 0 && !c.ipo && c.earnings.len() >= IPO_REPORTS
+
+float ipo(es.Game game, Market m, Company c, int d):
+    if !may_ipo(c):
+        return 0.0
+    int held = m.holdings.get(c.id, 0)
+    int issued = int(float(held) * IPO_SHARE / (1.0 - IPO_SHARE))
+    float price = m.fair(c) * IPO_DISCOUNT
+    float raised = price * float(issued)
+    c.shares = held + issued
+    c.price = price
+    c.cash += raised
+    c.ipo = true
+    m.must_save = true
+    m.say_tagged(d, c.name + " lists on the exchange at " + m.fmt.price(price) + ", raising " + m.fmt.short_credits(raised) + ".", "c" + string(c.id))
+    return raised
+
+bool may_dissolve(Market m, Company c):
+    return c.id != 0 && (!c.ipo || float(m.holdings.get(c.id, 0)) >= DISSOLVE_SHARE * float(c.shares))
+
+// Dissolve: ships back, the books to the holders. Answers the player's share.
+float dissolve(es.Game game, Market m, Company c, int d):
+    if !may_dissolve(m, c):
+        return 0.0
+    float bought = 0.0
+    for a in assigned(c):
+        []string f = a.split(":")
+        if f[0] == "$":
+            bought += f[1].to_float()
+        else if f[0] == "sold":
+            continue
+        else if game.ship_parked(f[0]):
+            game.ship_park(f[0], false)
+    float value = c.cash - c.debt + bought * CAPITAL * 0.5
+    value = value if value > 0.0 else 0.0
+    float share = float(m.holdings.get(c.id, 0)) / float(c.shares)
+    float paid = value * share
+    m.credit(game, paid)
+    m.holdings.delete(c.id)
+    m.basis.delete(c.id)
+    m.release_contracts(c, d)
+    c.ships = ""
+    c.status = c.BANKRUPT
+    c.since = d
+    c.capacity = 0.0
+    c.cash = 0.0
+    c.debt = 0.0
+    m.must_save = true
+    m.say_tagged(d, "An independent captain dissolves " + c.name + ".", "c" + string(c.id))
+    return paid
+
+// Each day: assigned ships the player took back themselves (unparked, sold,
+// lost) leave the company; a company gone (bankrupt, taken over) hands its
+// parked ships to the queue for unparking (returns).
+void daily(es.Game game, Market m, int d):
+    for c in m.companies:
+        if c.owner != 1 || c.ships == "":
+            continue
+        if !c.listed():
+            for a in assigned(c):
+                string ship = a.split(":")[0]
+                if ship != "$" && ship != "sold" && !m.charter_returns.contains(ship):
+                    m.charter_returns.append(ship)
+            c.ships = ""
+            m.player_events.append("Your company is gone; open the exchange to take back the ships it had.")
+            continue
+        if !parking(m):
+            continue
+        for a in assigned(c):
+            string ship = a.split(":")[0]
+            if ship != "$" && ship != "sold" && (game.fleet_ship_name(ship) == "" || !game.ship_parked(ship)):
+                unassign(game, m, c, ship)
+                m.player_events.append(c.name + " no longer has the " + (game.fleet_ship_name(ship) if game.fleet_ship_name(ship) != "" else "ship") + ": it is not parked for it.")
+
+// From a hook the player started, landed: unpark ships of a company gone.
+void returns(es.Game game, Market m):
+    if m.charter_returns.len() == 0 || game.planet() == "" || !parking(m):
+        return
+    []string left = []
+    for ship in m.charter_returns:
+        if game.fleet_ship_name(ship) == "" || !game.ship_parked(ship) || game.ship_park(ship, false):
+            continue
+        left.append(ship)
+    m.charter_returns = left
+    m.must_save = true

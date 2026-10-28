@@ -163,13 +163,20 @@ int next_hop(int here, int to):
 
 // Read every human system's owner from the game (once a day, and on load).
 void refresh(es.Game game):
+    []int old = owners
     owners = []
     owners.resize(names.len())
     owners.fill(0)
+    bool same = old.len() == owners.len()
     for i in human:
         owners[i] = factions.of_government(game.system_government(names[i]))
+        if same && old[i] != owners[i]:
+            same = false
     owners_known = true
     held_dirty = true
+    rally_dirty = true
+    if !same:
+        owner_version += 1
 
 int owner(int i):
     if i < 0 || i >= owners.len():
@@ -180,6 +187,8 @@ int owner(int i):
 void set_owner(int i, int side):
     owners[i] = side
     held_dirty = true
+    rally_dirty = true
+    owner_version += 1
 
 // Systems side s holds in minor m.
 int held_by(int m, int s):
@@ -235,6 +244,37 @@ int territory(int s):
         if owners[i] == s:
             n += 1
     return n
+
+// Systems in side s's default minors.
+int home_size(int s):
+    int n = 0
+    for m in 0..<factions.regions.count():
+        if factions.regions.parents[m] == s:
+            n += minor_systems[m].len()
+    return n
+
+// A major down to under tune.rally_below percent of its home rallies (M2): its
+// garrisons stand stronger, its minors do not rise, and its neighbours do not
+// pile on for the opportunity.
+bool rallying(int s):
+    if !factions.is_major(s):
+        return false
+    if rally_dirty:
+        rally_dirty = false
+        if homes.len() == 0:
+            homes = [0, home_size(1), home_size(2), home_size(3)]
+        rally = [false, false, false, false]
+        for f in 1..=3:
+            rally[f] = territory(f) * 100 < homes[f] * tune.rally_below
+    return rally[s]
+
+// Counts owner changes (for caches elsewhere).
+int owner_version = 0
+
+// rallying(), worked out again when an owner changes.
+bool rally_dirty = true
+[]bool rally = []
+[]int homes = []
 
 // True if side s holds a system in minor m or one next to it.
 bool borders(int s, int m):

@@ -1,0 +1,149 @@
+class Shorts
+
+import "imports:sdk/es"
+
+// (M3) Short selling. The player borrows a company's shares and sells them
+// (the price falls with the order, as a sale does, less the broker's fee);
+// the proceeds stay with the broker, and the player posts MARGIN of the
+// value from their credits. Each day the lender is paid RATE of the
+// position's value (HARD times that for a company distressed or for sale),
+// and every dividend the company pays. If the loss passes CALL of the
+// margin, the broker buys the shares back at once (a margin call). A
+// buyout squeezes the short (bought back at the offer); a bankruptcy
+// closes it at what holders get. Closing buys the shares back (the price
+// rises with the order, plus the fee) and returns the proceeds and margin
+// less that cost; a loss past them is charged (Market.charge: owed if the
+// credits run out). At most LIMIT of a company's shares can be short, none
+// of a company the player holds shares in, nor of the player's own company.
+// Saved as "q|id|shares|proceeds|margin".
+
+float LIMIT = 0.10
+float MARGIN = 0.5
+float CALL = 0.8
+float RATE = 0.0004
+float HARD = 5.0
+
+// Counted since the mod started (not saved), for tests and tools.
+int calls = 0
+int squeezes = 0
+
+// No lender has shares of a company in trouble (distressed or for sale) to
+// lend: shorting one, when the trouble already shows, would be close to a
+// sure thing (it fails, or is sold cheap).
+// (M3 review) Nor one whose home is under siege, or changed hands lately
+// (a blockade job tells where sieges are; a capture is a sure fall).
+int AFTER_CAPTURE = 60
+
+bool allowed(Market m, Company c):
+    return c.listed() && c.status == c.LISTED && c.owner == 0 && m.holdings.get(c.id, 0) == 0 && !m.frozen(c) && !m.losses.besieged.contains(c.system) && m.day - c.captured > AFTER_CAPTURE
+
+// What n shares sold short bring (after the fee), and the margin they need.
+float proceeds(Market m, Company c, int n):
+    float drop = m.impact(c, n)
+    float value = c.price * (1.0 - drop / 2.0 if drop < 1.8 else 0.1) * float(n)
+    float net = value - m.fee(value)
+    return net if net > 0.0 else 0.0
+
+float margin_for(Market m, Company c, int n):
+    return c.price * float(n) * MARGIN
+
+// The most shares the player may sell short now.
+int most(es.Game game, Market m, Company c):
+    if !allowed(m, c) || c.price <= 0.0:
+        return 0
+    float credits = float(game.condition("credits"))
+    int by_cap = int(float(c.shares) * LIMIT) - m.shorts.get(c.id, 0)
+    int lo = 0
+    int hi = by_cap
+    for lo < hi:
+        int mid = (lo + hi + 1) / 2
+        if margin_for(m, c, mid) <= credits:
+            lo = mid
+        else:
+            hi = mid - 1
+    return lo if lo > 0 else 0
+
+// Sell n shares short. Answers the margin posted, or 0.
+float open(es.Game game, Market m, Company c, int n, int d):
+    if n <= 0 || n > most(game, m, c):
+        return 0.0
+    float got = proceeds(m, c, n)
+    float margin = margin_for(m, c, n)
+    m.credit(game, -margin)
+    float drop = m.impact(c, n)
+    c.price = c.price * (1.0 - drop if drop < 0.9 else 0.1)
+    m.shorts[c.id] = m.shorts.get(c.id, 0) + n
+    m.short_proceeds[c.id] = m.short_proceeds.get(c.id, 0.0) + got
+    m.short_margin[c.id] = m.short_margin.get(c.id, 0.0) + margin
+    return margin
+
+// What buying back n shares costs at `price` (-1: the market, moved by the order).
+float cost(Market m, Company c, int n, float price):
+    if price >= 0.0:
+        float v = price * float(n)
+        return v + m.fee(v)
+    float value = c.price * (1.0 + m.impact(c, n) / 2.0) * float(n)
+    return value + m.fee(value)
+
+// Buy back n shares. Answers what came back to the player (negative: a loss
+// beyond the margin, charged).
+float cover(es.Game game, Market m, Company c, int n, float price):
+    int short = m.shorts.get(c.id, 0)
+    if n <= 0 || short <= 0:
+        return 0.0
+    n = n if n < short else short
+    float f = float(n) / float(short)
+    float back = f * (m.short_proceeds.get(c.id, 0.0) + m.short_margin.get(c.id, 0.0))
+    float paid = cost(m, c, n, price)
+    if price < 0.0:
+        c.price = c.price * (1.0 + m.impact(c, n))
+    float net = back - paid
+    if net >= 0.0:
+        m.credit(game, net)
+    else:
+        m.charge(game, -net)
+    if n == short:
+        m.shorts.delete(c.id)
+        m.short_proceeds.delete(c.id)
+        m.short_margin.delete(c.id)
+    else:
+        m.shorts[c.id] = short - n
+        m.short_proceeds[c.id] = m.short_proceeds.get(c.id, 0.0) * (1.0 - f)
+        m.short_margin[c.id] = m.short_margin.get(c.id, 0.0) * (1.0 - f)
+    m.must_save = true
+    return net
+
+// The open loss on a short (negative: a gain), at the market price.
+float loss(Market m, Company c):
+    int n = m.shorts.get(c.id, 0)
+    return c.price * float(n) - m.short_proceeds.get(c.id, 0.0)
+
+// Each day: the lender's fee, and margin calls.
+void daily(es.Game game, Market m, int d):
+    []int ids = m.shorts.keys()
+    for id in ids:
+        Company c = m.by_id.get(id, Company())
+        if c.id == 0 || !c.listed():
+            continue
+        int n = m.shorts.get(id, 0)
+        float rate = RATE * (HARD if c.status != c.LISTED else 1.0)
+        m.charge(game, c.price * float(n) * rate)
+        if loss(m, c) > CALL * m.short_margin.get(id, 0.0):
+            calls += 1
+            float net = cover(game, m, c, n, -1.0)
+            m.player_events.append("Margin call: your broker buys back your " + m.fmt.credits(float(n)) + " shares short of " + c.name + (" (" + m.fmt.credits(-net) + " credits more than your margin)." if net < 0.0 else "; " + m.fmt.credits(net) + " credits of your margin come back."))
+
+// A dividend paid: the short owes it to the lender.
+void dividend(es.Game game, Market m, Company c):
+    int n = m.shorts.get(c.id, 0)
+    if n > 0 && c.dividend > 0.0:
+        m.charge(game, c.dividend * float(n))
+
+// A buyout or a bankruptcy closes the short at `price`.
+void squeeze(es.Game game, Market m, Company c, float price, string why):
+    int n = m.shorts.get(c.id, 0)
+    if n <= 0:
+        return
+    squeezes += 1
+    float net = cover(game, m, c, n, price)
+    m.player_events.append("Your " + m.fmt.credits(float(n)) + " shares short of " + c.name + " are closed " + why + ": " + (m.fmt.credits(net) + " credits back." if net >= 0.0 else m.fmt.credits(-net) + " credits lost beyond your margin."))

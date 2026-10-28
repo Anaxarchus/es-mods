@@ -139,6 +139,8 @@ test("the saved market reads back as it was", { skip }, () => {
 		game.day_ += 1;
 		mod.on_day(game, game.day_);
 	}
+	// (M2) A day that changed the game's data (a crisis) saves at once: go on to one that did not.
+	while (game.data("state") === mod.market.encode()) { game.day_ += 1; mod.on_day(game, game.day_); }
 	assert.notEqual(game.data("state"), mod.market.encode(), "not saved every day");
 	mod.save(game);
 	const saved = game.data("state");
@@ -161,6 +163,7 @@ test("the exchange: its own screen, sorting, a company, buying and selling", { s
 	mod.on_load(game);
 	mod.on_enter(game, "Sol");
 	assert.equal(game.planetButtonLabel, "Exchange", "an exchange on a planet with a bank");
+	// (M2) Earth is Megaparsec's home: its Orders tab is offered too.
 	for (let d = 1; d <= 40; d++) {
 		game.day_ += 1;
 		mod.on_day(game, game.day_);
@@ -170,7 +173,7 @@ test("the exchange: its own screen, sorting, a company, buying and selling", { s
 	assert.equal(game.panel.title, "Stock exchange: market");
 	assert.deepEqual(game.panel.columns, ["Company", "Sector", "Price", "30 days", "P/E", "Yield", "Value v", "You hold"]);
 	assert.equal(game.panel.rows.length, listed(mod).length, "every listed company on one screen");
-	assert.deepEqual(game.panel.buttons, ["Market", "Portfolio", "Contracts", "News", "Map", "Leave"]);
+	assert.deepEqual(game.panel.buttons, ["Market", "Portfolio", "Contracts", "News", "Map", "Orders", "Company", "Leave"]);
 	assert.equal(game.panel.selected, -1);
 	assert.equal(game.panel.charts?.[0]?.label, "Exchange index", "the sidebar charts the index");
 	assert.equal(game.panel.charts[0].values.length, 40);
@@ -192,7 +195,7 @@ test("the exchange: its own screen, sorting, a company, buying and selling", { s
 	mod.on_panel_row(game, 3);
 	assert.equal(game.panel.selected, 3, "the chosen row is marked");
 	assert.ok(game.panel.text.startsWith(top + "\n"), "the sidebar shows the company");
-	assert.deepEqual(game.panel.buttons, ["Market", "Portfolio", "Contracts", "News", "Map", "Buy", "Leave"]);
+	assert.deepEqual(game.panel.buttons, ["Market", "Portfolio", "Contracts", "News", "Map", "Orders", "Company", "Buy", "Short", "Leave"]);
 	assert.equal(game.panel.charts[0].label, top + ", 60 days", "the sidebar charts the company's price");
 	const credits = game.condition("credits");
 	mod.on_panel(game, game.panel.buttons.indexOf("Buy"));
@@ -225,7 +228,7 @@ test("the exchange: its own screen, sorting, a company, buying and selling", { s
 	assert.match(game.panel.text, /^Sold 500 shares/);
 	// The cap: at most 20% of a company.
 	mod.on_panel(game, game.panel.buttons.indexOf("Buy"));
-	assert.ok(game.numberAsks.at(-1).most <= c.shares * 0.2 - 500);
+	assert.ok(game.numberAsks.at(-1).most <= c.shares * mod.market.MAX_HOLDING - 500);
 	// The other tabs.
 	mod.on_panel(game, game.panel.buttons.indexOf("Contracts"));
 	assert.equal(game.panel.title, "Stock exchange: contracts");
@@ -238,7 +241,8 @@ test("the exchange: its own screen, sorting, a company, buying and selling", { s
 });
 
 test("no exchange without a bank, and nothing while no pilot is loaded", { skip }, () => {
-	const game = newGame({ landed: true, planet: "Luna", planets: { Luna: { system: "Sol", government: "Republic", services: ["trading"] } } });
+	// (M2: not Luna, Tycho Crater's home, which offers its Orders without a bank.)
+	const game = newGame({ landed: true, planet: "Mars", planets: { Mars: { system: "Sol", government: "Republic", services: ["trading"] } } });
 	const mod = new Corporations();
 	mod.on_enter(game, "Sol");
 	assert.equal(game.planetButtonLabel, "");
@@ -494,6 +498,7 @@ test("reloading an earlier save of the same pilot reads its market again", { ski
 	const snapshot = new Map(game.storage);
 	const engine = new Map(game.shipStock);
 	const day = game.day_;
+	const saved = shelf(mod, "Luna", "Shuttle").count;
 	assert.ok(snapshot.get("rev"), "every save bumps a revision kept with the pilot");
 	// The timeline the player then throws away: a purchase, days, restocks.
 	game.set_ship_stock("Luna", "Shuttle", 0);
@@ -509,7 +514,8 @@ test("reloading an earlier save of the same pilot reads its market again", { ski
 	mod.on_enter(game, game.here_);
 	assert.equal(mod.market.day, day, "the market is the save's, not the discarded one");
 	assert.equal(mod.market.player_sold, 0, "no phantom sell-back from the old count");
-	assert.equal(shelf(mod, "Luna", "Shuttle").count, 4);
+	// (M2: NPC captains may have bought one before the save.)
+	assert.equal(shelf(mod, "Luna", "Shuttle").count, saved, "the count as saved");
 	const fresh = new Corporations();
 	fresh.on_enter(game, game.here_);
 	assert.equal(mod.market.encode(), fresh.market.encode(), "memory matches the save as a fresh mod reads it");

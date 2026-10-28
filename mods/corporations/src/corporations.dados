@@ -36,8 +36,14 @@ class Corporations extends es.Mod
 // histories of one pilot never share a revision.
 // Mod API 10, when the game has it (Game.has("on_save")): on_save runs just
 // before the game writes a pilot file, so the market is saved there and the
-// in-flight cadence is off. This release still builds against API 9, so the
-// calls are made through `api10` (a guarded dynamic call).
+// in-flight cadence is off.
+//
+// M2 builds against the SDK's API 10 but runs on API 9 (min_api 9): every
+// API 10 call is guarded by Game.has (itself checked with Reflect.has, since
+// an API 9 game has no `has`): on_save; trade_base_price for commodity crises
+// (else the prices from the game's data, Trade); the bus (notify: the
+// market's corporations.* events; listen: diplomacy.*); and timing sections
+// per subsystem (market, convoys, losses, crises).
 
 import "imports:sdk/es"
 
@@ -68,6 +74,11 @@ string session = ""
 bool checked_api = false
 bool has_on_save = false
 bool has_notify = false
+bool has_trade = false
+bool has_timing = false
+bool has_park = false
+bool has_remove = false
+bool has_outfits = false
 
 string name():
     return "corporations"
@@ -115,6 +126,11 @@ bool prepare(es.Game game):
             if market.shelves.len() == 0:
                 market.seed_stock(game, galaxy)
                 save(game)
+    market.api_trade = has_trade
+    market.timing = has_timing
+    market.api_park = has_park
+    market.api_remove = has_remove
+    market.api_outfits = has_outfits
     market.notify = has_notify
     return true
 
@@ -161,8 +177,18 @@ void check_api(es.Game game):
     any g = game
     bool save_hook = g.has("on_save")
     bool bus = g.has("notify")
+    bool trade = g.has("trade_price")
+    bool sections = g.has("timing_section")
+    bool park = g.has("ship_parking")
+    bool remove = g.has("call:ship_remove")
+    bool stock = g.has("outfit_stock")
+    has_park = park
+    has_remove = remove
+    has_outfits = stock
     has_on_save = save_hook
     has_notify = bus
+    has_trade = trade
+    has_timing = sections
     if has_notify:
         g.listen("diplomacy.*")
 
@@ -207,6 +233,7 @@ void on_day(es.Game game, int day):
         market.losses.witness(lost_systems[k], lost_models[k], lost_by_player[k])
     forget_losses()
     market.read_back(game)
+    market.collect(game)
     market.simulate(game, galaxy, day)
     mark_dirty(game)
     market.push_stock(game, galaxy)
@@ -214,10 +241,20 @@ void on_day(es.Game game, int day):
     for line in market.player_events:
         game.message(line)
     market.player_events = []
+    market.last_credits = game.condition("credits")
+    post_bus(game)
     // With on_save (API 10) every pilot file the game writes gets the market there.
     if !has_on_save && (market.must_save || game.planet() != "" || (SAVE_EVERY > 0 && market.day - saved_day >= SAVE_EVERY)):
         save(game)
     draw_map(game)
+
+// (Mod API 10) The day's corporations.* notifications go out on the bus.
+void post_bus(es.Game game):
+    if has_notify:
+        for line in market.bus:
+            []string f = line.split("\t")
+            game.notify(f[0], f[1] if f.len() > 1 else "")
+    market.bus = []
 
 void on_enter(es.Game game, string system):
     if !prepare(game):
@@ -228,26 +265,62 @@ void on_enter(es.Game game, string system):
     game.ship_stock_on(true)
     bool changed = market.read_back(game)
     string planet = game.planet()
+    // The exchange where there is a bank; at a builder's home without one, its Orders.
+    bool bank = planet != "" && game.planet_service(planet, "bank")
+    bool home = planet != "" && market.orders.builder_at(market, planet).id != 0
     if planet != "":
         market.push_stock(game, galaxy)
         changed = true
+        // Landed: spaceport news told once, and jobs carrying parts to the
+        // companies' running contracts; (M2) convoy escorts and intercepts,
+        // relief cargo for crises, covert jobs (remembered in the market, so
+        // they are offered before the save below); a ready order here.
+        press.tell(game, galaxy, market)
+        market.offer_jobs(game, galaxy)
+        market.convoys.offer(game, galaxy, market)
+        market.crisis_desk.offer(game, galaxy, market)
+        if market.covert.offer(game, galaxy, market):
+            changed = true
+        // (M3) Tip jobs and blockade runs (remembered in the market).
+        int tips_before = market.tips.len()
+        market.tips_desk.offer(game, galaxy, market)
+        if market.tips.len() != tips_before:
+            changed = true
+        int runs_before = market.blockades.len()
+        market.sanctions.offer(game, galaxy, market)
+        if market.blockades.len() != runs_before:
+            changed = true
+        market.refits.push(game, market)
+        Contract ready = market.orders.ready_at(market, planet)
+        if ready.id != 0:
+            game.message("Your order of " + string(ready.units) + " " + market.model_label(ready.model, ready.units) + " is ready here. Open the " + ("exchange" if bank else "Orders") + " to pay the remaining " + market.fmt.credits(float(market.orders.remainder(ready))) + " credits and take delivery.")
     if changed:
         mark_dirty(game)
     // Landed: the game writes the pilot file only now, so it must hold the market.
     if planet != "" && dirty && !has_on_save:
         save(game)
-    game.planet_button("Exchange" if planet != "" && game.planet_service(planet, "bank") else "")
-    // Landed: spaceport news told once, and jobs carrying parts to the
-    // companies' running contracts.
+    game.planet_button("Exchange" if bank else ("Orders" if home else ""))
+    // (M3) The upgrade outfitter: refit lines (Refits).
+    game.outfitter_button("Refit" if planet != "" else "")
     if planet != "":
-        press.tell(game, galaxy, market)
-    if planet != "":
-        market.offer_jobs(game, galaxy)
+        post_bus(game)
     draw_map(game)
 
 void on_planet_button(es.Game game):
     if prepare(game):
+        // (M3) Ships of a company gone are unparked now (a hook the player started).
+        market.charter.returns(game, market)
         exchange.open(game, market)
+
+// (M3) The outfitter's Refit button (Refits).
+bool can_outfitter(es.Game game, string outfit):
+    if !prepare(game):
+        return false
+    return market.refits.can(game, market, galaxy, outfit)
+
+void on_outfitter(es.Game game, string outfit):
+    if prepare(game):
+        market.refits.ask(game, market, galaxy, outfit)
 
 void on_panel(es.Game game, int button):
     if prepare(game):
@@ -266,6 +339,19 @@ void on_panel_header(es.Game game, int column):
 
 void on_number(es.Game game, int token, int value):
     if prepare(game) && exchange.number(game, market, token, value):
+        dirty = true
+        save(game)
+
+// (M2) The player confirmed an order, a cancellation or a delivery.
+void on_confirm(es.Game game, int token):
+    if !prepare(game):
+        return
+    if token == market.refits.TOKEN:
+        if market.refits.apply(game, market):
+            dirty = true
+            save(game)
+        return
+    if exchange.confirmed(game, market, token, galaxy):
         dirty = true
         save(game)
 

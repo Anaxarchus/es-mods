@@ -17,6 +17,12 @@ Galaxy galaxy = Galaxy()
 World world = World()
 Garrisons garrisons = Garrisons()
 Simulation sim = Simulation()
+Intel intel = Intel()
+// The player's faction (fog of war: README.md, "Fog of war"); set by the mod.
+int player = 0
+
+void wire_intel(Intel i):
+    intel = i
 
 void wire(Factions f, Galaxy g, World w, Garrisons gs, Simulation sm):
     factions = f
@@ -48,9 +54,11 @@ void draw(es.Game game, bool active):
     game.map_clear()
     if !active:
         return
+    player = game.condition("diplomacy: member")
     []int besieged = []
+    int day = game.day()
     for x in world.fleets:
-        if !x.alive():
+        if !x.alive() || !intel.sees_force(game, player, x, day):
             continue
         int f = x.side
         game.map_marker(galaxy.name(x.at), factions.r(f), factions.g(f), factions.b(f), label(x))
@@ -60,6 +68,18 @@ void draw(es.Game game, bool active):
         game.map_detail(galaxy.name(x.at), label(x), details(game, x), factions.r(f), factions.g(f), factions.b(f))
         if sim.besieging(x) && !besieged.contains(x.goal):
             besieged.append(x.goal)
+    // Forces out of sight: where they were last seen, faded.
+    for s in world.sightings:
+        []string f = s.split("|")
+        if f.len() < 5:
+            continue
+        Flotilla y = world.fleet_by_id(f[0].to_int())
+        if y.alive() && intel.sees_force(game, player, y, day):
+            continue
+        int side = f[1].to_int()
+        int ago = day - f[4].to_int()
+        string what = "Pirate raiders" if side == factions.pirates() else factions.adjective(side) + " flotilla"
+        game.map_label(galaxy.name(f[3].to_int()), what + ", seen " + string(ago) + (" day" if ago == 1 else " days") + " ago", factions.r(side) * 0.5, factions.g(side) * 0.5, factions.b(side) * 0.5)
     for i in besieged:
         int owner = galaxy.owner(i)
         game.map_marker(galaxy.name(i), factions.r(owner), factions.g(owner), factions.b(owner), "Siege: " + string(progress(game, i)) + "%")

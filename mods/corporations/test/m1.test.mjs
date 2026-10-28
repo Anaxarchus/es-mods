@@ -85,6 +85,9 @@ test("saving: a save, days in flight, then loading it, loses nothing", { skip },
 test("saving: a mission's autosave in flight, days behind, replays to the same market", { skip }, () => {
 	const { game, mod } = start();
 	days(mod, game, 41);
+	// (M2) A day that changed the game's data (a crisis) saves at once: go on to one that did not.
+	const storedDay = () => Number(game.data("state").split("\n")[1].split("|")[2]);
+	while (storedDay() === game.day_) days(mod, game, 1);
 	// An autosave in flight 4 days after the last save: the state is 4 days old.
 	const snap = { storage: new Map(game.storage), conditions: new Map(game.conditions), day: game.day_ };
 	const stateDay = Number(snap.storage.get("state").split("\n")[1].split("|")[2]);
@@ -221,14 +224,16 @@ test("tenders: with no builder able to bid, the government's yards build; shelve
 	for (const c of m().companies) if (c.sector === 0) c.capacity = 0;
 	days(mod, game, 1);
 	assert.ok(navy.every((s) => s.count === 0), "the purchases were read back");
-	let built = null;
+	let built = null, said = false;
 	for (let d = 0; d < 200 && navy.some((s) => s.count === 0); d++) {
 		for (const c of m().companies) if (c.sector === 0) c.capacity = 0;
 		days(mod, game, 1);
 		built ??= m().contracts.find((x) => x.kind === TENDER && x.status === RUNNING && x.winner === 0);
+		// (M2: more news a day, so the line is looked for as it comes.)
+		said ||= m().news.some((l) => /No shipbuilder can take the Republic's tender/.test(l));
 	}
 	assert.ok(built, "the government's own yards took the tender");
-	assert.ok(m().news.some((l) => /No shipbuilder can take the Republic's tender/.test(l)));
+	assert.ok(said);
 	assert.ok(navy.every((s) => s.count >= 1), "the shelves were filled");
 });
 
@@ -594,7 +599,8 @@ test("spaceport news: a change saves the market that day; big events are told on
 	for (let d = 0; d < 1500 && !changed; d++) {
 		const n = game.changes.length;
 		days(mod, game, 1);
-		changed = game.changes.length > n;
+		// (M3: crises change trade prices too; this looks for a news item's change.)
+		changed = game.changes.slice(n).some((t) => t.startsWith('news "corporations: slot'));
 	}
 	assert.ok(changed, "a data change was made");
 	assert.equal(game.data("state"), mod.market.encode(), "and the market was saved the same day");

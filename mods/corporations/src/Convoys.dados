@@ -1,0 +1,416 @@
+class Convoys
+
+import "imports:sdk/es"
+
+// (M2) Convoys: hulls that must cross dangerous space to reach their buyer.
+//
+// When a large restock (UNITS hulls or more, or VALUE credits), a military
+// tender, or a ships contract worth CONTRACT_VALUE or more is finished and its
+// destination is a war zone (its government at war), a pirate system or next
+// to one, or a region whose loss index is RISKY_INDEX or more, the hulls leave
+// the builder's home as a convoy instead of arriving at once: one jump a day
+// along Galaxy.route, the contract RUNNING (convoy = 1) and its yard capacity
+// freed. Each day under way it is lost with the chance RISK times the loss
+// index where it is (Losses.system_index: pirates, the war, Diplomacy's raids
+// and flotillas, ships lost lately), halved while a security company holds
+// the escort contract it put out (GUARDED). It arrives on the last day and is
+// delivered as the contract would have been.
+//
+// A lost convoy fails its contract: the shelf stays empty and the restock is
+// ordered again the next day (a tender is issued again, a contract fails as on
+// a failed delivery); the builder pays PENALTY of the hulls' value (a tender:
+// TENDER_PENALTY of its price), loses reliability and some of its share price,
+// the news says where, its ships count as losses there (Losses.convoy_loss,
+// so the region's shipyards sell faster), and the bus hears
+// corporations.convoy_lost.
+//
+// The player can take a side (offer): an escort job on the boards of the
+// systems ahead of it (not pirate ones), `npc accompany save` with the convoy's
+// ships, or, on pirate and pirate-adjacent boards, an intercept job paid by
+// the builder's strongest rival, `npc kill` waiting in a system on its route,
+// with cargo to plunder. While the player holds either job the convoy waits
+// (no loss rolls). The jobs report through conditions, read each day (settle):
+//   "corporations: convoy <id>"        1 escort taken, 2 intercept taken
+//   "corporations: convoy <id> safe"   1 the escort arrived: delivered now
+//   "corporations: convoy <id> lost"   1 its ships were destroyed: lost
+//   "corporations: convoy <id> failed" 1 the job failed or was aborted
+// and go back to 0 once read. A convoy whose job failed without its ships
+// lost goes on, unescorted. No ship is spawned unless the player takes a job:
+// the mission's NPCs are the convoy.
+
+float RISK = 0.006
+float GUARDED = 0.5
+int UNITS = 2
+float VALUE = 8000000.0
+float CONTRACT_VALUE = 2000000.0
+float RISKY_INDEX = 1.5
+float PENALTY = 0.03
+float TENDER_PENALTY = 0.25
+// Jobs: an escort pays ESCORT_BASE + ESCORT_JUMP a jump left, plus RISK_PAY
+// times the loss index; an intercept pays INTERCEPT_SHARE more.
+int ESCORT_BASE = 20000
+int ESCORT_JUMP = 6000
+int RISK_PAY = 15000
+float INTERCEPT_SHARE = 1.5
+int JOB_REACH = 4
+
+// Counted since the mod started (not saved; tests and tools read them).
+int formed = 0
+int lost = 0
+int arrived = 0
+int escorted = 0
+int intercepted = 0
+
+// ---- Forming ----
+
+// The system a contract's hulls go to.
+string destination(es.Game game, Galaxy galaxy, Market m, Contract k):
+    if k.kind == k.RESTOCK:
+        return m.yard_sys(game, galaxy, k.client)
+    return k.system
+
+// Whether a finished contract's hulls leave as a convoy.
+bool qualifies(es.Game game, Galaxy galaxy, Market m, Contract k, Company c):
+    if c.id == 0 || !c.listed() || c.system == "" || k.convoy != 0:
+        return false
+    if k.kind == k.RESTOCK:
+        int row = m.hulls.find(k.model)
+        float value = float(m.hulls.costs[row]) * float(k.units) if row >= 0 else 0.0
+        if k.units < UNITS && value < VALUE:
+            return false
+    else if k.kind == k.TENDER:
+        if k.units <= 0:
+            return false
+    else if k.kind == k.ORDER || k.sector != 0 || k.price < CONTRACT_VALUE:
+        return false
+    string to = destination(game, galaxy, m, k)
+    if to == "" || to == c.system || !risky(game, galaxy, m, to):
+        return false
+    return galaxy.route(c.system, to).len() > 0
+
+// A war zone, a pirate system or one next to it, or a region losing ships.
+bool risky(es.Game game, Galaxy galaxy, Market m, string system):
+    string gov = game.system_government(system)
+    if gov == "Pirate" || m.at_war.contains(gov):
+        return true
+    for n in galaxy.neighbours(system):
+        if game.system_government(n) == "Pirate":
+            return true
+    return m.losses.system_index(galaxy, system) >= RISKY_INDEX
+
+// The hulls set off: the yards are free, and a security escort and a freight
+// contract for the trip are put out (Market.issue_derived), which feed those
+// sectors' earnings.
+void depart(es.Game game, Galaxy galaxy, Market m, Contract k, Company c, int d):
+    k.convoy = 1
+    k.depart = d
+    k.origin = c.system
+    c.load -= k.load
+    k.load = 0.0
+    formed += 1
+    string to = destination(game, galaxy, m, k)
+    int jumps = galaxy.route(c.system, to).len()
+    float scale = float(jumps) * (1.0 + float(k.units) * 0.25)
+    // (Sized so a convoy's escort is a job for a small security company, not
+    // a sector's year: at 0.15 a jump the convoys alone made security boom.)
+    m.issue_derived(game, 7, to, 0.3 + 0.04 * scale, 4 + jumps, k.id, d)
+    m.issue_derived(game, 6, c.system, 0.25 + 0.03 * scale, 4 + jumps, k.id, d)
+    if k.kind == k.TENDER:
+        m.say_tagged(d, c.name + " sends " + what(m, k) + " to " + to + " as a convoy through dangerous space (" + string(jumps) + (" jump" if jumps == 1 else " jumps") + ").", "s,c" + string(c.id) + (",w" if k.kind == k.TENDER else ""))
+
+// "3 Freighters" or "Navy hulls".
+string what(Market m, Contract k):
+    if k.units > 0 && k.model != "":
+        return string(k.units) + " " + m.model_label(k.model, k.units)
+    return "new hulls"
+
+// The convoy's route: from where it left (its builder's home then) to its destination.
+[]string path_of(es.Game game, Galaxy galaxy, Market m, Contract k, Company c):
+    return galaxy.route(k.origin if k.origin != "" else c.system, destination(game, galaxy, m, k))
+
+// ---- Each day ----
+
+int ORPHAN_DAYS = 45
+
+void step(es.Game game, Galaxy galaxy, Market m, int d):
+    // Convoys that ended elsewhere: their job conditions are cleared a while.
+    []string keep = []
+    for o in m.convoy_orphans:
+        []string f = o.split(":")
+        clear(game, "corporations: convoy " + f[0])
+        if f.len() > 1 && d - f[1].to_int() < ORPHAN_DAYS:
+            keep.append(o)
+    m.convoy_orphans = keep
+    []Contract moving = m.contracts.filter(bool(Contract k): return k.status == k.RUNNING && k.convoy == 1)
+    for k in moving:
+        Company c = m.by_id.get(k.winner, Company())
+        if c.id == 0:
+            continue
+        string to = destination(game, galaxy, m, k)
+        []string path = path_of(game, galaxy, m, k, c)
+        int at = d - k.depart
+        string here = path[at if at < path.len() else path.len() - 1] if path.len() > 0 else to
+        int job = settle(game, m, k, c, here, d)
+        if job < 0 || k.status != k.RUNNING:
+            continue
+        if job > 0:
+            // The player holds a job on it: it waits where it is for that
+            // (its departure moves a day later, so it has not moved on).
+            k.depart += 1
+            continue
+        if at >= path.len():
+            arrive(game, m, k, c, d)
+            continue
+        float chance = RISK * m.losses.system_index(galaxy, here) * (GUARDED if guarded(m, k) else 1.0)
+        if m.rng.unit() < chance:
+            lose(game, m, k, c, here, false, d)
+
+// The player's jobs on a convoy, from their conditions: answers 1 or 2 while
+// the player holds an escort or intercept job, -1 when settled now (arrived or
+// lost), 0 when there is none.
+int settle(es.Game game, Market m, Contract k, Company c, string here, int d):
+    string key = "corporations: convoy " + string(k.id)
+    int taken = game.condition(key)
+    bool safe = game.condition(key + " safe") == 1
+    bool sunk = game.condition(key + " lost") == 1
+    bool failed = game.condition(key + " failed") == 1
+    if taken == 0 && !safe && !sunk && !failed:
+        return 0
+    if sunk || safe || failed:
+        clear(game, key)
+        m.must_save = true
+    if sunk:
+        if taken == 1:
+            m.standing.add(game, c.id, m.standing.ESCORT_LOST)
+        lose(game, m, k, c, here, taken == 2, d)
+        return -1
+    if safe:
+        escorted += 1
+        m.standing.add(game, c.id, m.standing.ESCORT)
+        m.say_tagged(d, c.name + "'s convoy reaches " + destination_name(game, m, k) + " early under an independent captain's escort.", "s,c" + string(c.id))
+        arrive(game, m, k, c, d)
+        return -1
+    if failed:
+        // A job taken and dropped: the builder (an escort) or the rival who
+        // paid (an intercept) trusts the player a little less.
+        if taken == 1:
+            m.standing.add(game, c.id, m.standing.ESCORT_LEFT)
+        else if taken == 2:
+            m.standing.add(game, rival(m, c).id, m.standing.ESCORT_LEFT * 3)
+        return 0
+    return taken
+
+void clear(es.Game game, string key):
+    game.set_condition(key, 0)
+    game.set_condition(key + " safe", 0)
+    game.set_condition(key + " lost", 0)
+    game.set_condition(key + " failed", 0)
+
+string destination_name(es.Game game, Market m, Contract k):
+    if k.kind == k.RESTOCK:
+        return game.planet_name(k.client)
+    return k.system
+
+// A security company holds the convoy's escort contract.
+bool guarded(Market m, Contract k):
+    for x in m.contracts:
+        if x.parent == k.id && x.sector == 7 && x.status == x.RUNNING:
+            return true
+    return false
+
+void arrive(es.Game game, Market m, Contract k, Company c, int d):
+    arrived += 1
+    k.convoy = 0
+    m.deliver(game, k, c, d)
+
+// The convoy is lost near `here`: the contract fails (re-ordered or issued
+// again), the builder pays, the region counts the losses.
+void lose(es.Game game, Market m, Contract k, Company c, string here, bool by_player, int d):
+    lost += 1
+    if by_player:
+        intercepted += 1
+        m.standing.add(game, c.id, m.standing.INTERCEPT)
+        m.standing.add(game, rival(m, c).id, m.standing.SPONSOR)
+    int row = m.hulls.find(k.model)
+    float value = float(m.hulls.costs[row]) * float(k.units) if row >= 0 && k.units > 0 else k.price
+    float penalty = k.price * TENDER_PENALTY if k.kind == k.TENDER else value * PENALTY
+    c.cash -= penalty
+    c.costs += penalty
+    c.reliability = m.clamp(c.reliability - 0.05, 0.0, 0.99)
+    m.shock(c, 0.97)
+    c.note("after losing a convoy near " + here)
+    string cause = "to an independent captain" if by_player else ("to pirates" if game.system_government(here) == "Pirate" || m.losses.cause(m.losses.region_of.get(here, -1)) == "pirates" else "in dangerous space")
+    m.losses.convoy_loss(here, float(k.units if k.units > 0 else 2))
+    k.convoy = 0
+    if k.kind == k.RESTOCK:
+        m.drop_restock(k)
+        m.say_tagged(d, c.name + " loses a convoy of " + what(m, k) + " bound for " + game.planet_name(k.client) + " near " + here + " " + cause + "; the shipyard orders again.", "s,c" + string(c.id))
+    else if k.kind == k.TENDER:
+        k.status = k.FAILED
+        m.tenders_failed += 1
+        c.revenue += m.booked_gap(k, 0.0, d)
+        m.say_tagged(d, c.name + " loses a convoy of " + what(m, k) + " for the " + k.client + " near " + here + " " + cause + "; the tender will be issued again.", "w,s,c" + string(c.id))
+        m.post_bus("corporations.tender_failed", "{\"government\":" + m.json(k.client) + ",\"model\":" + m.json(k.model) + ",\"units\":" + string(k.units) + ",\"winner\":" + m.json(c.name) + ",\"reason\":\"convoy lost\"}")
+    else:
+        k.status = k.FAILED
+        float pay = k.price * 0.5
+        c.cash += pay
+        c.revenue += m.booked_gap(k, pay, d)
+        m.say_tagged(d, c.name + " loses a convoy of new hulls for " + m.client_name(k) + " near " + here + " " + cause + ".", "s,c" + string(c.id))
+    m.post_bus("corporations.convoy_lost", "{\"owner\":" + m.json(c.name) + ",\"model\":" + m.json(k.model) + ",\"units\":" + string(k.units) + ",\"to\":" + m.json(destination_name(game, m, k)) + ",\"system\":" + m.json(here) + ",\"by_player\":" + ("true" if by_player else "false") + "}")
+    if m.holdings.get(c.id, 0) > 0:
+        m.player_events.append(c.name + ", whose shares you hold, has lost a convoy near " + here + ".")
+
+// ---- Jobs for the player ----
+
+// Landed: up to one escort and one intercept job on convoys under way whose
+// route passes near here.
+void offer(es.Game game, Galaxy galaxy, Market m):
+    string planet = game.planet()
+    if planet == "":
+        return
+    string here = galaxy.system_of(game, planet)
+    bool pirate_board = game.planet_government(planet) == "Pirate" || game.system_government(here) == "Pirate" || pirate_next(game, galaxy, here)
+    bool escort_done = false
+    bool intercept_done = false
+    for k in m.contracts:
+        if k.status != k.RUNNING || k.convoy != 1 || game.condition("corporations: convoy " + string(k.id)) != 0:
+            continue
+        Company c = m.by_id.get(k.winner, Company())
+        if c.id == 0:
+            continue
+        string to = destination(game, galaxy, m, k)
+        []string path = path_of(game, galaxy, m, k, c)
+        int at = m.day - k.depart
+        if at >= path.len():
+            continue
+        string from = k.origin if k.origin != "" else c.system
+        // The systems still ahead of it, and where it is now.
+        []string ahead = path[at..<path.len()]
+        if !escort_done && !pirate_board && game.planet_government(planet) != "Pirate" && ((here == from && at == 0) || ahead[0..<ahead.len() - 1].contains(here)):
+            if offer_escort(game, galaxy, m, k, c, planet, here, to):
+                escort_done = true
+        if !intercept_done && pirate_board && may_intercept(game, m, c):
+            string where = ""
+            int best = 99
+            for s in ahead:
+                int j = galaxy.jumps(here, s)
+                if j >= 0 && j <= JOB_REACH && j < best && s != to:
+                    best = j
+                    where = s
+            if where != "" && offer_intercept(game, m, k, c, where, best):
+                intercept_done = true
+
+bool pirate_next(es.Game game, Galaxy galaxy, string system):
+    for n in galaxy.neighbours(system):
+        if game.system_government(n) == "Pirate":
+            return true
+    return false
+
+// No intercept on a builder the player holds shares in, has an order with,
+// or stands well with: its rivals would not trust them with the job.
+bool may_intercept(es.Game game, Market m, Company c):
+    if m.holdings.get(c.id, 0) > 0 || m.standing.get(game, c.id) >= 40:
+        return false
+    for k in m.contracts:
+        if k.kind == k.ORDER && k.winner == c.id:
+            return false
+    return true
+
+// The strongest listed rival builder, which pays for an intercept.
+Company rival(Market m, Company c):
+    Company best = Company()
+    for o in m.companies:
+        if o.listed() && o.sector == c.sector && o.id != c.id && (best.id == 0 || o.capacity > best.capacity):
+            best = o
+    return best
+
+// The planet the convoy's escort lands on.
+string landing(Galaxy galaxy, Market m, Contract k, string to):
+    if k.kind == k.RESTOCK:
+        return k.client
+    for s in m.military_shelves:
+        if s.model == k.model && m.yard_system.get(s.planet, "") == to:
+            return s.planet
+    return galaxy.system_planet.get(to, "")
+
+// The convoy's ships, as a mission fleet: for an escort the hulls themselves
+// when they are civilian (delivery crews fly them), freighters carrying parts
+// otherwise. An intercept always meets freighters (`hulls` false): a hull the
+// player boarded and captured would be a ship out of nothing beside the
+// shelf's, so the reward is their cargo.
+string fleet(Market m, Contract k, bool hulls):
+    int row = m.hulls.find(k.model)
+    if hulls && k.kind == k.RESTOCK && row >= 0 && !m.hulls.military(row) && m.hulls.classes[row] != m.hulls.CAPITAL:
+        int n = k.units if k.units < 3 else 3
+        return "\t\t\t\"" + k.model + "\"" + (" " + string(n) if n > 1 else "")
+    return "\t\t\t\"Freighter\" 2"
+
+bool offer_escort(es.Game game, Galaxy galaxy, Market m, Contract k, Company c, string planet, string here, string to):
+    string dest = landing(galaxy, m, k, to)
+    int jumps = galaxy.jumps(here, to)
+    if dest == "" || jumps < 1:
+        return false
+    float risk = m.losses.system_index(galaxy, to)
+    int pay = ESCORT_BASE + ESCORT_JUMP * jumps + int(float(RISK_PAY) * risk)
+    string id = string(k.id)
+    string key = "corporations: convoy " + id
+    []string lines = []
+    lines.append("name \"Escort " + c.name + "'s convoy\"")
+    lines.append("description \"" + c.name + " is sending " + what(m, k) + " to <destination> through dangerous space. Escort the convoy (the <npc>) there by <date> for <payment>. A convoy that arrives safely, and early, earns you the builder's goodwill.\"")
+    lines.append("destination \"" + dest + "\"")
+    lines.append("deadline " + string(jumps * 2 + 4))
+    lines.append("on accept")
+    lines.append("\t\"" + key + "\" = 1")
+    lines.append("npc accompany save")
+    lines.append("\tgovernment \"Merchant\"")
+    lines.append("\tpersonality escort timid")
+    lines.append("\tfleet")
+    lines.append("\t\tnames \"civilian\"")
+    lines.append("\t\tvariant")
+    lines.append(fleet(m, k, true))
+    // "on kill": a ship destroyed or captured (the game runs "on destroy"
+    // only when none was captured).
+    lines.append("\ton kill")
+    lines.append("\t\t\"" + key + " lost\" = 1")
+    lines.append("on visit")
+    lines.append("\tdialog \"You have reached <planet>, but the convoy is not with you. It must arrive with you before <date>.\"")
+    lines.append("on complete")
+    lines.append("\tpayment " + string(pay))
+    lines.append("\t\"" + key + " safe\" = 1")
+    lines.append("\tdialog \"The convoy's crews thank you, and " + c.name + "'s agent pays you <payment>. Word of a safe delivery travels fast among the builders.\"")
+    lines.append("on fail")
+    lines.append("\t\"" + key + " failed\" = 1")
+    return game.offer_job("escort " + id, lines.join("\n"))
+
+bool offer_intercept(es.Game game, Market m, Contract k, Company c, string where, int jumps):
+    Company r = rival(m, c)
+    if r.id == 0:
+        return false
+    int pay = int(float(ESCORT_BASE + ESCORT_JUMP * (jumps + 2)) * INTERCEPT_SHARE)
+    string id = string(k.id)
+    string key = "corporations: convoy " + id
+    []string lines = []
+    lines.append("name \"Intercept a convoy in " + where + "\"")
+    lines.append("description \"An agent of " + r.name + " will pay <payment> if " + c.name + "'s convoy of " + what(m, k) + " never reaches its buyer. It is waiting in the " + where + " system; destroy it by <date>. Its holds may be worth plundering first. " + c.name + " will not forget it.\"")
+    lines.append("deadline " + string(jumps * 2 + 4))
+    lines.append("on accept")
+    lines.append("\t\"" + key + "\" = 2")
+    lines.append("npc kill")
+    lines.append("\tgovernment \"Merchant\"")
+    lines.append("\tpersonality staying timid target marked")
+    lines.append("\tsystem \"" + where + "\"")
+    lines.append("\t\"cargo settings\"")
+    lines.append("\t\tcommodities \"Equipment\" \"Industrial\" \"Metal\"")
+    lines.append("\tfleet")
+    lines.append("\t\tnames \"civilian\"")
+    lines.append("\t\tvariant")
+    lines.append(fleet(m, k, false))
+    lines.append("\ton kill")
+    lines.append("\t\tpayment " + string(pay))
+    lines.append("\t\t\"" + key + " lost\" = 1")
+    lines.append("\t\tdialog \"The convoy is gone. " + r.name + "'s agent sends <payment>, with no message.\"")
+    lines.append("\t\tfail")
+    lines.append("on fail")
+    lines.append("\t\"" + key + " failed\" = 1")
+    return game.offer_job("intercept " + id, lines.join("\n"))

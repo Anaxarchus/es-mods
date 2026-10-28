@@ -1,0 +1,220 @@
+class Squadron
+
+// The player's squadrons (M2). A member at Commodore or above commands
+// tune.squadrons_by_rank flotillas of their faction's (Admiral and the ranks
+// above it more), taken from its flotilla places. The player orders them from
+// the War Room's Command tab: attack any system an active war lets their
+// faction take, relieve one of its systems under siege, hunt an enemy
+// flotilla, a raid or a rebel force, or hold. A squadron's strength counts the
+// player's own fleet (the price of their ships), and it fights harder while
+// the player is with it; it flies under the faction's flotilla government, so
+// it is the player's ally in person. Losing one costs merit.
+
+import "imports:sdk/es"
+
+Tuning tune = Tuning()
+Factions factions = Factions()
+Galaxy galaxy = Galaxy()
+World world = World()
+Admirals admirals = Admirals()
+Quality quality = Quality()
+Simulation sim = Simulation()
+Chronicle chronicle = Chronicle()
+Intel intel = Intel()
+
+// Set by the mod: the game has ship_parked (mod API 10).
+bool api_parked = false
+
+void wire_intel(Intel i):
+    intel = i
+
+// The orders on offer, worked out for the Command tab: kind (1 attack, 2
+// relieve, 3 hunt, 4 hold), system, target flotilla, war; and a label.
+[][]int options = []
+[]string labels = []
+
+void wire(Tuning t, Factions f, Galaxy g, World w, Admirals a, Quality q, Simulation s, Chronicle c):
+    tune = t
+    factions = f
+    galaxy = g
+    world = w
+    admirals = a
+    quality = q
+    sim = s
+    chronicle = c
+
+// How many squadrons the member may command (0 for none).
+int allowed(es.Game game):
+    int m = game.condition("diplomacy: member")
+    if m == 0:
+        return 0
+    int merit = game.condition("diplomacy: merit")
+    int r = factions.rank_of(merit if merit > 0 else 0)
+    return tune.squadrons_by_rank[r] if r < tune.squadrons_by_rank.len() else tune.squadrons_by_rank[tune.squadrons_by_rank.len() - 1]
+
+[]Flotilla mine():
+    return world.fleets.filter(bool(Flotilla x): return x.alive() && x.squadron == 1)
+
+// A squadron's strength: a medium flotilla's, plus the player's own fleet's
+// worth: the ships not parked (mod API 10's ship_parked), each at
+// squadron_value percent of a new one's price (there is no depreciated value
+// in the API; a captured hull counts like a bought one, at that fraction).
+int strength(es.Game game, int side):
+    float value = 0.0
+    any g = game
+    for k in 0..<game.fleet_count():
+        string ship = game.fleet_ship(k)
+        if api_parked:
+            bool parked = g.ship_parked(ship)
+            if parked:
+                continue
+        value += float(game.model_cost(game.fleet_ship_model(ship))) * float(tune.squadron_value) / 100.0
+    int extra = int(value / float(tune.squadron_credits))
+    if extra > tune.squadron_fleet_cap:
+        extra = tune.squadron_fleet_cap
+    return sim.flotilla_strength(game, side, 2) + extra
+
+// Each day a squadron is worth no more than when it formed (full) and no more
+// than the player's fleet now makes one: selling the fleet weakens it.
+void cap_strength(es.Game game):
+    int m = game.condition("diplomacy: member")
+    if m < 1 || m > 3:
+        return
+    int now = -1
+    for x in mine():
+        if x.side != m:
+            continue
+        if now < 0:
+            now = strength(game, m)
+        int top = x.full if x.full < now else now
+        if x.strength > top:
+            x.strength = top if top > 0 else 1
+
+// Squadrons no longer allowed (the player left, or fell in rank) are stood down.
+void check(es.Game game):
+    int m = game.condition("diplomacy: member")
+    []Flotilla s = mine()
+    int keep = allowed(game)
+    int n = 0
+    for x in s:
+        n += 1
+        if x.side != m || n > keep:
+            x.strength = 0
+            world.stat("squadrons stood down", 1)
+
+// The orders the member's squadrons can be given now.
+void list_orders(es.Game game):
+    options = []
+    labels = []
+    int m = game.condition("diplomacy: member")
+    if m == 0:
+        return
+    for w in world.wars_of(m):
+        int e = w.other(m)
+        for i in sim.targets(w, m):
+            options.append([1, i, 0, w.id])
+            labels.append("Attack " + galaxy.name(i) + " (" + factions.adjective(e) + ", " + factions.regions.shorts[galaxy.minor(i)] + ")")
+        for x in world.fleets:
+            if !x.alive() || x.side != e:
+                continue
+            // Only what the faction can see (fog of war).
+            if !intel.sees_force(game, m, x, game.day()):
+                continue
+            if sim.besieging(x) && galaxy.owner(x.goal) == m:
+                options.append([2, x.goal, x.id, w.id])
+                labels.append("Relieve " + galaxy.name(x.goal) + " (besieged by " + sim.led_by(x) + ")")
+            else:
+                options.append([3, x.at, x.id, w.id])
+                labels.append("Hunt " + sim.led_by(x) + "'s flotilla at " + galaxy.name(x.at))
+    for x in world.fleets:
+        if x.alive() && x.side == factions.pirates() && x.kind == 2 && intel.sees_force(game, m, x, game.day()):
+            options.append([3, x.at, x.id, 0])
+            labels.append("Hunt the raiders under " + sim.led_by(x) + " at " + galaxy.name(x.at))
+    options.append([4, -1, 0, 0])
+    labels.append("Hold where it is")
+
+// Give an order to squadron `id` (0: a new one, if a place is free). Answers a message.
+string order(es.Game game, int id, int option, int day):
+    if option < 0 || option >= options.len():
+        return ""
+    []int o = options[option]
+    int m = game.condition("diplomacy: member")
+    Flotilla x = world.fleet_by_id(id)
+    if !x.alive() || x.squadron != 1:
+        if mine().len() >= allowed(game):
+            return "You command no more squadrons at your rank."
+        if world.squadron_lost != 0 && day - world.squadron_lost < tune.squadron_cooldown:
+            return factions.title(m) + " will not trust you with another squadron for " + string(tune.squadron_cooldown - (day - world.squadron_lost)) + " days."
+        int near = o[1] if o[1] >= 0 else galaxy.find(game.here())
+        if sim.has_room(m):
+            int start = sim.nearest_owned(m, near, -1) if near >= 0 else -1
+            if start < 0:
+                return "No system of yours to form a squadron at."
+            x = sim.commission(m, o[3], 0, 2, strength(game, m), start, day)
+        else:
+            // Every place is taken: the faction's flotilla nearest the target
+            // (not one going home) comes under the player's command.
+            x = take_over(m, near)
+            if !x.alive():
+                return factions.title(m) + " has no flotilla to spare."
+            int s = strength(game, m)
+            if x.strength < s:
+                x.strength = s
+            x.full = x.strength
+        x.squadron = 1
+        world.stat("squadrons formed", 1)
+    x.order = o[0]
+    x.war = o[3] if o[3] != 0 else x.war
+    x.target = o[2] if o[0] == 3 else 0
+    x.goal = o[1] if o[1] >= 0 else x.at
+    x.siege = 0
+    x.kind = 0
+    world.stat("squadron orders", 1)
+    return "Your squadron under " + sim.led_by(x) + ": " + labels[option] + "."
+
+// The member's AI flotilla nearest system `near` (any, when near < 0), not
+// one going home; an empty Flotilla when there is none.
+Flotilla take_over(int m, int near):
+    Flotilla best = Flotilla()
+    int best_d = 1000000
+    for x in world.fleets:
+        // Not one going home, a relief, or one with a siege under way.
+        if !x.alive() || x.side != m || x.squadron == 1 || x.kind != 0 || (sim.besieging(x) && x.siege > 0):
+            continue
+        int d = galaxy.jumps(x.at, near) if near >= 0 else 0
+        if d < 0:
+            d = 999
+        if d < best_d:
+            best = x
+            best_d = d
+    return best
+
+// Test override: a squadron of the member's ordered to attack system i (or,
+// when i is no enemy's, their first war's first target), made even when no
+// place is free. Answers its id (0 when the player is no member
+// at war with i's owner).
+int force(es.Game game, int i, int day):
+    int m = game.condition("diplomacy: member")
+    if m < 1 || m > 3:
+        return 0
+    War w = world.war_between(m, galaxy.owner(i)) if i >= 0 && i < galaxy.count() else War()
+    if w.id == 0:
+        // Not an enemy system: the first target of the member's first war.
+        for v in world.wars_of(m):
+            []int ts = sim.targets(v, m)
+            if ts.len() > 0:
+                w = v
+                i = ts[0]
+                break
+    if w.id == 0:
+        return 0
+    int start = sim.nearest_owned(m, i, -1)
+    if start < 0:
+        return 0
+    Flotilla x = sim.commission(m, w.id, 0, 2, strength(game, m), start, day)
+    x.squadron = 1
+    x.order = 1
+    x.goal = i
+    world.stat("squadrons formed", 1)
+    chronicle.say(game, "You take command of a squadron under " + sim.led_by(x) + ", ordered to attack " + galaxy.name(i) + ".")
+    return x.id

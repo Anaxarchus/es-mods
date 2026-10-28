@@ -1,0 +1,104 @@
+class Rivals
+
+// Rival commanders (M2). An enemy commander's history with the player
+// (Admirals.history) grows with every day of battle against the player's
+// squadron, or with the player in the system, and with every ship of theirs
+// the player destroys. Past tune.rival_threshold they become the player's
+// Rival (at most tune.max_rivals, one per side): they take a trait (grudge,
+// learned tactics, veteran, siege engineer, ambusher), hunt the player's
+// squadron, put a price on the player's head, and are worth a bounty job and,
+// killed in person, a medal. Enemy commanders' promotions (at 5 and 10
+// victories) and deaths make the chronicle and the news.
+
+import "imports:sdk/es"
+
+Tuning tune = Tuning()
+Factions factions = Factions()
+World world = World()
+Rng rng = Rng()
+Admirals admirals = Admirals()
+Chronicle chronicle = Chronicle()
+
+[]string trait_names = ["", "grudge", "learned tactics", "veteran", "siege engineer", "ambusher"]
+
+void wire(Tuning t, Factions f, World w, Rng r, Admirals a, Chronicle c):
+    tune = t
+    factions = f
+    world = w
+    rng = r
+    admirals = a
+    chronicle = c
+
+// Rivals now: [side, roster place] pairs.
+[][]int all():
+    [][]int out = []
+    for s in 1..=factions.sides():
+        for k in 1..=tune.admirals_per_side:
+            if admirals.is_rival(s, k):
+                out.append([s, k])
+    return out
+
+int count():
+    return all().len()
+
+bool side_has_rival(int s):
+    for k in 1..=tune.admirals_per_side:
+        if admirals.is_rival(s, k):
+            return true
+    return false
+
+// A commander met the player (a battle with the player's squadron or the player there).
+void met(Flotilla x):
+    if x.admiral != 0 && x.side != factions.pirates():
+        admirals.add_history(x.side, x.admiral, tune.history_battle)
+        changed = true
+
+// The player destroyed n ships of commander x's.
+void killed(Flotilla x, int n):
+    if x.admiral != 0 && n > 0:
+        admirals.add_history(x.side, x.admiral, tune.history_kill * n)
+        changed = true
+
+// Each day: commanders past the threshold become rivals.
+// Set when a commander's history with the player grows (the day's check runs then only).
+bool changed = true
+
+void day(es.Game game, int player, int day):
+    if player == 0 || !changed:
+        return
+    changed = false
+    int n = count()
+    for s in 1..=factions.sides():
+        if n >= tune.max_rivals:
+            return
+        if s == player || s == factions.pirates() || side_has_rival(s):
+            continue
+        for k in 1..=tune.admirals_per_side:
+            if admirals.filled(s, k) && admirals.history(s, k) >= tune.rival_threshold && !side_has_rival(s):
+                n += 1
+                admirals.put(s, k, 5, 1)
+                int t = rng.range(1, 5)
+                admirals.put(s, k, 4, t)
+                world.stat("rivals", 1)
+                chronicle.add(game, day, admirals.full_name(s, k) + " of " + factions.name(s) + " has sworn to hunt you down (" + trait_names[t] + "); " + factions.name(s) + " put a price on your head.", true, false)
+
+// A commander was promoted (5 and 10 victories), for the chronicle and news.
+void promoted(es.Game game, int side, int k, int day):
+    int w = admirals.wins(side, k)
+    if w != 5 && w != 10:
+        return
+    string rank = "Fleet " + factions.commander_title(side) if w == 10 else "Senior " + factions.commander_title(side)
+    chronicle.add(game, day, admirals.full_name(side, k) + " of " + factions.name(side) + " is promoted " + rank + " after " + string(w) + " victories.", false, true)
+    world.news_day = day
+
+// A commander fell: news; and a rival killed in person is a medal moment.
+void fell(es.Game game, string who, int side, bool rival, bool in_person, int day):
+    world.news_day = day
+    changed = true
+    if rival:
+        world.stat("rivals killed", 1)
+        if in_person:
+            chronicle.medal(game, day, "nemesis", "Nemesis Star", "for destroying your rival " + who + " in person.")
+
+string trait_name(int side, int k):
+    return trait_names[admirals.trait(side, k)]

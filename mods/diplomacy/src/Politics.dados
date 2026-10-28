@@ -21,9 +21,13 @@ Garrisons garrisons = Garrisons()
 Admirals admirals = Admirals()
 Changes changes = Changes()
 Chronicle chronicle = Chronicle()
+Occupation occupation = Occupation()
 
 // The player's faction (a major they serve), set by the mod each day.
 int player = 0
+
+void wire_occupation(Occupation o):
+    occupation = o
 
 void wire(Tuning t, Factions f, Galaxy g, World w, Rng r, Garrisons gs, Admirals a, Changes c, Chronicle ch):
     tune = t
@@ -113,6 +117,10 @@ int unrest_target(int m):
             worst = w.exhaustion(o)
     t += worst / tune.war_weariness
     t += world.defeat[o] / 10 + world.shock[o] / 10 + world.neglect[m] / 10
+    // Occupied systems' unrest feeds the minor's a little (at most
+    // occupation_minor_cap points).
+    int occ = occupation.minor_unrest(m) / 10
+    t += occ if occ < tune.occupation_minor_cap else tune.occupation_minor_cap
     return t if t < 100 else 100
 
 void update_unrest(int day):
@@ -153,6 +161,10 @@ void rebellions(es.Game game, int day):
             continue
         if world.rebelled[m] != 0 && day - world.rebelled[m] < tune.rebellion_cooldown:
             continue
+        // One rising at a time against a side: no cascade of them; none
+        // against a side that rallies.
+        if (world.risen[o] != 0 && day - world.risen[o] < tune.rising_gap) || galaxy.rallying(o):
+            continue
         int over = u - tune.rebellion_unrest
         if rng.chance_bp(over * over * 100 / tune.rebellion_divisor):
             rebel(game, m, day, 0)
@@ -175,6 +187,7 @@ void rebel(es.Game game, int m, int day, int outcome):
     if !factions.is_major(o) || galaxy.held_by(m, o) == 0:
         return
     world.rebelled[m] = day
+    world.risen[o] = day
     []int ps = patrons(m, o)
     []int weights = [tune.separatist_weight]
     for p in ps:
@@ -297,6 +310,10 @@ int pressure(int s, int t, int day):
     if world.truce[s][t] > day:
         return 0
     if galaxy.territory(s) == 0 || galaxy.territory(t) == 0:
+        return 0
+    // A side that rallies starts no war, and none is started on it: it holds
+    // what it has (a rising's reconquest is not declared here).
+    if galaxy.rallying(s) || galaxy.rallying(t):
         return 0
     int p = 0
     for m in 0..<regions().count():
@@ -585,6 +602,9 @@ void end_wars(es.Game game, int day):
             over = true
         if galaxy.territory(w.a) == 0 || galaxy.territory(w.b) == 0:
             over = true
+        // A side that rallies sues for peace once the war has run rally_peace_days.
+        if (galaxy.rallying(w.a) || galaxy.rallying(w.b)) && day - w.since >= tune.rally_peace_days:
+            over = true
         // A rebellion is over once the rebels hold nothing of their minor.
         if w.kind == 2 && galaxy.held_by(factions.rebel_minor(w.a), w.a) == 0:
             over = true
@@ -594,6 +614,14 @@ void end_wars(es.Game game, int day):
 // Send home the flotillas of war `id`.
 void send_home(int id):
     for x in world.fleets:
+        if x.alive() && x.war == id && x.squadron == 1:
+            // The player's squadron stays, and holds.
+            x.war = 0
+            x.order = 4
+            x.target = 0
+            x.siege = 0
+            x.goal = x.at
+            continue
         if x.alive() && x.war == id && x.kind == 0:
             x.kind = 3
             x.target = 0
@@ -701,8 +729,11 @@ int settle(es.Game game, War w, int winner, int loser, int day, []string terms):
     if back > 0:
         terms.append(factions.name(loser) + " give back " + systems(back))
     moved += back
-    // Cession of goal minors the winner mostly holds.
+    // Cession of goal minors the winner mostly holds (none from a side that
+    // rallies: Galaxy.rallying).
     for m in w.goals:
+        if galaxy.rallying(loser):
+            break
         int hw = galaxy.held_by(m, winner)
         int hl = galaxy.held_by(m, loser)
         if hl == 0 || hw == 0 || hw * 100 < (hw + hl) * tune.cession_share:
@@ -741,6 +772,7 @@ void dissolve(es.Game game, int r, int day):
 void transfer(es.Game game, int i, int from, int to, int day, int war):
     galaxy.set_owner(i, to)
     changes.government(galaxy.name(i), factions.government(to))
+    occupation.occupy(i, to)
     // The loser keeps a claim on the minor for a while: a rematch is likely.
     int m = galaxy.minor(i)
     if m >= 0 && factions.is_major(from):
@@ -767,8 +799,11 @@ void capture(es.Game game, int i, int by, War w, int day, int full, int siege_da
     int m = galaxy.minor(i)
     bool core = m >= 0 && regions().cores[m] && regions().parents[m] == from
     transfer(game, i, from, by, day, w.id)
+    occupation.damage(i, tune.capture_damage)
     garrisons.place(i, full * tune.capture_hp / 100, day)
-    w.add_score(by, tune.score_core if core else tune.score_capture)
+    // A capture from a side that rallies counts for half.
+    int gain = tune.score_core if core else tune.score_capture
+    w.add_score(by, gain / 2 if galaxy.rallying(from) else gain)
     w.add_exhaustion(from, tune.exhaustion_core if core else tune.exhaustion_system)
     if by == w.a:
         w.took_a += 1

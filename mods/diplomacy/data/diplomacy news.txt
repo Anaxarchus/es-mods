@@ -140,3 +140,84 @@ news "diplomacy: rebels"
 			"I hear the rebel captains fly the same ships as the Navy. Same ships, different flag."
 		word
 			`"`
+
+news "diplomacy: commander news"
+	location
+		government "Republic" "Free Worlds" "Syndicate"
+	to show
+		"diplomacy: active" == 1
+		"diplomacy: commander news" == 1
+	name
+		word
+			"Newsreader"
+			"Off-duty gunner"
+			"Bar regular"
+	message
+		word
+			`"`
+		word
+			"Did you see? Another commander promoted for a string of victories. They'll name a cruiser after the next one."
+			"They say the admiral went down with the flagship. The feeds keep showing the same footage."
+			"Every war makes a few famous names, and buries a few more."
+		word
+			`"`
+
+news "diplomacy: a price on your head"
+	location
+		government "Republic" "Free Worlds" "Syndicate" "Independent" "Pirate"
+	to show
+		"diplomacy: active" == 1
+		"diplomacy: bounty" == 1
+		random < 40
+	name
+		word
+			"Dockhand"
+			"Hooded spacer"
+	message
+		word
+			`"`
+		word
+			"Somebody's been asking after a captain who flies with the fleets. Paying for names, too. Wouldn't be you, would it?"
+			"There's a commander out there who wants your hide on a wall, friend. Word gets around."
+		word
+			`"`
+
+news "diplomacy: occupation"
+	location
+		government "Republic" "Free Worlds" "Syndicate"
+	to show
+		"diplomacy: active" == 1
+		"diplomacy: occupied" > 0
+	name
+		word
+			"Refugee"
+			"Relief worker"
+			"Customs officer"
+	message
+		word
+			`"`
+		word
+			"We left with what we could carry. The new garrison took the rest."
+			"Half the relief shipments go missing between the spaceport and the camps."
+			"The occupiers say order will be restored. The graffiti says otherwise."
+		word
+			`"`
+
+news "diplomacy: damage"
+	location
+		government "Republic" "Free Worlds" "Syndicate" "Independent"
+	to show
+		"diplomacy: active" == 1
+		"diplomacy: damaged" > 0
+	name
+		word
+			"Trader"
+			"Quartermaster"
+	message
+		word
+			`"`
+		word
+			"Food, medicine, clothes: anything you can haul to the war-torn systems sells for more than it should."
+			"The shipyards near the front have nothing on the pads. Everything that flies went to the war."
+		word
+			`"`

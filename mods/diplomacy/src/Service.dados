@@ -16,6 +16,11 @@ World world = World()
 Garrisons garrisons = Garrisons()
 Simulation sim = Simulation()
 Chronicle chronicle = Chronicle()
+Squadron squadron = Squadron()
+Intel intel = Intel()
+// The squadron chosen on the Command tab (0: a new one), and the last order's answer.
+int chosen = 0
+string answer = ""
 
 // What each button of the open panel or screen does.
 []string actions = []
@@ -26,6 +31,10 @@ string screen = ""
 int selected = -1
 // What each row of the screen's table is about (a war id, flotilla id, minor or chronicle entry).
 []int row_refs = []
+
+void wire_m2(Squadron sq, Intel i):
+    squadron = sq
+    intel = i
 
 void wire(Tuning t, Factions f, Galaxy g, State s, World w, Garrisons gs, Simulation sm, Chronicle c):
     tune = t
@@ -81,7 +90,7 @@ void grant_licenses(es.Game game):
         if factions.license_faction[k] == m && r >= factions.license_rank[k] && game.condition(key) == 0:
             game.set_condition(key, 1)
             world.stat("licenses", 1)
-            game.message(factions.titles[m] + " has issued you a " + factions.licenses[k] + " License, for your service as a " + factions.ranks[r] + ".")
+            game.message(factions.titles[m] + " has issued you a " + factions.licenses[k] + " License, for your service as a " + factions.rank_name(m, r) + ".")
 
 int rank(es.Game game):
     int merit = state.merit(game)
@@ -110,7 +119,7 @@ void check_rank(es.Game game):
     if r != old:
         state.put(game, "rank", r)
         if m != 0 && r > old:
-            game.message(factions.titles[m] + " has promoted you to " + factions.ranks[r] + ". Your salary is now " + string(salary(game)) + " credits a day.")
+            game.message(factions.titles[m] + " has promoted you to " + factions.rank_name(m, r) + ". Your salary is now " + string(salary(game)) + " credits a day.")
             world.stat("promotions", 1)
     update_salary(game)
     update_enemy(game)
@@ -154,7 +163,7 @@ void join_at(es.Game game, int f, int r):
     state.put(game, "rank", r)
     apply_reputations(game)
     update_salary(game)
-    game.message("You have joined " + factions.names[f] + " as a " + factions.ranks[r] + ".")
+    game.message("You have joined " + factions.names[f] + " as a " + factions.rank_name(f, r) + ".")
     grant_licenses(game)
 
 void leave(es.Game game):
@@ -271,7 +280,7 @@ string on_panel(es.Game game, int button):
         open_panel(game)
     else if action == "war room":
         open_screen(game, "wars", -1)
-    else if action == "forces" || action == "minors" || action == "chronicle" || action == "wars":
+    else if action == "forces" || action == "minors" || action == "chronicle" || action == "wars" || action == "command":
         open_screen(game, action, -1)
     else if action == "record":
         open_screen(game, "record", -1)
@@ -285,7 +294,27 @@ string on_panel(es.Game game, int button):
 void on_panel_row(es.Game game, int row):
     if screen == "":
         return
+    if screen == "command":
+        command_row(game, row)
+        return
     open_screen(game, screen, row)
+
+// A click on the Command tab: a squadron row chooses it; an order row orders
+// the chosen squadron (or forms a new one).
+void command_row(es.Game game, int row):
+    if row < 0 || row >= row_refs.len():
+        return
+    int pick = row_refs[row]
+    answer = ""
+    if pick >= 0:
+        chosen = pick
+        answer = "Squadron chosen: pick its order below." if pick > 0 else "A new squadron: pick its order below, and it forms at your faction's system nearest the target."
+    else:
+        answer = squadron.order(game, chosen, -pick - 1, game.day())
+        []Flotilla mine = squadron.mine()
+        if chosen == 0 && mine.len() > 0:
+            chosen = mine[mine.len() - 1].id
+    open_screen(game, "command", -1)
 
 // The faction's status, for its panel.
 string status(es.Game game, int f):
@@ -321,17 +350,17 @@ string goals_text(War w):
 string licensing(int f, int r):
     for k in 0..<factions.licenses.len():
         if factions.license_faction[k] == f && factions.license_rank[k] > r:
-            return " At " + factions.ranks[factions.license_rank[k]] + " you will be issued a " + factions.licenses[k] + " License."
+            return " At " + factions.rank_name(f, factions.license_rank[k]) + " you will be issued a " + factions.licenses[k] + " License."
     return ""
 
 string standing(es.Game game, int f):
     int m = state.member(game)
     if m == f:
         int r = rank(game)
-        string text = "You serve " + factions.names[f] + " as a " + factions.ranks[r] + ". Merit: " + string(state.merit(game))
+        string text = "You serve " + factions.names[f] + " as a " + factions.rank_name(f, r) + ". Merit: " + string(state.merit(game))
         int next = factions.next_rank_merit(r)
         if next >= 0:
-            text = text + " (" + factions.ranks[r + 1] + " at " + string(next) + ")"
+            text = text + " (" + factions.rank_name(f, r + 1) + " at " + string(next) + ")"
         text = text + ". Salary: " + string(salary(game)) + " credits a day." + licensing(f, r)
         return text + " Its flotillas count you as an ally, and its enemies' as an enemy."
     if m != 0:
@@ -372,7 +401,9 @@ void open_screen(es.Game game, string tab, int row):
         // The chosen row's details replace the summary in the sidebar.
         fill_screen(game, tab, row_text(game, tab, row_refs[row]))
         game.panel_select(row)
-    for b in [["Wars", "wars"], ["Forces", "forces"], ["Minors", "minors"], ["Chronicle", "chronicle"]]:
+    for b in [["Wars", "wars"], ["Forces", "forces"], ["Minors", "minors"], ["Chronicle", "chronicle"], ["Command", "command"]]:
+        if b[1] == "command" && squadron.allowed(game) == 0:
+            continue
         if b[1] != tab:
             add_button(game, b[0], b[1])
     add_button(game, "Service Record", "record")
@@ -397,10 +428,23 @@ void refill(es.Game game, string tab):
         for w in world.wars:
             game.panel_row(factions.adjective(w.a) + " / " + factions.adjective(w.b) + " (" + w.kind_name() + ")\t" + goals_short(w) + "\t" + string(w.score) + "\t" + string(game.day() - w.since + 1))
             row_refs.append(w.id)
+    else if tab == "command":
+        squadron.list_orders(game)
+        game.panel_columns("Squadron or order\tStrength\tTask\tAt")
+        for x in squadron.mine():
+            game.panel_row((">> " if x.id == chosen else "") + "Squadron: " + sim.led_by(x) + "\t" + string(x.strength) + "\t" + order_name(x) + "\t" + galaxy.name(x.at))
+            row_refs.append(x.id)
+        if squadron.mine().len() < squadron.allowed(game):
+            game.panel_row((">> " if chosen == 0 else "") + "Form a new squadron\t" + string(squadron.strength(game, state.member(game))) + "\t\t")
+            row_refs.append(0)
+        for k in 0..<squadron.labels.len():
+            game.panel_row("   " + squadron.labels[k] + "\t\t\t")
+            row_refs.append(-k - 1)
     else if tab == "forces":
         game.panel_columns("Force\tSide\tTask\tStrength")
+        int me = state.member(game)
         for x in world.fleets:
-            if x.alive():
+            if x.alive() && intel.sees_force(game, me, x, game.day()):
                 string task = "siege of " + galaxy.name(x.goal) if sim.besieging(x) else ("raid" if x.kind == 2 else ("going home" if x.kind == 3 else "at " + galaxy.name(x.at)))
                 game.panel_row(sim.led_by(x) + "\t" + factions.adjective(x.side) + "\t" + task + "\t" + string(x.strength))
                 row_refs.append(x.id)
@@ -442,7 +486,21 @@ string split_text(int m):
     return parts.join(", ")
 
 // The sidebar: the selected row's details, or a summary.
+string order_name(Flotilla x):
+    if x.order == 1:
+        return "attack " + galaxy.name(x.goal)
+    if x.order == 2:
+        return "relieve " + galaxy.name(x.goal)
+    if x.order == 3:
+        return "hunt at " + galaxy.name(x.goal)
+    return "holding"
+
 string war_room_text(es.Game game, string tab, int row):
+    if tab == "command":
+        string t = "You command " + string(squadron.mine().len()) + " of " + string(squadron.allowed(game)) + " squadrons. Choose a squadron (or a new one), then an order. A squadron's strength counts your own fleet; it fights harder with you beside it, and losing it costs " + string(tune.squadron_loss_merit) + " merit."
+        if answer != "":
+            t = answer + "\n" + t
+        return t
     string text = string(world.wars.len()) + (" war" if world.wars.len() == 1 else " wars") + " in progress."
     int rebels = 0
     for s in 5..=factions.sides():
@@ -497,7 +555,7 @@ string record_text(es.Game game):
     int m = state.member(game)
     string text = ""
     if m != 0:
-        text = "You serve " + factions.names[m] + " as a " + factions.ranks[rank(game)] + ", with " + string(state.merit(game)) + " merit."
+        text = "You serve " + factions.names[m] + " as a " + factions.rank_name(m, rank(game)) + ", with " + string(state.merit(game)) + " merit."
     else:
         text = "You serve no faction."
     text = text + "\nOperations done: " + string(world.get_stat("ops done")) + ". Medals: " + string(world.medals.len()) + "."

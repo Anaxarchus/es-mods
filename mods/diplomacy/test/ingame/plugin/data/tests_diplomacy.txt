@@ -192,9 +192,102 @@ test "Diplomacy - Join And Leave"
 		assert
 			"diplomacy: member" == 0
 			"salary: Republic commission" == 0
+		# Close the panel with its Close button (4th: Join, War Room, Service
+		# Record, Close). Escape would open the game's main menu over a mod panel.
 		input
-			key escape
+			key 4
 
+
+test "Diplomacy - Squadron Command"
+	status active
+	description "A Commodore of the Republic takes command of a squadron (the force squadron override), ordered to attack; the mod reports it in its conditions as the days pass."
+	sequence
+		inject "Diplomacy Test Save"
+		call "Load First Savegame"
+		# A member of the Republic at Commodore (the mod reads its conditions).
+		apply
+			"diplomacy: member" = 1
+			"diplomacy: merit" = 200
+			"diplomacy: force squadron" = 1
+		navigate
+			travel Vega
+		call "Depart"
+		label "departing"
+		input
+		branch "departing"
+			"diplomacy: war a" == 0
+		input
+			command jump
+		label "toVega"
+		branch "toVega"
+			not "flagship system: Vega"
+		apply
+			"test: steps to wait" = 3
+		label "watching"
+		input
+		apply
+			"test: steps to wait" = "test: steps to wait" - 1
+		branch "watching"
+			"test: steps to wait" > 0
+		assert
+			"diplomacy: force squadron" == 0
+			"diplomacy: squadrons" == 1
+			"diplomacy: squadron 1 order" == 1
+			"diplomacy: squadron 1 strength" > 0
+			"diplomacy: squadron 1 goal" > 0
+			"diplomacy: stat squadrons formed" >= 1
+
+
+test "Diplomacy - Squadron Command Panel"
+	status active
+	description "Joining through the Faction panel at Commodore merit, the War Room has a Command tab; the panels close by their buttons; a squadron then reports in the conditions."
+	sequence
+		inject "Diplomacy Test Save"
+		call "Load First Savegame"
+		# The Faction panel's first button, Join.
+		input
+			key k
+		input
+			key 1
+		assert
+			"diplomacy: member" == 1
+		apply
+			"diplomacy: merit" = 200
+			"diplomacy: force squadron" = 1
+		# War Room (2nd: Leave, War Room, Service Record, Close), then its 4th tab
+		# button, Command (Forces, Minors, Chronicle, Command, Service Record, Back,
+		# Close), then Close (7th).
+		input
+			key 2
+		input
+			key 4
+		input
+			key 7
+		navigate
+			travel Vega
+		call "Depart"
+		label "departing"
+		input
+		branch "departing"
+			"diplomacy: war a" == 0
+		input
+			command jump
+		label "toVega"
+		branch "toVega"
+			not "flagship system: Vega"
+		apply
+			"test: steps to wait" = 3
+		label "watching"
+		input
+		apply
+			"test: steps to wait" = "test: steps to wait" - 1
+		branch "watching"
+			"test: steps to wait" > 0
+		assert
+			"diplomacy: member" == 1
+			"diplomacy: rank" >= 5
+			"diplomacy: squadrons" == 1
+			"diplomacy: squadron 1 order" == 1
 
 # A brand-new pilot at the game's start date: no campaign progress, no overrides.
 # Run with the "Diplomacy Debug" plugin installed (test/ingame/run.sh does that

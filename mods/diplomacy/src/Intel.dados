@@ -1,0 +1,98 @@
+class Intel
+
+// Fog of war (M2). The player sees enemy forces only within
+// tune.visibility_range jumps of their faction's systems or flotillas (a pilot
+// who serves no faction: within 2 jumps of their own system), and in systems
+// scouted in the last tune.scout_days days (World.scouted: scouting
+// operations). Each day the forces in sight are noted (World.sightings), and
+// the map shows those out of sight as faded "last seen" labels for
+// tune.sighting_days. A force of the player's own faction is always in sight.
+
+import "imports:sdk/es"
+
+Tuning tune = Tuning()
+Factions factions = Factions()
+Galaxy galaxy = Galaxy()
+World world = World()
+
+// Distances from the player's eyes, worked out once per day (or per draw).
+[]int eyes = []
+int eyes_day = -1
+int eyes_player = -1
+string eyes_here = ""
+
+void wire(Tuning t, Factions f, Galaxy g, World w):
+    tune = t
+    factions = f
+    galaxy = g
+    world = w
+
+// Work out what the player sees: jumps from the nearest of their eyes.
+void look(es.Game game, int player, int day):
+    if day == eyes_day && player == eyes_player && game.here() == eyes_here && eyes.len() == galaxy.count():
+        return
+    eyes_day = day
+    eyes_player = player
+    eyes_here = game.here()
+    []int src = []
+    if player != 0:
+        for i in galaxy.human:
+            if galaxy.owner(i) == player:
+                src.append(i)
+        for x in world.fleets:
+            if x.alive() && x.side == player:
+                src.append(x.at)
+    else:
+        int here = galaxy.find(game.here())
+        if here >= 0:
+            src.append(here)
+    eyes = galaxy.distances_from(src)
+
+// Forget what was worked out (another pilot, a new day in person).
+void forget():
+    eyes_day = -1
+
+// Whether system i is in sight.
+bool sees(es.Game game, int player, int i, int day):
+    if i < 0:
+        return false
+    look(game, player, day)
+    int range = tune.visibility_range if player != 0 else 2
+    if i < eyes.len() && eyes[i] >= 0 && eyes[i] <= range:
+        return true
+    return world.scouted_now(i, day)
+
+// Whether a force is in sight: the player's faction's always.
+bool sees_force(es.Game game, int player, Flotilla x, int day):
+    if player != 0 && x.side == player:
+        return true
+    return sees(game, player, x.at, day)
+
+// Note each force in sight; forget sightings older than tune.sighting_days and
+// scouting that ran out. Bounded by the forces alive.
+void update(es.Game game, int player, int day):
+    forget()
+    []string kept = []
+    for s in world.sightings:
+        []string f = s.split("|")
+        if f.len() >= 5 && day - f[4].to_int() <= tune.sighting_days:
+            kept.append(s)
+    for x in world.fleets:
+        if !x.alive() || (player != 0 && x.side == player) || !sees(game, player, x.at, day):
+            continue
+        string entry = string(x.id) + "|" + string(x.side) + "|" + string(x.size) + "|" + string(x.at) + "|" + string(day)
+        kept = kept.filter(bool(string s): return !s.starts_with(string(x.id) + "|"))
+        kept.append(entry)
+    world.sightings = world.capped(kept, 32)
+    world.scouted = world.scouted.filter(bool([]int s): return s[1] >= day)
+
+// Scouting reveals system i and the systems next to it for tune.scout_days.
+void scout(int i, int day):
+    []int around = [i]
+    for v in galaxy.links[i]:
+        around.append(v)
+    for s in around:
+        world.scouted = world.scouted.filter(bool([]int r): return r[0] != s)
+        world.scouted.append([s, day + tune.scout_days])
+    if world.scouted.len() > 60:
+        world.scouted = world.scouted[(world.scouted.len() - 60)..<world.scouted.len()]

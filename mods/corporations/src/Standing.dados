@@ -1,0 +1,66 @@
+class Standing
+
+import "imports:sdk/es"
+
+// (M2) The player's standing with a company, from -100 to 100, kept in the
+// condition "corporations: standing <id>" (the company's id: the canonical
+// companies are 1 to 15 in Names order, so Betelgeuse Shipyards is 1, Tycho
+// Crater Shipyards 7) so missions and other mods can read and change it.
+// Earned by escorting a builder's convoys (+6), carrying parts for it (+2),
+// relief cargo in its crises (+3) and stealing a rival's plans for it (+8);
+// lost by intercepting its convoys (-15), sabotage or spying against it (-8,
+// -25 more if caught), a convoy the player was escorting lost (-2) or left
+// (-1). Holding its shares adds up to +10 while held (MAX_HOLDING = +10),
+// which is not stored. A discount on an order spends ORDER_COST.
+
+int MIN = -100
+int MAX = 100
+int ESCORT = 6
+int ESCORT_LOST = -2
+int ESCORT_LEFT = -1
+int PARTS = 2
+int RELIEF = 3
+int INTERCEPT = -15
+int SPONSOR = 5
+int COVERT = -8
+int CAUGHT = -25
+int PLANS = 8
+int HOLDING = 10
+// Standing an order's discount needs, and what the discount spends.
+int DISCOUNT_AT = 60
+int ORDER_COST = 15
+
+string key(int id):
+    return "corporations: standing " + string(id)
+
+int get(es.Game game, int id):
+    if id <= 0:
+        return 0
+    return game.condition(key(id))
+
+void add(es.Game game, int id, int delta):
+    if id <= 0 || delta == 0:
+        return
+    int n = get(game, id) + delta
+    n = MIN if n < MIN else (MAX if n > MAX else n)
+    game.set_condition(key(id), n)
+
+// Standing with the bonus for shares held: +HOLDING at 20% of the company.
+int effective(es.Game game, Market m, int id):
+    int base = get(game, id)
+    int held = m.holdings.get(id, 0)
+    if held <= 0 || !m.by_id.has(id):
+        return base
+    float share = float(held) / float(m.by_id[id].shares) / 0.20
+    share = share if share < 1.0 else 1.0
+    int bonus = globalThis.Math.round(share * float(HOLDING))
+    int n = base + bonus
+    return MAX if n > MAX else n
+
+// "good" (40 and up), "fair", "poor" (-20 and down), for the player.
+string word(int n):
+    if n >= 40:
+        return "good"
+    if n <= -20:
+        return "poor"
+    return "fair"

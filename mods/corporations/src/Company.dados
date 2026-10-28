@@ -8,6 +8,8 @@ int DISTRESSED = 1
 int FOR_SALE = 2
 int BANKRUPT = 3
 int MERGED = 4
+// (M3) Taken over by the government that captured its home system (Sanctions).
+int NATIONALISED = 5
 
 int id = 0
 string name = ""
@@ -75,6 +77,39 @@ float pre_offer = 0.0
 // not swing the price and then swing it back.
 float norm = 0.0
 bool has_norm = false
+// ---- M3 ----
+// Its chief executive (Executives): a name, a trait (Names.traits: 0
+// aggressive, 1 prudent, 2 visionary, 3 crooked) and the day they took over.
+string ceo = ""
+int trait = 0
+int ceo_since = 0
+// 1 for the player's own company (the charter, Charter), 0 for the market's.
+int owner = 0
+// The player's company: the ships assigned to it, "uuid:capacity;...", each
+// parked (API 10) or "-" for capacity bought with credits; whether its shares
+// were offered to the market (IPO); its margin policy (-1 low, 0 normal, 1 high).
+string ships = ""
+bool ipo = false
+int policy = 0
+// The board's direction for its bidding (Board): 1 aggressive, -1
+// conservative, 0 none; until this day.
+int bias = 0
+int bias_until = 0
+// The government of its home system as last seen (Sanctions: a capture).
+string home_gov = ""
+// A one-off gain (or charge, negative) its next report books, decided
+// Tips.SURPRISE_DAYS ahead, and that report's day (0: none).
+float surprise = 0.0
+int surprise_at = 0
+// (M3 review) The payout level the player's board seat set (-1: none) and the
+// day it was set (one change a report, kept across chiefs while the player
+// holds a seat); shares of it a suitor already bought from the player (they
+// are not paid for again when the deal completes); the day its home last
+// changed hands (no shorts for a while after).
+int board_payout = -1
+int payout_day = -1000000
+int suitor_stake = 0
+int captured = -1000000
 
 bool listed():
     return status == LISTED || status == DISTRESSED || status == FOR_SALE
@@ -85,7 +120,7 @@ float market_value():
 // A company gone from the listing a month or more keeps no price history or
 // reports in its line (nothing reads them; a spin-off starts afresh).
 string encode(bool full):
-    []string f = [string(id), name, "1" if canon else "0", string(sector), home, system, string(status), string(since), string(cash), string(debt), string(capacity), string(efficiency), string(reliability), string(shares), string(price), string(revenue), string(costs), floats(earnings) if full else "", string(report_at), string(payout), string(dividend), ints(history) if full else "", string(parent), ints(acquired), string(brought), string(review), string(rescued), string(suitor), string(offer_day), string(offer), string(founded), string(mood), string(busy), string(busy_days), string(hull_income), cause, string(pre_offer), string(norm)]
+    []string f = [string(id), name, "1" if canon else "0", string(sector), home, system, string(status), string(since), string(cash), string(debt), string(capacity), string(efficiency), string(reliability), string(shares), string(price), string(revenue), string(costs), floats(earnings) if full else "", string(report_at), string(payout), string(dividend), deltas(history) if full else "", string(parent), ints(acquired), string(brought), string(review), string(rescued), string(suitor), string(offer_day), string(offer), string(founded), string(mood), string(busy), string(busy_days), string(hull_income), cause, string(pre_offer), string(norm), ceo, string(trait), string(ceo_since), string(owner), ships, string(bias), string(bias_until), home_gov, "1" if ipo else "0", string(policy), string(surprise), string(surprise_at), string(board_payout), string(payout_day), string(suitor_stake), string(captured)]
     return f.join("|")
 
 void decode(string line):
@@ -111,7 +146,7 @@ void decode(string line):
     report_at = f[18].to_int()
     payout = f[19].to_float()
     dividend = f[20].to_float()
-    history = read_ints(f[21])
+    history = read_deltas(f[21]) if f[21].starts_with("d") else read_ints(f[21])
     parent = f[22].to_int()
     acquired = read_ints(f[23])
     brought = f[24].to_float()
@@ -132,6 +167,31 @@ void decode(string line):
     if f.len() > 37:
         norm = f[37].to_float()
         has_norm = true
+    // Saves from before M3 have 38 fields (Executives gives them a chief).
+    if f.len() > 47:
+        ceo = f[38]
+        trait = f[39].to_int()
+        ceo_since = f[40].to_int()
+        owner = f[41].to_int()
+        ships = f[42]
+        bias = f[43].to_int()
+        bias_until = f[44].to_int()
+        home_gov = f[45]
+        ipo = f[46] == "1"
+        policy = f[47].to_int()
+    if f.len() > 49:
+        surprise = f[48].to_float()
+        surprise_at = f[49].to_int()
+    if f.len() > 53:
+        board_payout = f[50].to_int()
+        payout_day = f[51].to_int()
+        suitor_stake = f[52].to_int()
+        captured = f[53].to_int()
+
+// The player's own company, not yet offered to the market: not traded on the
+// exchange, not a takeover target.
+bool private():
+    return owner == 1 && !ipo
 
 // Note what drove the company lately (kept to the next report); "|" is the
 // record separator, so it never goes in.
@@ -149,6 +209,24 @@ string ints([]int xs):
     for x in xs:
         out.append(string(x))
     return out.join(",")
+
+// (M2) The price history as its first value and each day's change after it,
+// "d1745,-5,-7,...": about half as long as the prices themselves.
+string deltas([]int xs):
+    if xs.len() == 0:
+        return ""
+    []string out = ["d" + string(xs[0])]
+    for i in 1..<xs.len():
+        out.append(string(xs[i] - xs[i - 1]))
+    return out.join(",")
+
+[]int read_deltas(string s):
+    []int out = []
+    int at = 0
+    for part in s[1..<s.len()].split(","):
+        at = part.to_int() if out.len() == 0 else at + part.to_int()
+        out.append(at)
+    return out
 
 []float read_floats(string s):
     []float out = []

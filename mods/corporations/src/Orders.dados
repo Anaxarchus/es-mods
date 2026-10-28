@@ -1,0 +1,248 @@
+class Orders
+
+import "imports:sdk/es"
+
+// (M2, C7) The player's orders for new hulls. At the home planet of a
+// canonical company that owns civilian hull designs (Names homes: Prime,
+// Zug, Earth, ...), the exchange's Orders tab lists its hulls; never a
+// military one. An order is for 1 to MAX_UNITS hulls of one model:
+// - the player pays DEPOSIT of the price now (Exchange asks the number, then
+//   confirms the sums);
+// - the order is a Contract of kind ORDER for the builder, queued ahead of
+//   shipyard restocks: its lead time counts only the builder's other orders,
+//   lead_days × (1 + orders' load / capacity) × health, shortened by up to
+//   LEAD_CUT at standing 100 (Standing.effective);
+// - with standing DISCOUNT_AT or more the price is DISCOUNT lower (at most
+//   DISCOUNT_MAX credits a hull), which spends Standing.ORDER_COST a hull:
+//   buy_ship charges the full new price and a new ship sells back for its
+//   full value, so a discount is money in hand; capped and paid for in
+//   standing (about two escorts a hull), it is a reward, not a loop;
+// - when it is ready (DELIVERED), landing there tells the player, and opening
+//   the exchange asks them to pay the rest: for each hull the deposit and any
+//   discount are credited back, then buy_ship(model, "") charges the full new
+//   price (model_cost), so the player pays exactly the remainder;
+// - cancelling refunds half the deposit (the builder keeps the other half).
+// The builder earns MARGIN of the price on delivery, and the half deposit
+// kept on a cancel.
+
+float DEPOSIT = 0.2
+int MAX_UNITS = 3
+int MAX_OPEN = 3
+float DISCOUNT = 0.03
+int DISCOUNT_MAX = 150000
+float LEAD_CUT = 0.3
+float MARGIN = 0.03
+
+// The canonical company whose home is this planet and owns civilian designs, or none.
+Company builder_at(Market m, string planet):
+    for c in m.companies:
+        if c.canon && c.listed() && c.home == planet && models(m, c).len() > 0:
+            return c
+    return Company()
+
+// The hull rows a builder takes orders for: its civilian designs, base
+// models only (no variants such as "Kestrel (More Weapons)", and no pirate
+// "Marauder" refits, which no builder makes to order).
+[]int models(Market m, Company c):
+    []int out = []
+    for i in 0..<m.hulls.models.len():
+        if m.hulls.owners[i] == c.name && orderable(m, i):
+            out.append(i)
+    return out
+
+bool orderable(Market m, int row):
+    string model = m.hulls.models[row]
+    return !m.hulls.military(row) && !model.contains("(") && !model.starts_with("Marauder ")
+
+// A model's price for the player now (one hull, whole credits), with any discount.
+int unit_price(es.Game game, Market m, Company c, string model):
+    int cost = game.model_cost(model)
+    if cost <= 0:
+        return 0
+    if !discounted(game, m, c):
+        return cost
+    int off = globalThis.Math.round(float(cost) * DISCOUNT)
+    off = off if off < DISCOUNT_MAX else DISCOUNT_MAX
+    return cost - off
+
+bool discounted(es.Game game, Market m, Company c):
+    return m.standing.get(game, c.id) >= m.standing.DISCOUNT_AT
+
+int deposit(int price):
+    int d = globalThis.Math.round(float(price) * DEPOSIT)
+    return d
+
+// The days an order of `units` would take now.
+int lead(es.Game game, Market m, Company c, int row, int units):
+    int cls = m.hulls.classes[row]
+    float queued = 0.0
+    for k in m.contracts:
+        if k.kind == k.ORDER && k.status == k.RUNNING && k.winner == c.id:
+            queued += k.load
+    float busy = queued / c.capacity if c.capacity > 0.0 else 1.0
+    int s = m.standing.effective(game, m, c.id)
+    float cut = 1.0 - LEAD_CUT * (float(s) / 100.0 if s > 0 else 0.0)
+    float days = float(m.hulls.lead_days[cls]) * (1.0 + busy + 0.1 * float(units - 1)) * m.health(c) * cut
+    int n = globalThis.Math.round(days)
+    return n if n > 3 else 3
+
+// Why the player can't order this model now, or "".
+string refusal(es.Game game, Market m, Company c, string model, int units):
+    int row = m.hulls.find(model)
+    if row < 0 || m.hulls.owners[row] != c.name || !orderable(m, row):
+        return c.name + " takes orders only for its own civilian designs."
+    if game.model_cost(model) <= 0:
+        return "That hull is not in the catalogue."
+    if open_count(m) >= MAX_OPEN:
+        return "You already have " + string(MAX_OPEN) + " orders open; take delivery of one or cancel one first."
+    string licenses = game.model_licenses(model)
+    if licenses != "":
+        for l in licenses.split(","):
+            if game.condition("license: " + l) == 0:
+                return "You need a " + l + " license to own a " + game.model_name(model) + "."
+    int total = deposit(unit_price(game, m, c, model)) * units
+    if game.condition("credits") < total:
+        return "You can't pay the deposit of " + m.fmt.credits(float(total)) + " credits."
+    return ""
+
+int open_count(Market m):
+    int n = 0
+    for k in m.contracts:
+        if k.kind == k.ORDER:
+            n += 1
+    return n
+
+// Place an order: the deposit is taken. Answers the order, or none (id 0).
+Contract place(es.Game game, Market m, Company c, string model, int units, int d):
+    if units < 1 || units > MAX_UNITS || refusal(game, m, c, model, units) != "":
+        return Contract()
+    int row = m.hulls.find(model)
+    bool cut = discounted(game, m, c)
+    int price = unit_price(game, m, c, model)
+    int dep = deposit(price)
+    Contract k = Contract()
+    k.id = m.next_contract
+    m.next_contract += 1
+    k.kind = k.ORDER
+    k.client = "player"
+    k.sector = 0
+    k.system = c.system
+    k.model = model
+    k.units = units
+    k.load = m.restock_load[m.hulls.classes[row]] * float(units)
+    k.days = lead(game, m, c, row, units)
+    k.price = float(price * units)
+    k.budget = float(dep * units)
+    k.issued = d
+    k.closes = d
+    k.status = k.RUNNING
+    k.winner = c.id
+    k.start = d
+    k.ends = d + k.days
+    k.bidders = 1
+    k.reissued = cut
+    m.credit(game, -float(dep * units))
+    if cut:
+        m.standing.add(game, c.id, -m.standing.ORDER_COST * units)
+    c.load += k.load
+    m.contracts.append(k)
+    m.orders_placed += 1
+    return k
+
+// Cancel an order: half the deposit back; the builder keeps the rest.
+int cancel(es.Game game, Market m, Contract k):
+    int back = int(k.budget) / 2
+    m.credit(game, float(back))
+    Company c = m.by_id.get(k.winner, Company())
+    if c.id != 0:
+        float kept = k.budget - float(back)
+        c.cash += kept
+        c.revenue += kept
+        if k.status == k.RUNNING:
+            c.load -= k.load
+    m.contracts = m.contracts.filter(bool(Contract x): return x.id != k.id)
+    return back
+
+// What is left to pay for a ready order, for all its hulls.
+int remainder(Contract k):
+    return int(k.price) - int(k.budget)
+
+// Take delivery of a ready order: for each hull, credit back the deposit and
+// any discount (model_cost less the remainder), then buy_ship charges the full
+// new price. A purchase the game refuses is undone and the rest waits.
+// Answers the hulls delivered.
+int deliver(es.Game game, Market m, Contract k):
+    int per_price = int(k.price) / k.units
+    int per_deposit = int(k.budget) / k.units
+    int delivered = 0
+    for u in 0..<k.units:
+        int cost = game.model_cost(k.model)
+        int back = cost - (per_price - per_deposit)
+        m.credit(game, float(back))
+        if !game.buy_ship(k.model, ""):
+            m.credit(game, -float(back))
+            break
+        delivered += 1
+    if delivered == 0:
+        return 0
+    k.units -= delivered
+    k.price -= float(per_price * delivered)
+    k.budget -= float(per_deposit * delivered)
+    m.orders_delivered += delivered
+    if k.units <= 0:
+        m.contracts = m.contracts.filter(bool(Contract x): return x.id != k.id)
+    return delivered
+
+// Each day: orders whose hulls are built become ready; the builder is paid
+// its margin and its yards are free.
+void step(es.Game game, Market m, int d):
+    for k in m.contracts:
+        if k.kind != k.ORDER || k.status != k.RUNNING || d < k.ends:
+            continue
+        k.status = k.DELIVERED
+        Company c = m.by_id.get(k.winner, Company())
+        if c.id == 0:
+            continue
+        c.load -= k.load
+        float fee = k.price * MARGIN
+        c.cash += fee
+        c.revenue += fee
+        c.hull_income += fee
+        m.player_events.append("Your order of " + string(k.units) + " " + m.model_label(k.model, k.units) + " from " + c.name + " is ready on " + game.planet_name(c.home) + ": " + m.fmt.credits(float(remainder(k))) + " credits to pay on delivery.")
+
+// The player's ready order at this planet, or none.
+Contract ready_at(Market m, string planet):
+    for k in m.contracts:
+        if k.kind == k.ORDER && k.status == k.DELIVERED && m.by_id.has(k.winner) && m.by_id[k.winner].home == planet:
+            return k
+    return Contract()
+
+// "o|id|model|units|status|winner|start|ends|price|deposit|discounted"
+string encode(Contract k):
+    int price = globalThis.Math.round(k.price)
+    int dep = globalThis.Math.round(k.budget)
+    []string f = [string(k.id), k.model, string(k.units), string(k.status), string(k.winner), string(k.start), string(k.ends), string(price), string(dep), "1" if k.reissued else "0"]
+    return f.join("|")
+
+Contract decode(Market m, string rest):
+    []string f = rest.split("|")
+    Contract k = Contract()
+    k.kind = k.ORDER
+    k.client = "player"
+    k.id = f[0].to_int()
+    k.model = f[1]
+    k.units = f[2].to_int()
+    k.status = f[3].to_int()
+    k.winner = f[4].to_int()
+    k.start = f[5].to_int()
+    k.ends = f[6].to_int()
+    k.price = f[7].to_float()
+    k.budget = f[8].to_float()
+    k.reissued = f[9] == "1"
+    k.issued = k.start
+    k.closes = k.start
+    k.days = k.ends - k.start
+    k.bidders = 1
+    int row = m.hulls.find(k.model)
+    k.load = m.restock_load[m.hulls.classes[row]] * float(k.units) if row >= 0 && k.status == k.RUNNING else 0.0
+    return k

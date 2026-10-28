@@ -40,8 +40,16 @@ function withBuildLock(f) {
 }
 
 export async function loadMod() {
+	// Without the Dado toolchain the tests cannot build the mod. They fail
+	// loudly rather than skip, unless CORP_ALLOW_SKIP is set (an environment
+	// that knowingly has no Dado).
 	try {
 		execFileSync(process.env.DADOC || "dadoc", ["--version"], { stdio: "ignore" });
+	} catch {
+		if (process.env.CORP_ALLOW_SKIP) return null;
+		throw new Error("Corporations' tests need the Dado toolchain: put dadoc on PATH (or set DADOC), or set CORP_ALLOW_SKIP=1 to skip them");
+	}
+	try {
 		withBuildLock(() => execFileSync(process.execPath, [join(SDK, "tools/esmod.mjs"), "build", "mods/corporations"], { cwd: SDK, stdio: "ignore" }));
 		return (await import(join(SDK, "dist/Corporations/scripts/corporations.js"))).Corporations;
 	} catch {

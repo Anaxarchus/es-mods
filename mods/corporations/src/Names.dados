@@ -20,6 +20,21 @@ class Names
 []string prefixes = ["Corvid", "Vantage", "Bellwether", "Halcyon", "Meridian", "Orrery", "Kestrel", "Tamarisk", "Ironbark", "Lodestar", "Aldane", "Brightwater", "Cassini", "Dunmore", "Everline", "Farrow", "Galloway", "Harrowgate", "Isher", "Juniper", "Kellerman", "Larkspur", "Mercator", "Northgate", "Osprey", "Peregrine", "Quillon", "Rookwood", "Sable", "Thornfield", "Umber", "Vireo", "Wrenfield", "Yardley", "Zephyr", "Ashgrove", "Blackwater", "Coldharbour", "Driftwood", "Emberline", "Foxglove", "Greyhaven", "Highmoor", "Ironside", "Kingfisher", "Longreach", "Marchbank", "Nightjar", "Oakhurst", "Pellucid", "Redfern", "Saltire", "Tidewater", "Underhill", "Valemont", "Westmark", "Starling", "Covenant", "Lanthorn", "Arbiter"]
 [][]string suffixes = [["Shipworks", "Yards", "Drydocks", "Hullwrights"], ["Systems", "Instruments", "Arms", "Ordnance"], ["Propulsion", "Drives", "Thrust", "Engineworks"], ["Electronics", "Logic", "Photonics", "Signals"], ["Provisions", "Foods", "Goods", "Commodities"], ["Ore", "Mining", "Minerals", "Extraction"], ["Haulage", "Freight", "Lines", "Transit"], ["Security", "Guard", "Escort", "Watch"]]
 
+// (M3) Chief executives: names, and traits (Executives). Each trait moves a
+// company's bid margins, its appetite for buyouts, its payout and its luck.
+[]string first_names = ["Ada", "Bram", "Celia", "Dmitri", "Esme", "Farid", "Greta", "Hollis", "Ines", "Jonah", "Kaya", "Lucan", "Mira", "Nestor", "Odile", "Pavel", "Quinn", "Rosalind", "Silas", "Tamsin", "Ulric", "Vesna", "Wendell", "Xiomara", "Yusuf", "Zelda", "Anouk", "Bastian", "Corin", "Delphine", "Emeric", "Fen", "Gideon", "Halima", "Isidore", "Juno"]
+[]string last_names = ["Achterberg", "Bellamy", "Castellan", "Draycott", "Ekwueme", "Fairweather", "Grisham", "Halvorsen", "Iwasaki", "Jaramillo", "Kowalczyk", "Lindqvist", "Marchetti", "Nakashima", "Okonkwo", "Pemberton", "Quaresma", "Rautenbach", "Szymanski", "Thibodeaux", "Umarov", "Vanterpool", "Whitlock", "Xenakis", "Yardley", "Zamorano", "Abernathy", "Baptiste", "Carrow", "Desrosiers", "Engstrom", "Fontaine"]
+[]string traits = ["aggressive", "prudent", "visionary", "crooked"]
+
+// A chief executive's name, from a number (the market's dice, or a company's
+// id for a save from before M3).
+string person(int n):
+    int a = n % first_names.len()
+    int b = (n / first_names.len()) % last_names.len()
+    a = a if a >= 0 else -a
+    b = b if b >= 0 else -b
+    return first_names[a] + " " + last_names[b]
+
 // A name for a new company in `sector`, not among `used`.
 string invent(Rng rng, int sector, []string used):
     []string ends = suffixes[sector]

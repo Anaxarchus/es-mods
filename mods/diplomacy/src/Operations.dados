@@ -31,6 +31,14 @@ Rng rng = Rng()
 Garrisons garrisons = Garrisons()
 Simulation sim = Simulation()
 Chronicle chronicle = Chronicle()
+Intel intel = Intel()
+Occupation occupation = Occupation()
+Rivals rivals = Rivals()
+
+void wire_m2(Intel i, Occupation o, Rivals rv):
+    intel = i
+    occupation = o
+    rivals = rv
 
 void wire(Tuning t, Factions f, Galaxy g, World w, Rng r, Garrisons gs, Simulation s, Chronicle c):
     tune = t
@@ -76,6 +84,50 @@ void offer(es.Game game, int player, int day):
                     for i in galaxy.minor_systems[m]:
                         if offered < tune.ops_per_landing && galaxy.owner(i) == player && i != here && galaxy.jumps(here, i) >= 1 && galaxy.jumps(here, i) <= tune.ops_range && supply_planet(game, i, player) != "" && rng.chance(50):
                             offered += try_offer(game, planet, "supply", Flotilla(), w, i, day)
+    // M2: scouting and depot raids at the front, blockade running, a rival's bounty.
+    if player != 0:
+        for w in world.wars_of(player):
+            for m in w.goals:
+                for i in galaxy.minor_systems[m]:
+                    if offered >= tune.ops_per_landing:
+                        break
+                    int d = galaxy.jumps(here, i)
+                    if d < 1 || d > tune.ops_range:
+                        continue
+                    int o = galaxy.owner(i)
+                    if o == w.other(player) && !world.scouted_now(i, day) && rng.chance(25):
+                        offered += try_offer(game, planet, "scout", Flotilla(), w, i, day)
+                    else if o == w.other(player) && galaxy.inhabited(game, i) && !world.depot_down(i, day) && rng.chance(15):
+                        offered += try_offer(game, planet, "depot", Flotilla(), w, i, day)
+        for x in world.fleets:
+            if !x.alive() || offered >= tune.ops_per_landing || !world.hostile(player, x.side):
+                continue
+            int d = galaxy.jumps(here, x.at)
+            if d < 0 || d > tune.ops_range:
+                continue
+            if sim.besieging(x) && galaxy.owner(x.goal) == player && supply_planet(game, x.goal, player) != "" && x.goal != here:
+                offered += try_offer(game, planet, "blockade", x, sim.war_of(x), x.goal, day)
+            if x.admiral != 0 && sim.admirals.is_rival(x.side, x.admiral):
+                offered += try_offer(game, planet, "bounty", x, sim.war_of(x), x.at, day)
+    // M2: occupied and damaged systems nearby.
+    for rec in world.occupation:
+        if offered >= tune.ops_per_landing:
+            break
+        int i = rec[0]
+        int d = galaxy.jumps(here, i)
+        if d < 1 || d > tune.ops_range:
+            continue
+        int o = galaxy.owner(i)
+        int k = world.capture_index(i)
+        int from = world.captures[k][1] if k >= 0 else 0
+        if rec[1] >= 300 && player != 0 && o == player:
+            offered += try_offer(game, planet, "suppress", Flotilla(), War(), i, day)
+        else if rec[1] >= 300 && player != 0 && from == player && world.hostile(player, o):
+            offered += try_offer(game, planet, "resist", Flotilla(), War(), i, day)
+        else if rec[1] >= 200 && !world.hostile(player, o) && supply_planet(game, i, o) != "":
+            offered += try_offer(game, planet, "refugees", Flotilla(), War(), i, day)
+        if offered < tune.ops_per_landing && rec[2] >= 200 && !world.hostile(player, o) && supply_planet(game, i, o) != "":
+            offered += try_offer(game, planet, "rebuild", Flotilla(), War(), i, day)
     // Raids and rebels nearby, at war or at peace.
     for x in world.fleets:
         if !x.alive() || offered >= tune.ops_per_landing:
@@ -102,7 +154,8 @@ void offer(es.Game game, int player, int day):
 
 // Offer one operation; answers 1 if it is on the board.
 int try_offer(es.Game game, string planet, string kind, Flotilla x, War w, int sys, int day):
-    string key = kind + " " + (galaxy.name(sys) if kind == "relieve" || kind == "reinforce" || kind == "supply" else string(x.id))
+    bool by_system = kind == "relieve" || kind == "reinforce" || kind == "supply" || kind == "scout" || kind == "depot" || kind == "blockade" || kind == "suppress" || kind == "resist" || kind == "refugees" || kind == "rebuild"
+    string key = kind + " " + (galaxy.name(sys) if by_system else string(x.id))
     string body = job(game, planet, kind, key, x, w, sys)
     if body == "":
         return 0
@@ -127,6 +180,22 @@ string title(string kind, Flotilla x, int sys):
         return "Volunteer: intercept " + sim.led_by(x)
     if kind == "rebels":
         return "Hunt the rebels under " + sim.led_by(x)
+    if kind == "scout":
+        return "Scout " + where
+    if kind == "depot":
+        return "Raid the depot at " + where
+    if kind == "blockade":
+        return "Run the blockade to " + where
+    if kind == "suppress":
+        return "Put down the resistance at " + where
+    if kind == "resist":
+        return "Arm the resistance at " + where
+    if kind == "refugees":
+        return "Carry refugees from " + where
+    if kind == "rebuild":
+        return "Rebuild " + where
+    if kind == "bounty":
+        return "Bounty: " + sim.led_by(x)
     return kind
 
 // A planet in system i whose government is side s's, for deliveries; "" if none.
@@ -183,16 +252,60 @@ string job(es.Game game, string planet, string kind, string key, Flotilla x, War
         merit = 3
         body = "description `The garrison at " + where + " is on the front of the " + w.kind_name() + " with " + factions.name(w.other(galaxy.owner(sys))) + ". Deliver <cargo> to <destination> by <date>. Payment is <payment>.`\n"
         body = body + "cargo \"garrison supplies\" 10\ndestination " + q(to) + "\n"
+    else if kind == "scout":
+        pay = 60000
+        merit = 3
+        body = "description `Fly through <waypoints>, held by " + factions.name(galaxy.owner(sys)) + ", and bring back what you see by <date>: the front around it will be in sight for " + string(tune.scout_days) + " days. Payment is <payment>.`\nwaypoint " + q(where) + "\n"
+    else if kind == "depot":
+        pay = 110000
+        merit = 4
+        body = "description `The enemy's supply depot at " + where + " feeds its flotillas on the front. Fly in, hit it, and come back here by <date>: its flotillas will go short for " + string(tune.depot_raid_days) + " days. Payment is <payment>.`\nwaypoint " + q(where) + "\n"
+    else if kind == "blockade" || kind == "rebuild" || kind == "refugees":
+        string to = supply_planet(game, sys, galaxy.owner(sys))
+        if to == "":
+            return ""
+        if kind == "blockade":
+            pay = 120000
+            merit = 4
+            body = "description `" + where + " is besieged by " + sim.led_by(x) + ". Run the blockade with <cargo> to <destination> by <date>. Payment is <payment>.`\ncargo \"garrison supplies\" 6\ndestination " + q(to) + "\n"
+        else if kind == "rebuild":
+            pay = 80000
+            merit = 3
+            body = "description `" + where + " was damaged in the fighting. Haul <cargo> to <destination> by <date> for the reconstruction. Payment is <payment>.`\ncargo \"construction materials\" 15\ndestination " + q(to) + "\n"
+        else:
+            pay = 50000
+            merit = 2
+            body = "description `Families are fleeing the unrest at " + where + ". Pick up <bunks> passengers at " + to + " and bring them here, to <destination>, by <date>. Payment is <payment>.`\npassengers 6\nstopover " + q(to) + "\n"
+    else if kind == "suppress" || kind == "resist":
+        pay = 90000
+        merit = 3
+        if kind == "suppress":
+            body = "description `Resistance cells are attacking the garrison at " + where + ". Fly there, break them up, and report back here by <date>. Payment is <payment>.`\nwaypoint " + q(where) + "\n"
+        else:
+            body = "description `The occupied people of " + where + " are ready to rise. Carry <cargo> to them there and come back here by <date>. Payment is <payment>.`\ncargo \"arms\" 5\nwaypoint " + q(where) + "\n"
+    else if kind == "bounty":
+        pay = 250000
+        merit = 8
+        body = "description `" + sim.led_by(x) + " has sworn to hunt you down. " + factions.title(politics_side(x)) + " put a price on their flotilla, at " + where + ". Destroy its van and report back here by <date>. Payment is <payment>.`\n"
+        body = body + npc_kill(enemy_gov, where, fleet)
     else:
         return ""
     string text = "name " + q(title(kind, x, sys)) + "\n" + body + "deadline " + string(tune.ops_deadline) + "\n"
-    if kind != "supply":
+    if kind != "supply" && kind != "blockade" && kind != "rebuild":
         text = text + "destination " + q(planet) + "\n"
     text = text + "on complete\n\tpayment " + string(pay) + "\n\t" + cond + " = 1\n"
     if merit > 0:
         text = text + "\t\"diplomacy: merit\" += " + string(merit) + "\n"
     text = text + "\tdialog `Done. You are paid <payment>.`\non fail\n\t" + cond + " += 2\n"
     return text
+
+// The side that puts a price on a rival's head: the player's.
+int politics_side(Flotilla x):
+    int m = 0
+    for w in world.wars_of(x.side):
+        if factions.is_major(w.other(x.side)):
+            m = w.other(x.side)
+    return m if m != 0 else 1
 
 string npc_kill(string gov, string where, string fleet):
     return "npc kill\n\tgovernment " + q(gov) + "\n\tsystem " + q(where) + "\n\tpersonality heroic staying target marked\n\tfleet " + q(fleet) + "\n"
@@ -305,8 +418,10 @@ void succeed(es.Game game, int player, string kind, int war, int sys, int flot, 
     world.stat("ops " + kind, 1)
     War w = world.war_by_id(war)
     Flotilla x = world.fleet_by_id(flot)
+    // Whether the target was still there (a rival dead off-screen earns no medal).
+    bool was_alive = x.alive()
     string where = galaxy.name(sys)
-    if kind == "relieve" || kind == "intercept" || kind == "hunt" || kind == "rebels" || kind == "volunteer":
+    if kind == "relieve" || kind == "intercept" || kind == "hunt" || kind == "rebels" || kind == "volunteer" || kind == "bounty":
         if x.alive():
             x.strength = x.strength * 55 / 100
             if x.strength < tune.destroy_below:
@@ -343,6 +458,36 @@ void succeed(es.Game game, int player, string kind, int war, int sys, int flot, 
         garrisons.place(sys, full, day)
         world.garrisons[garrisons.find(sys)][1] = full * 130 / 100
         chronicle.medal(game, day, "supply", "Quartermaster's Medal", "for supplying the garrison at " + where + ".")
+    else if kind == "scout":
+        intel.scout(sys, day)
+        chronicle.medal(game, day, "scout", "Pathfinder's Badge", "for scouting " + where + ".")
+    else if kind == "depot":
+        world.depots_down = world.depots_down.filter(bool([]int r): return r[0] != sys)
+        world.depots_down.append([sys, day + tune.depot_raid_days])
+        chronicle.add(game, day, "Raid on " + where + ": the depot burns, and the flotillas it fed go short.", false, false)
+        chronicle.medal(game, day, "depot", "Raider's Cross", "for the raid on the depot at " + where + ".")
+    else if kind == "blockade":
+        int full = sim.full_strength(game, sys)
+        if garrisons.damaged(sys):
+            garrisons.set(sys, garrisons.hp(sys, full) + full * 40 / 100, day - 1)
+        chronicle.medal(game, day, "blockade", "Blockade Runner's Ribbon", "for running the blockade to " + where + ".")
+    else if kind == "suppress":
+        occupation.lower_unrest(sys, tune.resistance_effect)
+        world.stat("resistance suppressed", 1)
+    else if kind == "resist":
+        occupation.raise_unrest(sys, tune.resistance_effect)
+        int full = sim.full_strength(game, sys)
+        garrisons.set(sys, garrisons.hp(sys, full) * 80 / 100, day - 1)
+        world.stat("resistance armed", 1)
+    else if kind == "refugees":
+        occupation.lower_unrest(sys, tune.refugee_effect)
+        world.stat("refugees carried", 1)
+    else if kind == "rebuild":
+        occupation.repair(sys, tune.rebuild_effect)
+        chronicle.medal(game, day, "rebuild", "Reconstruction Medal", "for hauling reconstruction materials to " + where + ".")
+    else if kind == "bounty":
+        if was_alive:
+            chronicle.medal(game, day, "bounty", "Bounty Hunter's Star", "for the bounty on a rival's flotilla at " + where + ".")
     else if kind == "envoy":
         world.story[3] = 1
         int m = galaxy.minor(sys)

@@ -33,20 +33,42 @@ any parse(string s):
     any doc = globalThis.JSON.parse(s)
     return doc
 
+// Text from another mod: an object, or {} when it is not a JSON object.
+any parse_object(string s):
+    any f = globalThis.Function("s", "try { const o = JSON.parse(s); return (o && typeof o === 'object' && !Array.isArray(o)) ? o : {}; } catch (e) { return {}; }")
+    any doc = f(s)
+    return doc
+
 bool has(any o, string key):
     bool h = globalThis.Object.prototype.hasOwnProperty.call(o, key)
     return h
 
+// A number field, truncated; the fallback when missing, not a finite number
+// (NaN, a string, null, an object), or past 2^31.
 int num(any o, string key, int fallback):
     if !has(o, key):
         return fallback
-    int v = globalThis.Math.trunc(o[key])
-    return v
+    any x = o[key]
+    bool ok = globalThis.Number.isFinite(x)
+    if !ok:
+        return fallback
+    float f = globalThis.Math.trunc(x)
+    if f > 2147483647.0 || f < -2147483648.0:
+        return fallback
+    return int(f)
 
+bool is_string(any x):
+    string t = globalThis.Object.prototype.toString.call(x)
+    return t == "[object String]"
+
+// A text field; the fallback when missing or not a string.
 string str(any o, string key, string fallback):
     if !has(o, key):
         return fallback
-    string v = o[key]
+    any x = o[key]
+    if !is_string(x):
+        return fallback
+    string v = x
     return v
 
 []int int_list(any o, string key):

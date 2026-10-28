@@ -1,0 +1,303 @@
+class Crises
+
+import "imports:sdk/es"
+
+// (M2) Commodity crises. Now and then a company in a sector that makes or
+// uses commodities has a strike, an accident or a recall (Shipbuilding,
+// Outfits, Electronics, Consumer goods, Mining): the company loses work,
+// money or reliability and its shares fall, its rivals' contracts pay more
+// while it lasts (Market.sector_boost: the sector is short of what it makes),
+// and the real commodity prices of its home system and the systems next to it
+// rise for DAYS_MIN to DAYS_MAX days:
+//   Mining          Metal, Heavy Metals
+//   Consumer goods  Food, Clothing, Luxury Goods
+//   Electronics     Electronics
+//   Shipbuilding    Equipment, Industrial
+//   Outfits         Equipment, Industrial
+// The price is the system's data price (`trade`), changed with one
+// game.change for the whole crisis (every system and commodity in one event
+// body) and set back to exactly what it was with one more at its end, so a
+// crisis costs the pilot file two events. The prices before come from Mod
+// API 10's trade_base_price when the game has it (Market.api_trade), else
+// from the game's data (Trade, made by make-galaxy.mjs). A system and
+// commodity another crisis has raised is left alone, so a restore never
+// writes back a raised price. At most ACTIVE crises run at once and at most
+// YEARLY start in a year, so the pilot grows by at most about 2 × YEARLY
+// events of a few hundred bytes a year.
+//
+// Relief: while one runs, planets 1 to RELIEF_REACH jumps away offer a job
+// carrying the commodity to the company's home ("corporations: relief <id>"
+// = 1 on delivery), which ends the crisis at once (prices restored), restores
+// some of the company's reliability and share price, and earns standing.
+// Saved in Market's "e|" lines; the bus hears corporations.crisis.
+
+int ACTIVE = 2
+int YEARLY = 8
+int DAYS_MIN = 10
+int DAYS_MAX = 30
+// The chance a day that one company in a crisis sector has one.
+float CHANCE = 0.0006
+float BOOST = 1.3
+int RELIEF_REACH = 4
+// (M3) Days between a crisis being decided and its start.
+int LEAD = 10
+[]int sectors = [0, 1, 3, 4, 5]
+
+Trade trade = Trade()
+
+// Counted since the mod started (not saved; tools read them): crises started,
+// data changes made, and by year (day / 365) the changes.
+int started = 0
+int changes_made = 0
+
+[]string commodities(int sector):
+    if sector == 5:
+        return ["Metal", "Heavy Metals"]
+    if sector == 4:
+        return ["Food", "Clothing", "Luxury Goods"]
+    if sector == 3:
+        return ["Electronics"]
+    return ["Equipment", "Industrial"]
+
+[]string kind_names = ["strike", "accident", "recall"]
+
+// The data price of a commodity in a system now: from the game (API 10) or the table.
+int base(es.Game game, Market m, string system, string commodity):
+    if m.api_trade:
+        return game.trade_base_price(system, commodity)
+    return trade.base(system, commodity)
+
+// Each day: crises that are over (or relieved) end; a new one may start.
+void step(es.Game game, Galaxy galaxy, Market m, int d):
+    []Crisis over = m.crises.filter(bool(Crisis x): return x.ends <= d || game.condition("corporations: relief " + string(x.id)) == 1)
+    for x in over:
+        finish(game, m, x, d)
+    // (M3) Crises are decided LEAD days ahead (Market.crisis_plan,
+    // "day|company|kind"), so an insider can know of one (Tips).
+    []string due = []
+    []string later = []
+    for p in m.crisis_plan:
+        if p.split("|")[0].to_int() <= d:
+            due.append(p)
+        else:
+            later.append(p)
+    m.crisis_plan = later
+    for p in due:
+        []string f = p.split("|")
+        Company c = m.by_id.get(f[1].to_int(), Company())
+        if c.id != 0 && c.listed() && !running(m, c.id):
+            begin_kind(game, galaxy, m, c, d, f[2].to_int())
+    m.sector_boost = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    for x in m.crises:
+        m.sector_boost[x.sector] = BOOST
+    if m.crises.len() + m.crisis_plan.len() >= ACTIVE || m.rng.unit() >= CHANCE * float(eligible(m)):
+        return
+    if m.crisis_year != d / 365:
+        m.crisis_year = d / 365
+        m.crisis_this_year = 0
+    if m.crisis_this_year >= YEARLY:
+        return
+    []Company pool = m.companies.filter(bool(Company c): return c.listed() && sectors.contains(c.sector) && c.system != "" && !busy(m, c.id))
+    if pool.len() == 0:
+        return
+    Company pick = pool[m.rng.range(0, pool.len() - 1)]
+    m.crisis_plan.append(string(d + LEAD) + "|" + string(pick.id) + "|" + string(m.rng.range(0, 2)))
+    m.crisis_this_year += 1
+
+int eligible(Market m):
+    int n = 0
+    for c in m.companies:
+        if c.listed() && sectors.contains(c.sector):
+            n += 1
+    return n
+
+bool busy(Market m, int id):
+    for p in m.crisis_plan:
+        if p.split("|")[1].to_int() == id:
+            return true
+    return running(m, id)
+
+bool running(Market m, int id):
+    for x in m.crises:
+        if x.company == id:
+            return true
+    return false
+
+// The planned crisis at a company, "day|company|kind", or "".
+string planned(Market m, int id):
+    for p in m.crisis_plan:
+        if p.split("|")[1].to_int() == id:
+            return p
+    return ""
+
+void begin(es.Game game, Galaxy galaxy, Market m, Company c, int d):
+    m.crisis_this_year += 1
+    begin_kind(game, galaxy, m, c, d, m.rng.range(0, 2))
+
+void begin_kind(es.Game game, Galaxy galaxy, Market m, Company c, int d, int kind):
+    Crisis x = Crisis()
+    x.id = m.next_crisis
+    m.next_crisis += 1
+    x.company = c.id
+    x.kind = kind
+    x.sector = c.sector
+    x.system = c.system
+    x.start = d
+    x.ends = d + m.rng.range(DAYS_MIN, DAYS_MAX)
+    started += 1
+    // The company's loss, and its shares.
+    string what = ""
+    if x.kind == x.STRIKE:
+        float cost = m.upkeep(c) * 15.0
+        c.cash -= cost
+        c.costs += cost
+        what = "Workers strike at " + c.name
+    else if x.kind == x.ACCIDENT:
+        float lost = c.capacity * 0.06
+        c.capacity -= lost
+        c.reliability = m.clamp(c.reliability - 0.05, 0.0, 0.99)
+        what = "An accident shuts part of " + c.name + "'s works"
+    else:
+        c.reliability = m.clamp(c.reliability - 0.1, 0.0, 0.99)
+        float cost = m.upkeep(c) * 10.0
+        c.cash -= cost
+        c.costs += cost
+        what = c.name + " recalls a product line"
+    m.shock(c, m.rng.between(0.86, 0.93))
+    c.note("after a " + kind_names[x.kind] + " at " + game.planet_name(c.home))
+    // Prices: home and neighbours, each commodity with a market there and not
+    // raised by another crisis.
+    []string goods = commodities(c.sector)
+    []string places = [c.system]
+    for n in galaxy.neighbours(c.system):
+        places.append(n)
+    float factor = m.rng.between(1.35, 1.7)
+    []string body = []
+    for s in places:
+        []string lines = []
+        for g in goods:
+            if raised(m, s, g):
+                continue
+            int before = base(game, m, s, g)
+            if before <= 0:
+                continue
+            int after = globalThis.Math.round(float(before) * factor)
+            x.changes.append(s + "," + g + "," + string(before) + "," + string(after))
+            lines.append("\ttrade \"" + g + "\" " + string(after))
+        if lines.len() > 0:
+            body.append("system \"" + s + "\"\n" + lines.join("\n"))
+    if body.len() > 0:
+        game.change(body.join("\n"))
+        changes_made += 1
+        x.applied = true
+        m.must_save = true
+    m.crises.append(x)
+    int days = x.ends - d
+    string text = what + " on " + game.planet_name(c.home) + "; " + goods.join(", ").to_lower() + " prices around " + c.system + " jump " + m.fmt.whole_percent(factor - 1.0) + " for about " + string(days) + " days."
+    m.say_tagged(d, text, "c" + string(c.id) + (",s" if c.sector == 0 else ""))
+    if m.holdings.get(c.id, 0) > 0:
+        m.player_events.append(text)
+    m.post_bus("corporations.crisis", "{\"company\":" + m.json(c.name) + ",\"kind\":\"" + kind_names[x.kind] + "\",\"sector\":" + m.json(m.names.sectors[c.sector]) + ",\"system\":" + m.json(c.system) + ",\"commodities\":[" + quoted(m, goods) + "],\"factor\":" + m.fmt.one_decimal(factor) + ",\"days\":" + string(days) + "}")
+
+string quoted(Market m, []string xs):
+    []string out = []
+    for x in xs:
+        out.append(m.json(x))
+    return out.join(",")
+
+// Another running crisis raised this system's commodity.
+bool raised(Market m, string system, string commodity):
+    string pre = system + "," + commodity + ","
+    for x in m.crises:
+        for ch in x.changes:
+            if ch.starts_with(pre):
+                return true
+    return false
+
+// The crisis is over: its own change to each price is undone. On API 10 the
+// price now (trade_base_price) less the crisis's delta, at least 1, so a
+// change another mod made meanwhile (Diplomacy's occupation damage) stays,
+// as the mods' convention has it ("undo only your own deltas"); with nobody
+// else's change, exactly the price before. On API 9 the price now cannot be
+// read: the price before is written back (the game's data price).
+void finish(es.Game game, Market m, Crisis x, int d):
+    bool relieved = game.condition("corporations: relief " + string(x.id)) == 1 && x.ends > d
+    game.set_condition("corporations: relief " + string(x.id), 0)
+    restore(game, m, x)
+    m.crises = m.crises.filter(bool(Crisis y): return y.id != x.id)
+    Company c = m.by_id.get(x.company, Company())
+    if c.id == 0:
+        return
+    if relieved:
+        c.reliability = m.clamp(c.reliability + 0.05, 0.0, 0.99)
+        m.shock(c, 1.03)
+        m.standing.add(game, c.id, m.standing.RELIEF)
+        m.must_save = true
+        m.say_tagged(d, "Relief cargo ends the " + kind_names[x.kind] + " at " + c.name + " early; prices around " + x.system + " fall back.", "c" + string(c.id))
+    else:
+        m.say_tagged(d, "The " + kind_names[x.kind] + " at " + c.name + " is over; prices around " + x.system + " return to normal.", "c" + string(c.id))
+
+void restore(es.Game game, Market m, Crisis x):
+    if !x.applied || x.changes.len() == 0:
+        return
+    []string order = []
+    {string: []string} lines = {}
+    for ch in x.changes:
+        []string f = ch.split(",")
+        if f.len() < 4:
+            continue
+        if !lines.has(f[0]):
+            order.append(f[0])
+            lines[f[0]] = []
+        int before = f[2].to_int()
+        int back = before
+        if m.api_trade:
+            int now = game.trade_base_price(f[0], f[1])
+            if now > 0:
+                back = now - (f[3].to_int() - before)
+                back = back if back > 1 else 1
+        lines[f[0]].append("\ttrade \"" + f[1] + "\" " + string(back))
+    []string body = []
+    for s in order:
+        body.append("system \"" + s + "\"\n" + lines[s].join("\n"))
+    game.change(body.join("\n"))
+    changes_made += 1
+    x.applied = false
+    m.must_save = true
+
+// ---- Relief jobs ----
+
+// Landed 1 to RELIEF_REACH jumps from a running crisis: a job carrying its
+// commodity to the company's home planet.
+void offer(es.Game game, Galaxy galaxy, Market m):
+    string planet = game.planet()
+    if planet == "":
+        return
+    string here = galaxy.system_of(game, planet)
+    for x in m.crises:
+        Company c = m.by_id.get(x.company, Company())
+        if c.id == 0 || c.home == "" || x.ends - m.day < 4:
+            continue
+        int j = galaxy.jumps(here, x.system)
+        if j < 1 || j > RELIEF_REACH:
+            continue
+        []string goods = commodities(x.sector)
+        string cargo = goods[x.id % goods.len()]
+        int tons = 10 + 5 * (x.id % 4)
+        int pay = 15000 + tons * j * 700
+        int days = j * 3 + 4
+        int left = x.ends - m.day - 1
+        days = days if days < left else left
+        string id = string(x.id)
+        []string lines = []
+        lines.append("name \"Relief cargo for " + c.name + "\"")
+        lines.append("description \"A " + kind_names[x.kind] + " at " + c.name + " has left " + x.system + " short of " + cargo.to_lower() + ". Bring <cargo> to <destination> by <date> for <payment>; it will end the shortage.\"")
+        lines.append("cargo \"" + cargo + "\" " + string(tons))
+        lines.append("destination \"" + c.home + "\"")
+        lines.append("deadline " + string(days))
+        lines.append("on complete")
+        lines.append("\tpayment " + string(pay))
+        lines.append("\t\"corporations: relief " + id + "\" = 1")
+        lines.append("\tdialog \"Dockhands from " + c.name + " unload the <cargo> almost before you have landed, and pay you <payment>.\"")
+        game.offer_job("relief " + id, lines.join("\n"))
+        return

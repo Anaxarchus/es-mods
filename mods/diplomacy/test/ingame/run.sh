@@ -34,7 +34,7 @@ if [ -d "$ROOT/plugins/Diplomacy Debug" ]; then
 fi
 shift 2
 if [ $# -eq 0 ]; then
-	set -- "Diplomacy - War Begins" "Diplomacy - Flotilla In Person" "Diplomacy - Join And Leave" "Diplomacy - Licenses And Jobs" "Diplomacy - Veteran Offer" "Diplomacy - Veteran Start" "Diplomacy - Border Crisis" "Diplomacy - Pirate Raid In Person" "Diplomacy - Debug Mode"
+	set -- "Diplomacy - War Begins" "Diplomacy - Flotilla In Person" "Diplomacy - Join And Leave" "Diplomacy - Licenses And Jobs" "Diplomacy - Veteran Offer" "Diplomacy - Veteran Start" "Diplomacy - Border Crisis" "Diplomacy - Pirate Raid In Person" "Diplomacy - Debug Mode" "Diplomacy - Squadron Command" "Diplomacy - Squadron Command Panel"
 fi
 TEMPLATE=$(mktemp -d)
 trap 'rm -rf "$TEMPLATE"' EXIT

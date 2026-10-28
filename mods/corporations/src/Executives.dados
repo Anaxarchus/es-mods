@@ -1,0 +1,144 @@
+class Executives
+
+import "imports:sdk/es"
+
+// (M3) Chief executives. Every listed company has one, with a name (Names)
+// and a trait that changes how it is run:
+//   aggressive  bids MARGIN lower, buys rivals with less money in hand
+//               (Market.seek_buyer), pays out less;
+//   prudent     bids higher, hoards cash (repays debt only far above its
+//               needs), pays out more, never buys a rival;
+//   visionary   its efficiency drifts more at each report, better on
+//               average, and its price is half again as volatile;
+//   crooked     books a little extra revenue at each report (good short-term
+//               earnings), its luck is worse, and now and then a scandal
+//               (SCANDAL a day) knocks its price down and costs it its chief.
+// A chief is fired after three losing reports in a row (together more than
+// BIG_LOSS days of upkeep) (once in office
+// FIRE_AFTER days), or after a scandal; the fired go to a pool of executives
+// (Market.executives, "name:trait", at most POOL), from which companies hire
+// first; with none free, a company may poach a rival's chief (POACH) or
+// appoint a newcomer. The news names them; so do the exchange's sidebar, the
+// earnings lines and the covert and tip jobs.
+
+[]float margin = [-0.04, 0.03, 0.0, -0.01]
+[]float payout_factor = [0.7, 1.5, 1.0, 1.0]
+// Added to the chance a turn of fortune is good (Market.random_events).
+[]float luck = [0.0, 0.05, 0.0, -0.15]
+float SCANDAL = 0.0007
+float WINDOW = 0.03
+int FIRE_AFTER = 365
+float BIG_LOSS = 60.0
+int POOL = 8
+float POACH = 25.0
+
+// Counted since the mod started (not saved), for tests and tools.
+int fired = 0
+int hired = 0
+int poached = 0
+int scandals = 0
+
+Names names = Names()
+
+string label(Company c):
+    return c.ceo + " (" + names.traits[c.trait] + ")"
+
+// A new chief for `c`: from the pool, poached, or a newcomer. Answers a
+// phrase for the news ("Ada Bellamy, prudent, formerly of X").
+string appoint(Market m, Company c, int d, int want):
+    string from = ""
+    if m.executives.len() > 0 && m.rng.chance(70.0):
+        int i = m.rng.range(0, m.executives.len() - 1)
+        []string f = m.executives[i].split(":")
+        m.executives.remove_at(i)
+        c.ceo = f[0]
+        c.trait = f[1].to_int() if f.len() > 1 else 0
+        from = f[2] if f.len() > 2 else ""
+    else if m.rng.chance(POACH) && d > 0:
+        Company rival = Company()
+        for o in m.companies:
+            if o.listed() && o.id != c.id && o.owner == 0 && o.ceo != "" && (rival.id == 0 || o.norm > rival.norm):
+                rival = o
+        if rival.id != 0 && m.rng.chance(50.0):
+            c.ceo = rival.ceo
+            c.trait = rival.trait
+            from = rival.name
+            poached += 1
+            rival.ceo = ""
+            appoint(m, rival, d, -1)
+            m.say_tagged(d, rival.name + "'s chief executive leaves for " + c.name + "; " + label(rival) + " takes over.", "c" + string(rival.id))
+        else:
+            newcomer(m, c, want)
+    else:
+        newcomer(m, c, want)
+    if c.ceo == "":
+        newcomer(m, c, want)
+    c.ceo_since = d
+    c.payout = m.clamp(m.rng.between(0.15, 0.4) * payout_factor[c.trait], 0.05, 0.6)
+    // (M3 review) A payout the player's board seat set stays while they hold the seat.
+    if c.board_payout >= 0 && m.board.has_seat(m, c):
+        c.payout = m.board.payouts[c.board_payout]
+    else:
+        c.board_payout = -1
+    hired += 1
+    return c.ceo + ", " + names.traits[c.trait] + (", formerly of " + from if from != "" else "")
+
+void newcomer(Market m, Company c, int want):
+    c.ceo = names.person(m.rng.range(0, 100000))
+    c.trait = want if want >= 0 else m.rng.range(0, 3)
+
+// Fire the chief: to the pool, and a new one in.
+void fire(Market m, Company c, int d, string why):
+    if c.ceo == "":
+        return
+    fired += 1
+    string old = c.ceo
+    int old_trait = c.trait
+    // The new chief first (from the pool as it was), then the old one joins it.
+    string who = appoint(m, c, d, -1)
+    m.executives.append(old + ":" + string(old_trait) + ":" + c.name.replace_all(":", " "))
+    if m.executives.len() > POOL:
+        m.executives.remove_at(0)
+    m.shock(c, 1.02)
+    m.say_tagged(d, c.name + " fires its chief executive, " + old + ", " + why + "; " + who + ", takes over.", "c" + string(c.id) + (",s" if c.sector == 0 else ""))
+    if m.holdings.get(c.id, 0) > 0:
+        m.player_events.append(c.name + ", whose shares you hold, has fired its chief executive " + old + ".")
+
+// Each day: crooked chiefs' scandals.
+void daily(es.Game game, Market m, int d):
+    for c in m.companies:
+        // (M3 review) The player's company too: a crooked chief's books are its risk.
+        if !c.listed() || c.trait != 3 || !m.rng.chance(SCANDAL * 100.0):
+            continue
+        scandals += 1
+        m.shock(c, m.rng.between(0.78, 0.88))
+        c.reliability = m.clamp(c.reliability - 0.08, 0.0, 0.99)
+        c.note("after a scandal around " + c.ceo)
+        string ceo = c.ceo
+        m.say_tagged(d, "Scandal at " + c.name + ": its chief executive, " + ceo + ", is accused of cooking the books; its shares slide.", "c" + string(c.id))
+        fire(m, c, d, "after the scandal")
+
+// At a report, before the earnings are booked: a crooked chief's window
+// dressing. After: a chief two losing reports in a row is fired; a
+// visionary's efficiency drifts.
+void before_report(Market m, Company c):
+    if c.trait == 3 && c.revenue > 0.0:
+        c.revenue += c.revenue * WINDOW
+
+void after_report(Market m, Company c, int d):
+    if c.trait == 2:
+        c.efficiency = m.clamp(c.efficiency + m.rng.gauss() * 0.02 - 0.004, 0.75, 1.3)
+    // (M3 review: two losing reports fired a chief a company every 14 months.)
+    int n = c.earnings.len()
+    // Three losing reports, adding up to more than BIG_LOSS days of upkeep.
+    if c.owner == 0 && n >= 3 && c.earnings[n - 1] < 0.0 && c.earnings[n - 2] < 0.0 && c.earnings[n - 3] < 0.0 && c.earnings[n - 1] + c.earnings[n - 2] + c.earnings[n - 3] < -m.upkeep(c) * BIG_LOSS && d - c.ceo_since >= FIRE_AFTER:
+        fire(m, c, d, "after three losing reports")
+
+// A save from before M3: a chief for every company, from its id (no dice,
+// so loading a save twice gives the same chiefs).
+void ensure(Market m, Company c):
+    if c.ceo != "":
+        return
+    c.ceo = names.person(c.id * 7919 + c.name.len() * 31)
+    c.trait = c.id % 4
+    c.ceo_since = m.day

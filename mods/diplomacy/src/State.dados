@@ -110,7 +110,8 @@ void publish(es.Game game, int player):
             rebels += 1
     publish_one(game, "rebels", rebels)
     publish_fleets(game)
-    for k in ["wars", "launches", "raids", "captures", "rebellions", "defections", "separatists", "flotillas destroyed"]:
+    publish_m2(game)
+    for k in ["wars", "launches", "raids", "captures", "rebellions", "defections", "separatists", "flotillas destroyed", "squadrons lost", "squadrons formed", "rivals killed"]:
         publish_one(game, "stat " + k, world.get_stat(k))
     publish_one(game, "crisis day", world.story[0])
     publish_one(game, "crisis", world.story[2])
@@ -138,6 +139,51 @@ void publish_fleets(es.Game game):
             string key = "flotilla " + string(s) + "." + string(j) + " "
             for f in ["strength", "kind", "at", "goal"]:
                 publish_one(game, key + f, 0)
+
+// M2: the player's squadrons ("squadrons", and "squadron <k> at", "goal",
+// "strength", "order" for k = 1..3), rivals ("rivals"; "bounty" 1 while one has
+// a price on the player's head), commander news ("commander news" 1 for 10 days
+// after a promotion or a death), and occupation ("occupied": systems under
+// occupation unrest; "damaged": systems with damage).
+void publish_m2(es.Game game):
+    int k = 0
+    for x in world.fleets:
+        if !x.alive() || x.squadron != 1 || k >= 3:
+            continue
+        k += 1
+        string key = "squadron " + string(k) + " "
+        publish_one(game, key + "at", x.at + 1)
+        publish_one(game, key + "goal", x.goal + 1)
+        publish_one(game, key + "strength", x.strength)
+        publish_one(game, key + "order", x.order)
+    publish_one(game, "squadrons", k)
+    for j in (k + 1)..=3:
+        for f in ["at", "goal", "strength", "order"]:
+            publish_one(game, "squadron " + string(j) + " " + f, 0)
+    int rivals = 0
+    int hunting = 0
+    int me = game.condition("diplomacy: member")
+    for s in 1..=factions.sides():
+        for r in 1..=tune.admirals_per_side:
+            []int roster = world.admirals[s] if s < world.admirals.len() else []
+            if roster.len() >= r * 6 && roster[(r - 1) * 6] != 0 && roster[(r - 1) * 6 + 5] == 1:
+                rivals += 1
+                // A rival's side has a price on the player's head, unless the
+                // player now serves that side.
+                if s != me:
+                    hunting += 1
+    publish_one(game, "rivals", rivals)
+    publish_one(game, "bounty", 1 if hunting > 0 else 0)
+    publish_one(game, "commander news", 1 if world.news_day > 0 && world.day - world.news_day <= 10 else 0)
+    int occupied = 0
+    int damaged = 0
+    for rec in world.occupation:
+        if rec[1] > 0:
+            occupied += 1
+        if rec[2] > 0:
+            damaged += 1
+    publish_one(game, "occupied", occupied)
+    publish_one(game, "damaged", damaged)
 
 // ---- Old saves ----
 

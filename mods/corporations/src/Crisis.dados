@@ -1,0 +1,37 @@
+class Crisis
+
+// (M2) One commodity crisis at a company: a strike, an accident or a recall,
+// which raises the price of its sector's commodities in its home system and
+// the systems next to it for a while (Crises). Saved as one "e|" line.
+
+int STRIKE = 0
+int ACCIDENT = 1
+int RECALL = 2
+
+int id = 0
+int company = 0
+int kind = 0
+int sector = 0
+string system = ""
+int start = 0
+int ends = 0
+// The prices it changed: each "system,commodity,price before,price now".
+[]string changes = []
+// The data change that raised them was made (the restore is due at the end).
+bool applied = false
+
+string encode():
+    []string f = [string(id), string(company), string(kind), string(sector), system, string(start), string(ends), "1" if applied else "0", changes.join(";")]
+    return f.join("|")
+
+void decode(string rest):
+    []string f = rest.split("|")
+    id = f[0].to_int()
+    company = f[1].to_int()
+    kind = f[2].to_int()
+    sector = f[3].to_int()
+    system = f[4]
+    start = f[5].to_int()
+    ends = f[6].to_int()
+    applied = f[7] == "1"
+    changes = f[8].split(";") if f.len() > 8 && f[8] != "" else []

@@ -1,0 +1,157 @@
+class Board
+
+import "imports:sdk/es"
+
+// (M3) Board power from the player's shares. Holding VOTE (5%) of a company
+// lets the player vote on a pending buyout; SEAT (10%) a seat on its board,
+// which sets its payout and directs its bidding; CONTROL (20%) lets them sell
+// the whole stake to a suitor at a premium. Every action costs something:
+//   block a bid      the suitor's goodwill (standing -10) and SCRUTINY_BLOCK
+//                    of the regulator's attention in the player's name;
+//   demand more      the suitor may walk away (WITHDRAW); otherwise the offer
+//                    rises DEMAND and the player's votes are with it;
+//   payout           high: the company's reliability falls (no money left to
+//                    invest); low: its shares slip;
+//   direct bidding   aggressive (DIRECT_MARGIN lower for DIRECT_DAYS): its
+//                    reliability falls; conservative: its shares slip;
+//   sell to suitor   SCRUTINY_SELL attention; the stake goes at the offer
+//                    plus PREMIUM.
+// A suitor needs the votes of a holder of VOTE or more: without them
+// (no "demand more" or sale), a bid fails UNWON points more often.
+// The cap on a holding is Market.MAX_HOLDING (35%); crossing DISCLOSE (20%)
+// and 30% is disclosed in the news and draws attention.
+// The regulator's attention (Market.scrutiny, 0-100, the condition
+// "corporations: scrutiny") fades a point every 3 days; at FINE_AT it fines
+// the player (Market.charge: what they can't pay is owed).
+
+float VOTE = 0.05
+float SEAT = 0.10
+float CONTROL = 0.20
+float DISCLOSE = 0.20
+float DEMAND = 0.10
+float WITHDRAW = 40.0
+float PREMIUM = 0.05
+float UNWON = 15.0
+float DIRECT_MARGIN = 0.05
+int DIRECT_DAYS = 60
+int SCRUTINY_BLOCK = 10
+int SCRUTINY_SELL = 15
+int SCRUTINY_DISCLOSE = 10
+int FINE_AT = 60
+// The payout levels the board can set: low, normal, high.
+[]float payouts = [0.05, 0.25, 0.6]
+[]string payout_names = ["low", "normal", "high"]
+
+// The share of a company the player holds.
+float share(Market m, Company c):
+    return float(m.holdings.get(c.id, 0)) / float(c.shares) if c.shares > 0 else 0.0
+
+bool may_vote(Market m, Company c):
+    return c.suitor > 0 && share(m, c) >= VOTE
+bool has_seat(Market m, Company c):
+    return share(m, c) >= SEAT
+bool may_sell(Market m, Company c):
+    return c.suitor > 0 && share(m, c) >= CONTROL
+
+// Block a pending buyout: it fails now.
+void block(es.Game game, Market m, Company c, int d):
+    if !may_vote(m, c):
+        return
+    Company b = m.by_id.get(c.suitor, Company())
+    m.standing.add(game, b.id, -10)
+    attention(game, m, SCRUTINY_BLOCK, d)
+    m.fail_bid(c, b, "an independent shareholder's votes block it", d)
+
+// Demand a higher offer: the suitor walks away, or raises it and has the votes.
+void demand(es.Game game, Market m, Company c, int d):
+    if !may_vote(m, c):
+        return
+    Company b = m.by_id.get(c.suitor, Company())
+    if m.rng.chance(WITHDRAW):
+        m.fail_bid(c, b, "it will not pay what an independent shareholder demands", d)
+        return
+    c.offer = c.offer * (1.0 + DEMAND)
+    if c.price < c.offer * m.DEAL_GAP:
+        c.price = c.offer * m.DEAL_GAP
+    m.approved[c.id] = true
+    m.say_tagged(d, b.name + " raises its offer for " + c.name + " to " + m.fmt.price(c.offer) + " a share to win an independent shareholder's votes.", "c" + string(c.id) + ",c" + string(b.id))
+
+// Set the payout (0 low, 1 normal, 2 high).
+// (M3 review) Once a report (30 days), and only a change of level does anything.
+bool may_set_payout(Company c, int d):
+    return d - c.payout_day >= 30
+
+void payout(es.Game game, Market m, Company c, int level, int d):
+    if !has_seat(m, c) || level < 0 || level > 2 || !may_set_payout(c, d) || c.board_payout == level:
+        return
+    c.payout = payouts[level]
+    c.board_payout = level
+    c.payout_day = d
+    if level == 2:
+        c.reliability = m.clamp(c.reliability - 0.03, 0.0, 0.99)
+    else if level == 0:
+        m.shock(c, 0.97)
+    m.say_tagged(d, c.name + "'s board sets a " + payout_names[level] + " payout at an independent shareholder's urging.", "c" + string(c.id))
+
+// Direct the bidding for DIRECT_DAYS: 1 aggressive, -1 conservative.
+// (M3 review) One direction at a time: none while one runs.
+void direct(es.Game game, Market m, Company c, int dir, int d):
+    if !has_seat(m, c) || (dir != 1 && dir != -1) || c.bias != 0:
+        return
+    c.bias = dir
+    c.bias_until = d + DIRECT_DAYS
+    if dir == 1:
+        c.reliability = m.clamp(c.reliability - 0.04, 0.0, 0.99)
+    else:
+        m.shock(c, 0.98)
+
+// Sell the whole stake to the suitor at its offer plus PREMIUM. Answers the credits.
+float sell(es.Game game, Market m, Company c, int d):
+    if !may_sell(m, c):
+        return 0.0
+    int held = m.holdings.get(c.id, 0)
+    Company b = m.by_id.get(c.suitor, Company())
+    float paid = c.offer * (1.0 + PREMIUM) * float(held)
+    b.cash -= paid
+    // (M3 review) The suitor owns these shares now: the deal does not pay for them again.
+    c.suitor_stake += held
+    m.credit(game, paid)
+    m.holdings.delete(c.id)
+    m.basis.delete(c.id)
+    m.approved[c.id] = true
+    attention(game, m, SCRUTINY_SELL, d)
+    m.say_tagged(d, b.name + " buys an independent shareholder's " + m.fmt.whole_percent(float(held) / float(c.shares)) + " of " + c.name + " at a premium.", "c" + string(c.id) + ",c" + string(b.id))
+    return paid
+
+// The regulator's attention in the player's name; at FINE_AT a fine.
+void attention(es.Game game, Market m, int n, int d):
+    m.scrutiny += n
+    if m.scrutiny >= FINE_AT:
+        float worth = 0.0
+        for id, h in m.holdings:
+            if m.by_id.has(id):
+                worth += m.by_id[id].price * float(h)
+        float fine = 50000.0 + worth * 0.02
+        m.charge(game, fine)
+        m.scrutiny -= 40
+        m.player_events.append("Market regulators fine you " + m.fmt.credits(fine) + " credits for your dealings on the exchange" + (" (" + m.fmt.credits(m.owed) + " owed)" if m.owed > 0.0 else "") + ".")
+        m.say(d, "Regulators fine an independent captain for their dealings on the exchange.")
+    game.set_condition("corporations: scrutiny", m.scrutiny)
+
+// Each day: attention fades; directions run out.
+void daily(es.Game game, Market m, int d):
+    if m.scrutiny > 0 && d % 3 == 0:
+        m.scrutiny -= 1
+        game.set_condition("corporations: scrutiny", m.scrutiny)
+    for c in m.companies:
+        if c.bias != 0 && d >= c.bias_until:
+            c.bias = 0
+
+// A holding crossed DISCLOSE or 30% (after a purchase): disclosed, and noticed.
+void disclose(es.Game game, Market m, Company c, int before, int after, int d):
+    float a = float(before) / float(c.shares)
+    float b = float(after) / float(c.shares)
+    for line in [DISCLOSE, 0.30]:
+        if a < line && b >= line:
+            m.say_tagged(d, "An independent captain discloses a " + m.fmt.whole_percent(b) + " stake in " + c.name + ".", "c" + string(c.id))
+            attention(game, m, SCRUTINY_DISCLOSE, d)

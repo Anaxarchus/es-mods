@@ -19,6 +19,11 @@ class Flotilla
 //   stops      a raid's stops (-1 = none); leg, the stop it is bound for (1..3;
 //              past the last, it goes home); dwell, days at the stop; plan, days
 //              it means to stay; alerted, the majors it has alerted (bit 1 << f)
+//   squadron   1 if it is the player's squadron (M2): it follows the player's orders
+//   order      a squadron's order: 0 none (it holds where it is), 1 attack its goal,
+//              2 relieve its goal (an own system under siege), 3 hunt `target`,
+//              4 hold at its goal
+//   supply     its effectiveness from supply today, in percent (Simulation: not saved)
 
 int id = 0
 int side = 0
@@ -39,6 +44,9 @@ int leg = 0
 int dwell = 0
 int plan = 0
 int alerted = 0
+int squadron = 0
+int order = 0
+int supply = 100
 
 bool alive():
     return strength > 0
@@ -53,10 +61,10 @@ bool alive():
 
 // The tag its ships carry in flight.
 string tag():
-    return "diplomacy:" + string(side) + ":f" + string(id)
+    return "diplomacy:" + string(side) + ":f" + string(id) + ":"
 
 []int encode():
-    return [id, side, war, strength, size, kind, admiral, full, at, goal, home, target, siege, launched, stops[0], stops[1], stops[2], leg, dwell, plan, alerted]
+    return [id, side, war, strength, size, kind, admiral, full, at, goal, home, target, siege, launched, stops[0], stops[1], stops[2], leg, dwell, plan, alerted, squadron, order]
 
 void decode([]int v):
     if v.len() < 21:
@@ -80,3 +88,5 @@ void decode([]int v):
     dwell = v[18]
     plan = v[19]
     alerted = v[20]
+    squadron = v[21] if v.len() > 21 else 0
+    order = v[22] if v.len() > 22 else 0

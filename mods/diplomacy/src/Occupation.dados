@@ -1,0 +1,301 @@
+class Occupation
+
+// Occupation and reconstruction (M2). A system that changes hands gets
+// occupation unrest (more under a foreign occupier than in one of its own
+// default minors), and a capture adds damage. Both fall day by day, faster
+// with the jobs Operations offers (suppressing resistance, carrying refugees,
+// hauling reconstruction materials). Unrest weakens the garrison (Simulation.
+// full_strength) and feeds the minor's unrest a little; damage, by tiers,
+// raises the price of food, medicine and clothing there and, when no other
+// mod manages shipyard stock, trims the shipyards.
+//
+// Prices (README.md, "Prices: the convention"): the mod changes a price only
+// by its own delta. It reads the system's price now (mod API 10's
+// trade_base_price) or, on an older game, its data price (Trade, generated),
+// takes its own delta off to find the price without it, and writes that plus
+// the new delta; restoring writes the price without it. It never writes a
+// price Corporations has raised in a crisis it has announced on the bus
+// (World.reserved), and waits for the crisis to end. On an API 9 game with
+// Corporations enabled it changes no prices at all, since it cannot see
+// Corporations' crises there.
+
+import "imports:sdk/es"
+
+Tuning tune = Tuning()
+Factions factions = Factions()
+Galaxy galaxy = Galaxy()
+World world = World()
+Changes changes = Changes()
+Trade table = Trade()
+
+// Set by the mod: the game has trade_base_price (mod API 10); Corporations is enabled.
+bool api_trade = false
+bool corporations = false
+// Set by the mod: the game has outfitter stock (mod API 10).
+bool api_outfits = false
+
+void wire(Tuning t, Factions f, Galaxy g, World w, Changes c):
+    tune = t
+    factions = f
+    galaxy = g
+    world = w
+    changes = c
+
+int record(int i):
+    int k = world.occupation_index(i)
+    if k < 0:
+        world.occupation.append([i, 0, 0, 0])
+        k = world.occupation.len() - 1
+    return k
+
+// System i passed to side `to` (a capture, a treaty, a rising).
+void occupy(int i, int to):
+    if !factions.is_major(to) && !factions.is_rebel(to):
+        return
+    int m = galaxy.minor(i)
+    bool home = m >= 0 && factions.regions.parents[m] == to
+    int u = (tune.occupation_unrest_home if home else tune.occupation_unrest) * 10
+    int k = record(i)
+    if world.occupation[k][1] < u:
+        world.occupation[k][1] = u
+
+// A siege took system i: it is damaged.
+void damage(int i, int amount):
+    int k = record(i)
+    int d = world.occupation[k][2] + amount * 10
+    world.occupation[k][2] = d if d < 1000 else 1000
+
+int unrest(int i):
+    int k = world.occupation_index(i)
+    return world.occupation[k][1] if k >= 0 else 0
+
+int damage_of(int i):
+    int k = world.occupation_index(i)
+    return world.occupation[k][2] if k >= 0 else 0
+
+// A garrison's strength under occupation unrest, in percent.
+int garrison_percent(int i):
+    return 100 - unrest(i) / 20
+
+void lower_unrest(int i, int points):
+    int k = world.occupation_index(i)
+    if k >= 0:
+        int u = world.occupation[k][1] - points * 10
+        world.occupation[k][1] = u if u > 0 else 0
+
+void raise_unrest(int i, int points):
+    int k = record(i)
+    int u = world.occupation[k][1] + points * 10
+    world.occupation[k][1] = u if u < 1000 else 1000
+
+void repair(int i, int points):
+    int k = world.occupation_index(i)
+    if k >= 0:
+        int d = world.occupation[k][2] - points * 10
+        world.occupation[k][2] = d if d > 0 else 0
+
+int tier(int damage):
+    return damage / (tune.damage_tier * 10)
+
+// Average occupation unrest (whole points) of minor m's systems.
+int minor_unrest(int m):
+    int sum = 0
+    for i in galaxy.minor_systems[m]:
+        sum += unrest(i)
+    return sum / 10 / galaxy.minor_systems[m].len() if galaxy.minor_systems[m].len() > 0 else 0
+
+// ---- The day ----
+
+void day(es.Game game, int day):
+    []int moved = []
+    if corporations && (world.stock.len() > 0 || (!can_trade() && world.trade.len() > 0)):
+        release(game)
+    world.reserved = world.reserved.filter(bool(string r): return r.split("|").len() >= 3 && r.split("|")[2].to_int() >= day)
+    for rec in world.occupation:
+        rec[1] = rec[1] - tune.unrest_fall if rec[1] > tune.unrest_fall else 0
+        rec[2] = rec[2] - tune.damage_fall if rec[2] > tune.damage_fall else 0
+        int t = tier(rec[2])
+        if t != rec[3]:
+            if stock(game, rec[0], t):
+                rec[3] = t
+            moved.append(rec[0])
+    // Prices follow a damaged system's tier when it changes (and are put back
+    // once repaired); every resync_days all of them are checked again, which
+    // also writes what a Corporations crisis held back.
+    []int systems = moved
+    if day % tune.resync_days == 0:
+        for rec in world.occupation:
+            if !systems.contains(rec[0]):
+                systems.append(rec[0])
+        for e in world.trade:
+            int s = e.split("|")[0].to_int()
+            if !systems.contains(s):
+                systems.append(s)
+    for i in systems:
+        prices(game, i, day)
+    // Records with nothing left to do go.
+    world.occupation = world.occupation.filter(bool([]int r): return r[1] > 0 || r[2] > 0 || r[3] > 0 || has_deltas(r[0]))
+
+bool has_deltas(int i):
+    for e in world.trade:
+        if e.starts_with(string(i) + "|"):
+            return true
+    return false
+
+// ---- Prices ----
+
+bool can_trade():
+    return api_trade || !corporations
+
+int delta(int i, string commodity):
+    for e in world.trade:
+        []string f = e.split("|")
+        if f.len() >= 3 && f[0].to_int() == i && f[1] == commodity:
+            return f[2].to_int()
+    return 0
+
+void set_delta(int i, string commodity, int value):
+    world.trade = world.trade.filter(bool(string e): return !e.starts_with(string(i) + "|" + commodity + "|"))
+    if value != 0:
+        world.trade.append(string(i) + "|" + commodity + "|" + string(value))
+
+bool reserved(string system, string commodity, int day):
+    for r in world.reserved:
+        []string f = r.split("|")
+        if f.len() >= 3 && f[0] == system && f[1] == commodity && f[2].to_int() >= day:
+            return true
+    return false
+
+// The price of a commodity in system i now (with this mod's delta, if any): 0 for no market.
+int price_now(es.Game game, int i, string commodity):
+    string sys = galaxy.name(i)
+    if api_trade:
+        int p = game.trade_base_price(sys, commodity)
+        return p if p > 0 else 0
+    int base = table.base(sys, commodity)
+    return base + delta(i, commodity) if base > 0 else 0
+
+// Bring system i's prices to its damage tier: only this mod's own delta moves.
+void prices(es.Game game, int i, int day):
+    if !can_trade():
+        return
+    int k = world.occupation_index(i)
+    int t = world.occupation[k][3] if k >= 0 else 0
+    string sys = galaxy.name(i)
+    []string lines = []
+    for c in tune.damaged_goods:
+        int d0 = delta(i, c)
+        int p = price_now(game, i, c)
+        if p <= 0:
+            if d0 != 0:
+                set_delta(i, c, 0)
+            continue
+        int without = p - d0
+        int d1 = without * tune.damage_price * t / 100
+        if d1 == d0 || reserved(sys, c, day):
+            continue
+        lines.append("\ttrade \"" + c + "\" " + string(without + d1))
+        set_delta(i, c, d1)
+        world.stat("price changes", 1)
+    if lines.len() > 0:
+        changes.add("system \"" + sys + "\"\n" + lines.join("\n"))
+
+// ---- Shipyard stock ----
+
+// Trim (or restore) the shipyards of system i for damage tier t: an untracked
+// hull (unlimited) is held to 1 at tier 1 and 0 from tier 2, and untracked
+// again once repaired; on mod API 10 the outfitters' munitions too
+// (tune.damaged_outfits, to damaged_outfit_count, then none). Only when no other mod manages shipyard stock
+// (Corporations does). Answers true when done.
+bool stock(es.Game game, int i, int t):
+    if corporations:
+        return true
+    string sys = galaxy.name(i)
+    any g = game
+    for k in 0..<game.planet_count(sys):
+        string p = game.planet_at(sys, k)
+        if t == 0:
+            for e in world.stock.copy():
+                []string f = e.split("|")
+                if f.len() >= 4 && f[1] == p:
+                    put_back(game, f)
+                    world.stock = world.stock.filter(bool(string s): return s != e)
+            continue
+        for j in 0..<game.shipyard_count(p):
+            string model = game.shipyard_model(p, j)
+            trim(game, "s", p, model, game.ship_stock(p, model), 1 if t == 1 else 0)
+        // (Mod API 10.) Munitions run short at a damaged outfitter.
+        if api_outfits && game.planet_service(p, "outfitter"):
+            for outfit in tune.damaged_outfits:
+                int now = g.outfit_stock(p, outfit)
+                trim(game, "o", p, outfit, now, tune.damaged_outfit_count if t == 1 else 0)
+    return true
+
+// Hold an item ("s" a hull, "o" an outfit) at planet p to `count`: only one
+// this mod tracks already, or an untracked one (now -1). The key keeps the count
+// set ("s|planet|model|count"), so it is put back only while nobody changed it.
+void trim(es.Game game, string kind, string p, string item, int now, int count):
+    string head = kind + "|" + p + "|" + item + "|"
+    int k = -1
+    for n in 0..<world.stock.len():
+        if world.stock[n].starts_with(head):
+            k = n
+    if k < 0 && (now != -1 || world.stock.len() >= 200):
+        return
+    if kind == "s":
+        game.set_ship_stock(p, item, count)
+    else:
+        any g = game
+        g.set_outfit_stock(p, item, count)
+    if k >= 0:
+        world.stock[k] = head + string(count)
+    else:
+        world.stock.append(head + string(count))
+
+// Untrack an item again, if its count is still the one this mod set (a sale
+// since, or another mod, changed it: then it is left as it is).
+void put_back(es.Game game, []string f):
+    int set = f[3].to_int()
+    if f[0] == "s":
+        if game.ship_stock(f[1], f[2]) == set:
+            game.set_ship_stock(f[1], f[2], -1)
+    else if f[0] == "o" && api_outfits:
+        any g = game
+        int now = g.outfit_stock(f[1], f[2])
+        if now == set:
+            g.set_outfit_stock(f[1], f[2], -1)
+
+// Corporations was turned on (or the game cannot see its crises): hand back
+// what this mod changed, then keep out. Every stock it set and nobody changed
+// since is untracked; on a game where prices are now off limits (API 9), every
+// price delta it wrote is taken off again.
+void release(es.Game game):
+    for e in world.stock:
+        []string f = e.split("|")
+        if f.len() >= 4:
+            put_back(game, f)
+    world.stock = []
+    for rec in world.occupation:
+        rec[3] = tier(rec[2])
+    if can_trade():
+        return
+    []string lines = []
+    string last = ""
+    for e in world.trade:
+        []string f = e.split("|")
+        if f.len() < 3:
+            continue
+        int i = f[0].to_int()
+        int base = table.base(galaxy.name(i), f[1])
+        if base <= 0:
+            continue
+        if galaxy.name(i) != last:
+            if lines.len() > 0:
+                changes.add(lines.join("\n"))
+            lines = ["system \"" + galaxy.name(i) + "\""]
+            last = galaxy.name(i)
+        lines.append("\ttrade \"" + f[1] + "\" " + string(base))
+    if lines.len() > 0:
+        changes.add(lines.join("\n"))
+    world.trade = []
+    world.stat("released to Corporations", 1)

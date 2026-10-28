@@ -164,8 +164,26 @@ export class MockGame {
 		this.fleetLists = new Map();     // system -> its fleets, once a change touched them
 		this.shipyards = new Map();      // planet -> shipyards added by changes
 		this.notes = [];                 // notify() calls: { name, payload, day }
+		this.fleet = [];                 // the player's ships: models
+		this.stock = new Map();          // "planet|model" -> count (ship stock)
+		this.outfits = new Map();        // "planet|outfit" -> count (outfit stock)
+		this.stockOn = false;
+		this.trade = new Map();          // "system|commodity" -> data price, as changed by events
+		for (const [n, s] of galaxy.systems) for (const [c, p] of Object.entries(s.trade || {})) this.trade.set(n + '|' + c, p);
+		this.listening = [];
+		this.sections = [];
 		if (api10) {
-			this.has = feature => ['notify', 'on_save', 'on_pilot_loaded', 'on_notification'].includes(feature);
+			this.has = feature => ['notify', 'on_save', 'on_pilot_loaded', 'on_notification', 'trade_price', 'timing_section', 'outfit_stock', 'ship_parking'].includes(feature);
+			this.parked = new Set();     // fleet indices parked
+			this.ship_parked = id => this.parked.has(Number(String(id).slice(5)));
+			this.listen = pattern => { this.listening.push(pattern); };
+			this.unlisten = pattern => { this.listening = this.listening.filter(p => p !== pattern); };
+			this.timing_section = name => { this.sections.push(name); };
+			this.trade_base_price = (s, c) => this.trade.has(s + '|' + c) ? this.trade.get(s + '|' + c) : (this.sys(s) ? 0 : -1);
+			this.trade_price = (s, c) => this.trade_base_price(s, c);
+			this.outfit_stock_on = on => {};
+			this.outfit_stock = (p, o) => this.outfits.has(p + '|' + o) ? this.outfits.get(p + '|' + o) : -1;
+			this.set_outfit_stock = (p, o, n) => { if (n < 0) this.outfits.delete(p + '|' + o); else this.outfits.set(p + '|' + o, n); };
 			this.notify = (name, payload) => {
 				if (!/^[A-Za-z0-9._:\/-]{1,128}$/.test(name)) throw new Error('notify: bad name ' + name);
 				JSON.parse(payload);
@@ -271,7 +289,7 @@ export class MockGame {
 			}
 			if (l.depth === 0) { top = l.t; sub = null; fleetsReset = false; continue; }
 			if (!top) throw new Error('change: no top-level node in ' + JSON.stringify(text));
-			if (top[0] === 'system' && l.depth === 1) {
+			if (top[0] === 'system' && l.depth === 1 && l.t[0] !== 'trade') {
 				if (!this.governments.has(top[1])) throw new Error('change: unknown system ' + top[1]);
 				const fleets = () => { if (!this.fleetLists.has(top[1])) this.fleetLists.set(top[1], [...this.sys(top[1]).fleets]); return this.fleetLists.get(top[1]); };
 				if (l.t[0] === 'government') { this.governments.set(top[1], l.t[1]); applied = true; }
@@ -279,6 +297,13 @@ export class MockGame {
 				else if (l.t[0] === 'remove' && l.t[1] === 'fleet') { const f = fleets(); const k = f.indexOf(l.t[2]); if (k >= 0) f.splice(k, 1); applied = true; }
 				else if (l.t[0] === 'fleet') { const f = fleets(); if (!fleetsReset) { f.length = 0; fleetsReset = true; } f.push(l.t[1]); applied = true; }
 				else throw new Error('change: unexpected ' + JSON.stringify(text));
+			} else if (top[0] === 'system' && l.depth === 1 && l.t[0] === 'trade') {
+				if (!this.governments.has(top[1])) throw new Error('change: unknown system ' + top[1]);
+				const p = Number(l.t[2]);
+				if (!Number.isInteger(p) || p <= 0) throw new Error('change: bad trade price ' + JSON.stringify(text));
+				this.trade.set(top[1] + '|' + l.t[1], p);
+				this.tradeLines = (this.tradeLines || 0) + 1;
+				applied = true;
 			} else if (top[0] === 'planet' && l.depth === 1 && l.t[0] === 'shipyard') {
 				if (!this.galaxy.planets.has(top[1])) throw new Error('change: unknown planet ' + top[1]);
 				if (!this.shipyards.has(top[1])) this.shipyards.set(top[1], []);
@@ -407,6 +432,16 @@ export class MockGame {
 		this.jobs.push({ name, text, day: this.today });
 		return true;
 	}
+	// ---- The player's fleet and shipyard stock ----
+	fleet_count() { return this.fleet.length; }
+	fleet_ship(k) { return k >= 0 && k < this.fleet.length ? 'uuid-' + k : ''; }
+	fleet_ship_model(id) { const k = Number(String(id).slice(5)); return this.fleet[k] || ''; }
+	model_cost(model) { return ({ 'Sparrow': 220000, 'Shuttle': 180000, 'Cruiser': 9000000, 'Carrier': 15000000, 'Falcon': 10000000, 'Bactrian': 15000000 })[model] || 0; }
+	shipyard_count(p) { return this.planet_service(p, 'shipyard') ? 2 : 0; }
+	shipyard_model(p, k) { return this.shipyard_count(p) > k && k >= 0 ? ['Sparrow', 'Shuttle'][k] : ''; }
+	ship_stock_on(on) { this.stockOn = on; }
+	ship_stock(p, model) { return this.stock.has(p + '|' + model) ? this.stock.get(p + '|' + model) : -1; }
+	set_ship_stock(p, model, n) { this.count('set_ship_stock'); if (n < 0) this.stock.delete(p + '|' + model); else this.stock.set(p + '|' + model, n); }
 	// ---- API 9 ----
 	map_label(system, text, r, g, b) { if (this.sys(system) && text) this.labels.push({ system, text, r, g, b }); }
 	map_ring(system, scale, r, g, b) { if (this.sys(system)) this.rings.push({ system, scale, r, g, b }); }

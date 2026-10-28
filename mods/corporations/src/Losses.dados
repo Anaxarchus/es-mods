@@ -66,6 +66,8 @@ int static_day = -1000000
 []float heat_seen = []
 []float heat_pirate = []
 []int spike_day = []
+// (M3) Systems under siege today (a war flotilla at its goal); not saved.
+[]string besieged = []
 // Losses the player saw since the last day, by system: in all (a ship the
 // player destroyed counts twice), and their models (for local demand). Not saved.
 {string: float} seen = {}
@@ -130,6 +132,33 @@ void witness(string system, string model, bool by_player):
     seen_by_player.append(by_player)
     witnessed += 1
 
+// (M2) A convoy lost in `system`: its ships count as losses there, as a
+// raid's do, so they raise the region's heat and its shipyards' sales.
+void convoy_loss(string system, float ships):
+    sunk[system] = sunk.get(system, 0.0) + ships
+
+// Convoys lost since the last day, by system (not saved: the day's update
+// takes them); counted as raids.
+{string: float} sunk = {}
+
+// (M2) The loss index a ship meets in a system: the highest of the regions
+// that hold it (1 outside every region), clamped as for NPC sales.
+float system_index(Galaxy galaxy, string system):
+    if !galaxy.index.has(system):
+        return 1.0
+    int i = galaxy.index[system]
+    if !member_of.has(i):
+        return 1.0
+    float best = 0.0
+    for r in member_of[i]:
+        float x = index(r)
+        best = x if x > best else best
+    return MIN_INDEX if best < MIN_INDEX else (MAX_INDEX if best > MAX_INDEX else best)
+
+// (M2) Whether a region is a war zone or next to pirates (its static rates).
+bool risky(int r):
+    return r >= 0 && r < regions.len() && (static_pirate[r] > 0.0 || static_war[r] > 0.0)
+
 // One day: the static rates if the war changed (or every 30 days), today's
 // raids, flotillas and witnessed losses, then every region's heat.
 void update(es.Game game, Galaxy galaxy, string key, {string: []string} enemies, int d):
@@ -144,6 +173,7 @@ void update(es.Game game, Galaxy galaxy, string key, {string: []string} enemies,
         raid.append(0.0)
         war.append(0.0)
         saw.append(0.0)
+    []string sieges = []
     if game.condition("diplomacy: active") != 0:
         // Every flotilla slot of every side: a raid (kind 2) or a war flotilla
         // (kind 0), whoever's it is. A side's live flotillas fill its first
@@ -158,16 +188,23 @@ void update(es.Game game, Galaxy galaxy, string key, {string: []string} enemies,
                 if at < 0:
                     continue
                 string sys = game.system_at(at)
+                // (M3) A war flotilla at its goal besieges it (Sanctions' blockade runs).
+                if kind == 0 && game.condition(pre + "goal") - 1 == at && !sieges.contains(sys):
+                    sieges.append(sys)
                 if kind == 2:
                     spread(galaxy, sys, RAID, raid)
                 else if kind == 0:
                     spread(galaxy, sys, FLOTILLA, war)
+    besieged = sieges
     for sys, n in seen:
         add_to(galaxy, sys, WITNESSED * n, saw)
     seen = {}
     for sys, n in battles:
         spread(galaxy, sys, n, war)
     battles = {}
+    for sys, n in sunk:
+        add_to(galaxy, sys, WITNESSED * n, raid)
+    sunk = {}
     for r in 0..<regions.len():
         float today = quiet[r] * (1.0 - KEEP) + static_pirate[r] + static_war[r] + raid[r] + war[r] + saw[r]
         heat[r] = heat[r] * KEEP + today
@@ -221,6 +258,19 @@ void compute_static(es.Game game, Galaxy galaxy, {string: []string} enemies):
                 war += FRONT if front else WAR
         static_pirate[r] = pirate
         static_war[r] = war
+
+// (M2) Heat rounded each day (Market.tidy), so the saved record is short.
+void tidy():
+    for r in 0..<regions.len():
+        heat[r] = round3(heat[r])
+        heat_raid[r] = round3(heat_raid[r])
+        heat_war[r] = round3(heat_war[r])
+        heat_seen[r] = round3(heat_seen[r])
+        heat_pirate[r] = round3(heat_pirate[r])
+
+float round3(float x):
+    float r = globalThis.Math.round(x * 1000.0)
+    return r / 1000.0
 
 // A region's loss index: its heat over a quiet region's (1 = quiet).
 float index(int r):

@@ -1,0 +1,246 @@
+class Tips
+
+import "imports:sdk/es"
+
+// (M3) Insider tips. Some of the market's future is decided ahead of time:
+// - earnings one-offs: SURPRISE_DAYS before a company's report, with chance
+//   SURPRISE_CHANCE, a one-off gain or charge (Company.surprise) is set; the
+//   report books it, and the price jumps or slips with it (REACTION);
+// - crises: decided Crises.LEAD days before they start (Market.crisis_plan);
+// - tenders: when a tip on an open tender is offered, its winner is settled
+//   then (Market.tender_fixed: insiders have arranged it).
+// On landing at a bank within REACH jumps of the company's home, now and then
+// (CHANCE a landing) a job: carry an employee's sealed envelope to a planet
+// nearby; delivering it ("corporations: tip <n>" = 1) reveals what is coming.
+// Trading the company (buying, selling, shorting or covering) between then
+// and the event is insider trading: when the event comes, the regulator
+// catches CAUGHT of those who did and fines FINE of the value traded (at
+// least FINE_MIN; Market.charge), with standing -10 with the company and
+// SCRUTINY of attention. Tips are saved as "t|n|company|kind|until|revealed|traded|planet|day"
+// (kind 0 earnings, 1 crisis, 2 tender; for a tender, company is the tender's id).
+
+float SURPRISE_CHANCE = 25.0
+int SURPRISE_DAYS = 10
+float REACTION = 0.06
+float CHANCE = 35.0
+int REACH = 3
+float CAUGHT = 25.0
+// Of the value traded, both ways: about what a perfect tip makes on average
+// (tools/probe.mjs), so trading on one is a gamble, not free money.
+float FINE = 0.15
+// A crisis tip is worth more (tools/probe.mjs: +6 to +10% gross): its fine too.
+float FINE_CRISIS = 0.3
+float FINE_MIN = 25000.0
+int SCRUTINY = 20
+
+// Counted since the mod started (not saved), for tests and tools.
+int offered = 0
+int fined = 0
+
+// Each day: one-offs rolled for reports SURPRISE_DAYS away; insider trades
+// settled once their event has come.
+void daily(es.Game game, Market m, int d):
+    for c in m.companies:
+        if !c.listed() || c.surprise_at != 0:
+            continue
+        int report_day = d + SURPRISE_DAYS
+        if report_day % 30 != c.report_at || !m.rng.chance(SURPRISE_CHANCE):
+            continue
+        float scale = (c.norm if c.norm > 0.0 else -c.norm) + m.upkeep(c) * 10.0
+        float size = m.rng.between(0.6, 1.5) * scale
+        c.surprise = size if m.rng.chance(50.0) else -size
+        c.surprise_at = report_day
+    []string keep = []
+    for t in m.tips:
+        []string f = t.split("|")
+        string key = "corporations: tip " + f[0]
+        if game.condition(key) == 1:
+            f[4] = "1"
+            game.set_condition(key, 0)
+            m.must_save = true
+        if f[3].to_int() > d:
+            keep.append(f.join("|"))
+            continue
+        // The event has come: was there insider trading?
+        float traded = f[5].to_float()
+        if f[4] == "1" && traded > 0.0 && m.rng.chance(CAUGHT):
+            fined += 1
+            float fine = traded * (FINE_CRISIS if f[2] == "1" else FINE)
+            fine = fine if fine > FINE_MIN else FINE_MIN
+            m.charge(game, fine)
+            int cid = f[1].to_int() if f[2] != "2" else 0
+            Company c = m.by_id.get(cid, Company())
+            if c.id != 0:
+                m.standing.add(game, c.id, -10)
+            m.board.attention(game, m, SCRUTINY, d)
+            m.say(d, "Regulators fine an independent captain for insider trading" + (" in " + c.name if c.id != 0 else " ahead of a tender") + ".")
+            m.player_events.append("You are fined " + m.fmt.credits(fine) + " credits for trading on inside information" + (" (" + m.fmt.credits(m.owed) + " owed)" if m.owed > 0.0 else "") + ".")
+        game.set_condition(key, 0)
+    m.tips = keep
+
+// The report: the one-off is booked, and the price reacts to it.
+void report(Market m, Company c):
+    if c.surprise == 0.0:
+        c.surprise_at = 0
+        return
+    if c.surprise > 0.0:
+        c.revenue += c.surprise
+    else:
+        c.costs -= c.surprise
+    float scale = (c.norm if c.norm > 0.0 else -c.norm) + m.upkeep(c) * 10.0
+    float move = m.clamp(c.surprise / scale * REACTION, -0.1, 0.1)
+    m.shock(c, 1.0 + move)
+    c.note("after a one-off " + ("gain" if c.surprise > 0.0 else "charge") + " of " + m.fmt.short_credits(c.surprise if c.surprise > 0.0 else -c.surprise))
+    c.surprise = 0.0
+    c.surprise_at = 0
+
+// The player traded a company: insider trading if they hold a revealed tip on
+// it (revealed: delivered, even before the next day marks it).
+void traded(es.Game game, Market m, Company c, float value):
+    for i in 0..<m.tips.len():
+        []string f = m.tips[i].split("|")
+        if f[4] != "1" && game.condition("corporations: tip " + f[0]) == 1:
+            f[4] = "1"
+        if f[4] != "1" || f[3].to_int() < m.day:
+            continue
+        bool about = f[1].to_int() == c.id if f[2] != "2" else tender_company(m, f[1].to_int()) == c.id
+        if about:
+            f[5] = string(f[5].to_float() + value)
+            m.must_save = true
+        m.tips[i] = f.join("|")
+
+int tender_company(Market m, int tender):
+    return m.tender_fixed.get(tender, 0)
+
+// Landed: perhaps a tip job about a company whose home is near.
+void offer(es.Game game, Galaxy galaxy, Market m):
+    string planet = game.planet()
+    if planet == "" || !game.planet_service(planet, "bank"):
+        return
+    string here = galaxy.system_of(game, planet)
+    if repost(game, galaxy, m, planet, here):
+        return
+    // Not the market's dice: a landing (offers run again when a save is
+    // loaded on a planet) must not change how the market plays out.
+    if float(hash(planet, m.day) % 100) >= CHANCE:
+        return
+    int left = 0
+    int kind = -1
+    int about = 0
+    string text = ""
+    Company c = Company()
+    for o in m.companies:
+        if !o.listed() || o.owner != 0 || o.home == "" || galaxy.jumps(here, o.system) < 0 || galaxy.jumps(here, o.system) > REACH:
+            continue
+        if known(m, o.id):
+            continue
+        if o.surprise != 0.0 && o.surprise_at - m.day >= 4:
+            c = o
+            kind = 0
+            about = o.id
+            left = o.surprise_at - m.day
+            text = o.name + "'s report on " + m.fmt.date(o.surprise_at) + " will carry a one-off " + ("gain" if o.surprise > 0.0 else "charge") + " of about " + m.fmt.short_credits(o.surprise if o.surprise > 0.0 else -o.surprise) + " credits. Its chief executive, " + o.ceo + ", has not told the market."
+            break
+        string p = m.crisis_desk.planned(m, o.id)
+        if p != "" && p.split("|")[0].to_int() - m.day >= 4:
+            c = o
+            kind = 1
+            about = o.id
+            left = p.split("|")[0].to_int() - m.day
+            text = "A " + m.crisis_desk.kind_names[p.split("|")[2].to_int()] + " will hit " + o.name + " around " + m.fmt.date(p.split("|")[0].to_int()) + "; " + o.ceo + " knows and is saying nothing."
+            break
+    if kind < 0:
+        // An open tender closing in a few days: the winner is arranged now.
+        for k in m.contracts:
+            if k.kind != k.TENDER || k.status != k.OPEN || k.closes - m.day < 3 || m.tender_fixed.has(k.id):
+                continue
+            Company w = m.favourite(k)
+            if w.id == 0 || galaxy.jumps(here, w.system) < 0 || galaxy.jumps(here, w.system) > REACH:
+                continue
+            m.tender_fixed[k.id] = w.id
+            c = w
+            kind = 2
+            about = k.id
+            left = k.closes - m.day
+            text = w.name + " will win the " + k.client + " tender for " + string(k.units) + " " + m.model_label(k.model, k.units) + " when bids close on " + m.fmt.date(k.closes) + "."
+            break
+    if kind < 0:
+        return
+    int n = m.next_tip
+    if post(game, galaxy, m, planet, here, n, c.name, text, left):
+        m.next_tip += 1
+        offered += 1
+        m.tips.append(string(n) + "|" + string(about) + "|" + string(kind) + "|" + string(m.day + left) + "|0|0|" + planet + "|" + string(m.day))
+
+// The job itself: an envelope to a planet 1-2 jumps away.
+bool post(es.Game game, Galaxy galaxy, Market m, string planet, string here, int n, string name, string text, int left):
+    string dest = ""
+    for p in galaxy.planets:
+        int j = galaxy.jumps(here, galaxy.planet_system[p])
+        if p != planet && j >= 1 && j <= 2:
+            dest = p
+            break
+    if dest == "":
+        return false
+    string key = "corporations: tip " + string(n)
+    game.set_condition(key, 0)
+    []string lines = []
+    lines.append("name \"A sealed envelope for " + name + "\"")
+    lines.append("description \"Someone inside " + name + " wants a discreet captain to carry a sealed envelope to <destination> by <date>. Nobody will mind if you read it on the way, but trading on what it says is against the exchange's rules.\"")
+    lines.append("destination \"" + dest + "\"")
+    lines.append("deadline " + string(left - 1 if left > 2 else 2))
+    lines.append("on complete")
+    lines.append("\tpayment 2000")
+    lines.append("\t\"" + key + "\" = 1")
+    lines.append("\tdialog \"You hand over the envelope, having read it: " + text.replace_all("\"", "'") + "\"")
+    return game.offer_job("tip " + string(n), lines.join("\n"))
+
+// (M3 review) A tip offered here today and not taken is offered again (a save
+// loaded on this planet empties the job board): its text from what it is about.
+bool repost(es.Game game, Galaxy galaxy, Market m, string planet, string here):
+    for t in m.tips:
+        []string f = t.split("|")
+        if f.len() < 8 || f[4] != "0" || f[6] != planet || f[7].to_int() != m.day:
+            continue
+        int kind = f[2].to_int()
+        int about = f[1].to_int()
+        string name = ""
+        string text = ""
+        if kind == 0 || kind == 1:
+            Company o = m.by_id.get(about, Company())
+            if o.id == 0:
+                continue
+            name = o.name
+            if kind == 0:
+                text = o.name + "'s report on " + m.fmt.date(o.surprise_at) + " will carry a one-off " + ("gain" if o.surprise > 0.0 else "charge") + " of about " + m.fmt.short_credits(o.surprise if o.surprise > 0.0 else -o.surprise) + " credits. Its chief executive, " + o.ceo + ", has not told the market."
+            else:
+                string p = m.crisis_desk.planned(m, o.id)
+                if p == "":
+                    continue
+                text = "A " + m.crisis_desk.kind_names[p.split("|")[2].to_int()] + " will hit " + o.name + " around " + m.fmt.date(p.split("|")[0].to_int()) + "; " + o.ceo + " knows and is saying nothing."
+        else:
+            Company w = m.by_id.get(m.tender_fixed.get(about, 0), Company())
+            Contract k = Contract()
+            for x in m.contracts:
+                if x.id == about:
+                    k = x
+            if w.id == 0 || k.id == 0:
+                continue
+            name = w.name
+            text = w.name + " will win the " + k.client + " tender for " + string(k.units) + " " + m.model_label(k.model, k.units) + " when bids close on " + m.fmt.date(k.closes) + "."
+        return post(game, galaxy, m, planet, here, f[0].to_int(), name, text, f[3].to_int() - m.day)
+    return false
+
+int hash(string s, int d):
+    int h = d % 1000003
+    for i in 0..<s.len():
+        h = (h * 31 + s.code_point_at(i)) % 1000003
+    return h
+
+// A tip about this company (or its arranged tender) is already out.
+bool known(Market m, int id):
+    for t in m.tips:
+        []string f = t.split("|")
+        if f[2] != "2" && f[1].to_int() == id:
+            return true
+    return false

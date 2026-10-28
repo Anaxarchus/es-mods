@@ -44,6 +44,11 @@ Operations ops = Operations()
 Battlefield field = Battlefield()
 Service service = Service()
 MapView overlay = MapView()
+Intel intel = Intel()
+Occupation occupation = Occupation()
+Rivals rivals = Rivals()
+Squadron squadron = Squadron()
+Json json = Json()
 
 void init():
     galaxy.wire(tune, factions)
@@ -59,6 +64,17 @@ void init():
     field.wire(tune, factions, galaxy, world, garrisons, sim)
     service.wire(tune, factions, galaxy, state, world, garrisons, sim, chronicle)
     overlay.wire(factions, galaxy, world, garrisons, sim)
+    intel.wire(tune, factions, galaxy, world)
+    occupation.wire(tune, factions, galaxy, world, changes)
+    rivals.wire(tune, factions, world, rng, admirals, chronicle)
+    squadron.wire(tune, factions, galaxy, world, admirals, quality, sim, chronicle)
+    squadron.wire_intel(intel)
+    sim.wire_intel(intel)
+    sim.wire_rivals(rivals)
+    politics.wire_occupation(occupation)
+    ops.wire_m2(intel, occupation, rivals)
+    overlay.wire_intel(intel)
+    service.wire_m2(squadron, intel)
 
 string name():
     return "diplomacy"
@@ -104,6 +120,11 @@ void prepare(es.Game game):
     if w != "" && world.decode(game.data("state"), factions.regions.count(), factions.sides()):
         loaded_world = w
         loaded_rev = r
+        // What is in memory is the save now: nothing to write until it changes.
+        dirty = false
+        // M1 rosters (three fields a place) are widened now.
+        for s in 0..<world.admirals.len():
+            admirals.roster(s)
         galaxy.refresh(game)
         return
     world.reset(factions.regions.count(), factions.sides())
@@ -122,9 +143,32 @@ string next_rev():
     rev_high += 1
     return string(rev_high) + "." + session
 
+// Keep the state. With mod API 10's on_save the game asks for it just before
+// it writes the pilot, so a day only marks it dirty: the first change after a
+// save writes a new revision (not the state), so a save loaded later never
+// looks like the world in memory. On API 9 it is written every time.
+bool dirty = false
+
 void save(es.Game game):
     if world.world == 0:
         return
+    // (A new world is written at once: the revision alone means nothing yet.)
+    if save_hook && loaded_world == string(world.world):
+        if !dirty:
+            dirty = true
+            string mark = next_rev()
+            game.set_data("rev", mark)
+            loaded_rev = mark
+        return
+    write(game)
+
+void on_save(es.Game game):
+    if world.world == 0 || !dirty:
+        return
+    write(game)
+
+void write(es.Game game):
+    dirty = false
     world.rev += 1
     string rev = next_rev()
     game.set_data("state", world.encode())
@@ -151,6 +195,132 @@ void check_api(es.Game game):
     any g = game
     bool bus = g.has("notify")
     chronicle.bus = bus
+    bool trade = g.has("trade_price")
+    occupation.api_trade = trade
+    bool parking = g.has("ship_parking")
+    squadron.api_parked = parking
+    bool outfits = g.has("outfit_stock")
+    occupation.api_outfits = outfits
+    bool hook = g.has("on_save")
+    save_hook = hook
+    bool sections = g.has("timing_section")
+    timing = sections
+
+bool save_hook = false
+bool timing = false
+
+// Name the part of the hook that runs from now, for API 10's timing report.
+void section(es.Game game, string name):
+    if !timing:
+        return
+    any g = game
+    g.timing_section(name)
+
+// ---- The Corporations link (mod API 10's bus) ----
+
+int side_of_government(string government):
+    for s in 1..=3:
+        if factions.governments[s] == government:
+            return s
+    return 0
+
+bool at_war(int s):
+    for w in world.wars:
+        if w.a == s || w.b == s:
+            return true
+    return false
+
+// A system where a war is fought: held by a side at war, or with a flotilla near.
+bool war_zone(int i):
+    if i < 0:
+        return false
+    if at_war(galaxy.owner(i)):
+        return true
+    for x in world.fleets:
+        if x.alive() && galaxy.jumps(x.at, i) <= 1:
+            return true
+    return false
+
+void on_notification(es.Game game, string name, string payload, string sender):
+    if !name.starts_with("corporations.") || !active(game):
+        return
+    any o = json.parse_object(payload)
+    int day = world.day
+    if name == "corporations.tender_delivered":
+        // Warships delivered: the government's next flotilla goes out stronger,
+        // at most once in tender_gap days (an award alone does nothing).
+        int s = side_of_government(json.str(o, "government", ""))
+        if s > 0 && (world.boost_day[s] == 0 || day - world.boost_day[s] >= tune.tender_gap):
+            world.boost[s] = 1
+            world.boost_day[s] = day
+    else if name == "corporations.tender_failed":
+        int s = side_of_government(json.str(o, "government", ""))
+        if s > 0:
+            world.penalty[s] = 1
+    else if name == "corporations.bankrupt":
+        string company = json.str(o, "company", "a company")
+        int hit = 0
+        for s in 1..=3:
+            if at_war(s):
+                world.defeat[s] += tune.scandal_unrest * 10
+                hit += 1
+        if hit > 0:
+            chronicle.add(game, day, "Scandal: " + company + " has gone bankrupt owing the war ministries; the profiteering stirs unrest at home.", false, true)
+    else if name == "corporations.convoy_lost":
+        int i = galaxy.find(json.str(o, "system", ""))
+        if war_zone(i):
+            string owner = json.str(o, "owner", "a shipyard")
+            chronicle.add(game, day, "A convoy of new hulls for " + owner + " was lost near " + galaxy.name(i) + ", in the war zone.", false, true)
+    else if name == "corporations.crisis":
+        reserve(o, day)
+    else if name == "corporations.shortfall":
+        int s = json.num(o, "side", 0)
+        int v = json.num(o, "shortfall", 0)
+        if s >= 1 && s < world.shortfall.len():
+            world.shortfall[s] = v if v >= 0 && v <= 100 else (0 if v < 0 else 100)
+    save(game)
+
+// Corporations' shortfall conditions (M3), on any API: read each day for the
+// sides with flotillas (majors and rebels).
+void read_shortfall(es.Game game):
+    if !occupation.corporations:
+        return
+    for s in 1..<world.shortfall.len():
+        if s == factions.pirates():
+            continue
+        int v = game.condition("corporations: shortfall " + string(s))
+        world.shortfall[s] = v if v >= 0 && v <= 100 else (0 if v < 0 else 100)
+
+// Corporations raised prices in a system and next to it: leave them alone
+// until the crisis is over (with a margin).
+void reserve(any o, int day):
+    int i = galaxy.find(json.str(o, "system", ""))
+    if i < 0:
+        return
+    int days = json.num(o, "days", 30)
+    days = 0 if days < 0 else (365 if days > 365 else days)
+    int until = day + days + tune.crisis_margin
+    []string goods = []
+    if !json.has(o, "commodities"):
+        return
+    any list = o["commodities"]
+    bool is_list = globalThis.Array.isArray(list)
+    if !is_list:
+        return
+    // Only the goods whose prices this mod moves matter; anything else is skipped.
+    int n = list.length
+    for k in 0..<n:
+        any c = list[k]
+        if !json.is_string(c):
+            continue
+        string cs = c
+        if tune.damaged_goods.contains(cs) && !goods.contains(cs):
+            goods.append(cs)
+    for j in 0..<galaxy.count():
+        if j == i || galaxy.jumps(i, j) == 1:
+            for c in goods:
+                if world.reserved.len() < tune.reserved_cap:
+                    world.reserved.append(galaxy.name(j) + "|" + c + "|" + string(until))
 
 // (Mod API 10.) Another pilot was loaded: read its world, whatever the revisions say.
 void on_pilot_loaded(es.Game game):
@@ -317,6 +487,10 @@ void debug_gifts(es.Game game):
 
 void on_load(es.Game game):
     galaxy.build(game)
+    check_api(game)
+    if chronicle.bus:
+        any g = game
+        g.listen("corporations.*")
     field.reset()
     bool on = active(game)
     if on:
@@ -349,9 +523,26 @@ void simulate(es.Game game, int day):
     world.day = day
     politics.player = state.member(game)
     chronicle.today = 0
+    occupation.corporations = game.plugin_enabled(tune.corporations_plugin)
+    read_shortfall(game)
+    section(game, "squadron")
+    squadron.check(game)
+    squadron.cap_strength(game)
+    sim.player = politics.player
+    // The places the player's squadrons hold; the AI fills the rest.
+    sim.reserved = squadron.mine().len()
+    section(game, "politics")
     bool changed = politics.day(game, day)
+    section(game, "war")
     sim.day(game, day)
+    section(game, "squadron")
+    rivals.day(game, politics.player, day)
+    intel.update(game, politics.player, day)
+    section(game, "operations")
     ops.outcomes(game, politics.player, day)
+    section(game, "occupation")
+    occupation.day(game, day)
+    section(game, "")
     chronicle.sample(day)
     changes.flush(game)
     state.publish(game, politics.player)
@@ -369,6 +560,8 @@ void on_enter(es.Game game, string system):
         service.check_rank(game)
         sim.force_flotilla(game, game.day())
         sim.force_raid(game, game.day())
+        force_squadron(game)
+        stock_on(game)
         field.enter(game, system)
         if game.planet() != "":
             ops.offer(game, politics.player, game.day())
@@ -380,6 +573,24 @@ void on_enter(es.Game game, string system):
         if service.offering && !snoozed:
             service.open_offer(game)
     overlay.draw(game, on)
+
+// Shipyard stock (the damage tiers' trims) shows only while it is switched
+// on; it is not saved, so switch it on again on entering a system.
+void stock_on(es.Game game):
+    if world.stock.len() > 0 && !occupation.corporations:
+        game.ship_stock_on(true)
+        if occupation.api_outfits:
+            any g = game
+            g.outfit_stock_on(true)
+
+// Test override "diplomacy: force squadron" (a system index + 1): give the
+// player a squadron ordered to attack that system, room or not.
+void force_squadron(es.Game game):
+    int target = state.get(game, "force squadron") - 1
+    if target < 0:
+        return
+    state.put(game, "force squadron", 0)
+    squadron.force(game, target, game.day())
 
 void on_step(es.Game game, int step):
     if state.get(game, "active") == 0:

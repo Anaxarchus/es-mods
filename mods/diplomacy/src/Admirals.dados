@@ -2,10 +2,16 @@ class Admirals
 
 // The named commanders who lead each side's flotillas and raids. Each side
 // keeps a roster of tune.admirals_per_side, in World.admirals as a flat
-// [name, personality, wins] per place:
+// [name, personality, wins, history, trait, rival] per place (a roster saved
+// by M1 with three fields a place is widened on reading):
 //   name         1 + the index of their surname in the side's list (0 = vacant)
 //   personality  1 bold, 2 cautious, 3 methodical, 4 reckless
 //   wins         battles they won and raids or hunts they finished
+//   history      their history with the player (Rivals): battles against the
+//                player's squadron or beside the player, ships the player killed
+//   trait        a rival's trait (Rivals: 1 grudge, 2 learned tactics, 3 veteran,
+//                4 siege engineer, 5 ambusher), 0 for none
+//   rival        1 while they are the player's rival
 // A vacant post is filled with a new commander when one is needed. A commander
 // whose flotilla is destroyed may die (tune.admiral_death_chance).
 
@@ -20,25 +26,37 @@ void wire(Tuning t, Factions f, World w, Rng r):
     world = w
     rng = r
 
+int STRIDE = 6
+
 []int roster(int side):
     if side < 0 || side >= world.admirals.len():
         return []
     []int r = world.admirals[side]
-    if r.len() < tune.admirals_per_side * 3:
-        r.resize(tune.admirals_per_side * 3)
+    int n = tune.admirals_per_side
+    if r.len() == n * 3 && n * 3 != n * STRIDE:
+        // An M1 roster: three fields a place.
+        []int wide = []
+        wide.resize(n * STRIDE)
+        for k in 0..<n:
+            for f in 0..<3:
+                wide[k * STRIDE + f] = r[k * 3 + f]
+        r = wide
+        world.admirals[side] = r
+    if r.len() < n * STRIDE:
+        r.resize(n * STRIDE)
         world.admirals[side] = r
     return r
 
 int field(int side, int k, int f):
     if k < 1 || k > tune.admirals_per_side:
         return 0
-    return roster(side)[(k - 1) * 3 + f]
+    return roster(side)[(k - 1) * STRIDE + f]
 
 void put(int side, int k, int f, int value):
     if k < 1 || k > tune.admirals_per_side:
         return
     []int r = roster(side)
-    r[(k - 1) * 3 + f] = value
+    r[(k - 1) * STRIDE + f] = value
 
 bool filled(int side, int k):
     return field(side, k, 0) != 0
@@ -105,17 +123,38 @@ void appoint(int side, int k):
     int name = choices[rng.range(0, choices.len() - 1)] if choices.len() > 0 else 1
     put(side, k, 0, name)
     put(side, k, 1, rng.range(1, 4))
-    put(side, k, 2, 0)
+    for f in 2..<STRIDE:
+        put(side, k, f, 0)
 
 // The flotilla commander k led was destroyed. Answers true if they died.
 bool fallen(int side, int k):
     if !filled(side, k) || !rng.chance(tune.admiral_death_chance):
         return false
-    put(side, k, 0, 0)
-    put(side, k, 1, 0)
-    put(side, k, 2, 0)
+    for f in 0..<STRIDE:
+        put(side, k, f, 0)
     world.stat("commanders killed", 1)
     return true
+
+// The commander dies (a rival killed in person always does).
+void kill(int side, int k):
+    if !filled(side, k):
+        return
+    for f in 0..<STRIDE:
+        put(side, k, f, 0)
+    world.stat("commanders killed", 1)
+
+int history(int side, int k):
+    return field(side, k, 3)
+
+void add_history(int side, int k, int points):
+    if filled(side, k):
+        put(side, k, 3, history(side, k) + points)
+
+int trait(int side, int k):
+    return field(side, k, 4)
+
+bool is_rival(int side, int k):
+    return filled(side, k) && field(side, k, 5) == 1
 
 // A side's roster is dissolved (a rebel faction that is gone).
 void dissolve(int side):
@@ -124,11 +163,15 @@ void dissolve(int side):
 
 int attack(int side, int k):
     int p = personality(side, k)
+    int a = 100
     if p == 1:
-        return tune.bold_attack
+        a = tune.bold_attack
     if p == 4:
-        return tune.reckless_attack
-    return 100
+        a = tune.reckless_attack
+    // A veteran rival hits harder.
+    if is_rival(side, k) && trait(side, k) == 3:
+        a = a * tune.veteran_bonus / 100
+    return a
 
 int damage_taken(int side, int k):
     int p = personality(side, k)
@@ -139,4 +182,7 @@ int damage_taken(int side, int k):
     return 100
 
 int siege(int side, int k):
-    return tune.methodical_siege if personality(side, k) == 3 else 100
+    int v = tune.methodical_siege if personality(side, k) == 3 else 100
+    if is_rival(side, k) && trait(side, k) == 4:
+        v = v * tune.siege_engineer_bonus / 100
+    return v

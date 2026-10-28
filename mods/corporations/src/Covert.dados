@@ -1,0 +1,188 @@
+class Covert
+
+import "imports:sdk/es"
+
+// (M2) Sabotage and espionage jobs, sponsored by a company against a rival in
+// its sector, offered only to a player who stands poorly with the target
+// (TARGET_BELOW or less) or well with the sponsor (SPONSOR_FROM or more), at
+// most one a landing, on planets with a job board:
+// - steal plans: a stopover at the target's home, then the sponsor's home.
+//   The sponsor's costs fall (efficiency) and its standing with the player
+//   rises; the target's shares slip.
+// - sabotage: at the home of a shipbuilder bidding on an open tender, or
+//   building one: its reliability falls SABOTAGE, which weighs against its
+//   bid (Market.award scores by reliability) and raises the chance it fails
+//   to deliver (Market.deliver_tender).
+// On completion a roll (CAUGHT, CAUGHT_SABOTAGE) decides whether the player
+// is caught: a scandal in the news, a fine (FINE, FINE_SABOTAGE × the pay;
+// what they can't pay now is owed, Market.owed), and standing lost with both
+// companies. The sabotage job carries illegal cargo (a customs scan fines). The target records
+// the cause (Company.note), so its next earnings line and the news name it.
+// Either way the target trusts the player less (Standing.COVERT).
+//
+// Jobs offered are remembered ("v|n|kind|target|sponsor|day|pay", Market
+// covert_jobs) until settled or KEEP days old; their conditions:
+//   "corporations: covert <n>"        1 taken
+//   "corporations: covert <n> done"   1 completed
+//   "corporations: covert <n> failed" 1 failed or aborted
+
+int PLANS = 1
+int SABOTAGE_JOB = 2
+int TARGET_BELOW = -10
+int SPONSOR_FROM = 20
+float CAUGHT = 25.0
+float CAUGHT_SABOTAGE = 35.0
+// The fine, times the pay: one over the chance of being caught, so the
+// money is about even on average (pay now, fines now and then) and what the
+// player gains is standing with the sponsor, paid for in standing with the
+// target. What they can't pay is a debt (Market.collect).
+float FINE = 4.0
+float FINE_SABOTAGE = 2.9
+float SABOTAGE = 0.15
+int KEEP = 60
+int REACH = 8
+
+// Counted since the mod started, for tests and tools.
+int done = 0
+int caught = 0
+
+// Landed: perhaps one job, against the first eligible target found. Answers
+// whether one was offered (the market changed: it must be saved now).
+bool offer(es.Game game, Galaxy galaxy, Market m):
+    string planet = game.planet()
+    if planet == "":
+        return false
+    string here = galaxy.system_of(game, planet)
+    for k in m.covert_jobs:
+        if k.split("|")[4].to_int() == m.day:
+            return false
+    // A sabotage target: a builder bidding on an open tender or building one.
+    for t in m.companies:
+        if !t.listed() || t.home == "" || t.home == planet:
+            continue
+        int j = galaxy.jumps(here, t.system)
+        if j < 0 || j > REACH:
+            continue
+        Company sponsor = sponsor_for(game, m, t)
+        if sponsor.id == 0:
+            continue
+        int kind = SABOTAGE_JOB if t.sector == 0 && tendering(m, t) else PLANS
+        if kind == PLANS && (sponsor.home == "" || sponsor.home == t.home):
+            continue
+        return post(game, galaxy, m, kind, t, sponsor, here, j)
+    return false
+
+// A rival that would pay for a job against `t`, if the player qualifies.
+Company sponsor_for(es.Game game, Market m, Company t):
+    bool against = m.standing.get(game, t.id) <= TARGET_BELOW
+    Company best = Company()
+    for s in m.companies:
+        if !s.listed() || s.id == t.id || s.sector != t.sector:
+            continue
+        if !against && m.standing.get(game, s.id) < SPONSOR_FROM:
+            continue
+        if best.id == 0 || m.standing.get(game, s.id) > m.standing.get(game, best.id):
+            best = s
+    return best
+
+bool tendering(Market m, Company t):
+    for k in m.contracts:
+        if k.kind == k.TENDER && ((k.status == k.RUNNING && k.winner == t.id && k.convoy == 0) || (k.status == k.OPEN && t.load + k.load <= t.capacity)):
+            return true
+    return false
+
+bool post(es.Game game, Galaxy galaxy, Market m, int kind, Company t, Company sponsor, string here, int j):
+    int n = m.next_covert
+    int pay = 40000 + 8000 * j + (40000 if kind == SABOTAGE_JOB else 0)
+    string key = "corporations: covert " + string(n)
+    []string lines = []
+    if kind == PLANS:
+        int back = galaxy.jumps(t.system, sponsor.system)
+        lines.append("name \"Plans for " + sponsor.name + "\"")
+        lines.append("description \"" + sponsor.name + " wants a look at " + t.name + "'s newest designs. Pick up a data chip from a contact on " + game.planet_name(t.home) + ", then bring it to <destination> by <date> for <payment>. If you are caught, you are on your own.\"")
+        lines.append("stopover \"" + t.home + "\"")
+        lines.append("destination \"" + sponsor.home + "\"")
+        lines.append("deadline " + string((j + (back if back > 0 else j)) * 2 + 6))
+    else:
+        lines.append("name \"An accident at " + t.name + "\"")
+        lines.append("description \"" + sponsor.name + " would be glad if " + t.name + "'s yards on <destination> had a run of bad luck before the next military tender. Deliver a technician and <cargo> there by <date> for <payment>. A customs scan on the way will find them; if you are caught, you are on your own.\"")
+        lines.append("destination \"" + t.home + "\"")
+        lines.append("cargo \"tampered parts\" 2")
+        lines.append("illegal " + string(pay) + " \"Customs officers find the tampered parts in your hold and fine you <fine> credits.\"")
+        lines.append("passengers 1")
+        lines.append("deadline " + string(j * 2 + 5))
+    lines.append("on accept")
+    lines.append("\t\"" + key + "\" = 1")
+    lines.append("on complete")
+    lines.append("\tpayment " + string(pay))
+    lines.append("\t\"" + key + " done\" = 1")
+    lines.append("\tdialog \"It is done, and you are paid <payment>. Now you wait to hear whether anyone saw you.\"")
+    lines.append("on fail")
+    lines.append("\t\"" + key + " failed\" = 1")
+    // Conditions an old job n may have left (a reload, a reused number) go first.
+    game.set_condition(key, 0)
+    game.set_condition(key + " done", 0)
+    game.set_condition(key + " failed", 0)
+    if !game.offer_job("covert " + string(n), lines.join("\n")):
+        return false
+    m.next_covert += 1
+    m.covert_jobs.append(string(n) + "|" + string(kind) + "|" + string(t.id) + "|" + string(sponsor.id) + "|" + string(m.day) + "|" + string(pay))
+    return true
+
+// Each day: jobs completed or failed; old offers never taken are forgotten.
+void settle(es.Game game, Market m, int d):
+    []string keep = []
+    for line in m.covert_jobs:
+        []string f = line.split("|")
+        string key = "corporations: covert " + f[0]
+        int taken = game.condition(key)
+        bool finished = game.condition(key + " done") == 1
+        bool failed = game.condition(key + " failed") == 1
+        if finished || failed:
+            game.set_condition(key, 0)
+            game.set_condition(key + " done", 0)
+            game.set_condition(key + " failed", 0)
+            m.must_save = true
+            if finished:
+                complete(game, m, f[1].to_int(), f[2].to_int(), f[3].to_int(), f[5].to_int(), d)
+            continue
+        if taken == 0 && d - f[4].to_int() > 2:
+            // Jobs leave the board at takeoff: one not taken by then never will be.
+            continue
+        if d - f[4].to_int() > KEEP:
+            continue
+        keep.append(line)
+    m.covert_jobs = keep
+
+void complete(es.Game game, Market m, int kind, int target, int sponsor, int pay, int d):
+    done += 1
+    Company t = m.by_id.get(target, Company())
+    Company s = m.by_id.get(sponsor, Company())
+    if t.id == 0:
+        return
+    bool was_caught = m.rng.chance(CAUGHT_SABOTAGE if kind == SABOTAGE_JOB else CAUGHT)
+    m.standing.add(game, t.id, m.standing.COVERT)
+    if kind == PLANS:
+        if s.id != 0:
+            s.efficiency = m.clamp(s.efficiency - 0.03, 0.75, 1.3)
+            m.standing.add(game, s.id, m.standing.PLANS)
+        m.shock(t, 0.97)
+        t.note("after its designs were stolen")
+    else:
+        t.reliability = m.clamp(t.reliability - SABOTAGE, 0.0, 0.99)
+        m.shock(t, 0.95)
+        t.note("after sabotage at its yards")
+        m.say_tagged(d, "An accident at " + t.name + "'s yards on " + game.planet_name(t.home) + " sets its work back; investigators suspect sabotage.", "s,c" + string(t.id))
+    if !was_caught:
+        return
+    caught += 1
+    int fine = int(float(pay) * (FINE_SABOTAGE if kind == SABOTAGE_JOB else FINE))
+    m.charge(game, float(fine))
+    m.standing.add(game, t.id, m.standing.CAUGHT)
+    if s.id != 0:
+        m.standing.add(game, s.id, -10)
+        m.shock(s, 0.93)
+        s.note("after a spying scandal")
+    string what = "stealing its designs" if kind == PLANS else "sabotaging its yards"
+    m.say_tagged(d, "Scandal: an independent captain is caught " + what + " for " + (s.name if s.id != 0 else "a rival") + "; " + t.name + " demands an inquiry.", "c" + string(t.id) + (",c" + string(s.id) if s.id != 0 else ""))
+    m.player_events.append("You were caught " + what + ": " + t.name + "'s security has you fined " + m.fmt.credits(float(fine)) + " credits" + (" (" + m.fmt.credits(m.owed) + " still owed, taken from what you earn)" if m.owed > 0.0 else "") + ", and " + (s.name if s.id != 0 else "your sponsor") + " denies knowing you.")

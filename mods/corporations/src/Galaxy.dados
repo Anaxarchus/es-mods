@@ -110,6 +110,41 @@ int jumps(string from, string to):
     []int d = distances[from]
     return d[index[to]]
 
+// (M2) The systems a ship passes from `from` to `to`, one jump each, ending
+// with `to` (not `from`); empty when they are the same or not linked. The
+// path follows the cached distances to `to`: from each system, the first
+// neighbour one jump closer.
+[]string route(string from, string to):
+    []string out = []
+    if !index.has(from) || !index.has(to) || from == to:
+        return out
+    if !distances.has(to):
+        distances[to] = bfs(index[to])
+    []int d = distances[to]
+    int at = index[from]
+    if d[at] < 0:
+        return out
+    for d[at] > 0:
+        int next = -1
+        for n in links[at]:
+            if d[n] == d[at] - 1:
+                next = n
+                break
+        if next < 0:
+            break
+        at = next
+        out.append(systems[at])
+    return out
+
+// (M2) The systems one jump from a system, in human space.
+[]string neighbours(string system):
+    []string out = []
+    if !index.has(system):
+        return out
+    for n in links[index[system]]:
+        out.append(systems[n])
+    return out
+
 []int bfs(int start):
     []int dist = []
     for i in 0..<systems.len():

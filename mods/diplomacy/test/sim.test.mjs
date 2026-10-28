@@ -18,7 +18,7 @@ import { Diplomacy, buildError, skip, loadTestGalaxy, GOVS, FLOT, CAPITALS, MINO
 
 const DAYS = parseInt(process.env.DIPLOMACY_DAYS || '4000', 10);
 const SALARY = ['', 'salary: Republic commission', 'salary: Free Worlds', 'salary: Syndicate commission'];
-const SALARIES = [200, 600, 1800, 3600, 6000, 8900, 12000];
+const SALARIES = [200, 600, 1800, 3600, 6000, 8900, 12000, 15500, 19000];
 const SIZES = ['', 'small', 'medium', 'large'];
 const PIRATES = 4;
 
@@ -55,6 +55,27 @@ test(DAYS + ' simulated days keep the invariants', { skip }, () => {
 		game.today++;
 		if (dest && dest !== game.where) { game.moveTo(dest); mod.on_day(game, game.today); mod.on_enter(game, dest); }
 		else { game.ships = []; mod.on_day(game, game.today); }
+	}
+	// Fog of war (M2): jumps through human space from the member's systems and
+	// flotillas (1 jump), or from the player's own system for a non-member (2).
+	function sightRange(member, now) {
+		const src = [];
+		if (member) {
+			game.names.forEach((n, i) => { if (minorOf.has(n) && sideOf(game.governments.get(n)) === member) src.push(n); });
+			for (const x of now) if (x.side === member) src.push(game.names[x.at]);
+		} else src.push(game.where);
+		const dist = new Map(src.map(n => [n, 0]));
+		const queue = [...new Set(src)];
+		while (queue.length) {
+			const n = queue.shift();
+			const d = dist.get(n);
+			for (let k = 0; k < game.link_count(n); k++) {
+				const m = game.link(n, k);
+				if (minorOf.has(m) && !dist.has(m)) { dist.set(m, d + 1); queue.push(m); }
+			}
+		}
+		const range = member ? 1 : 2;
+		return name => dist.has(name) && dist.get(name) <= range;
 	}
 	const hostileNow = (ws, f, g) => f !== g && (f === PIRATES || g === PIRATES || ws.some(w => (w.a === f && w.b === g) || (w.a === g && w.b === f)));
 	const stats = { kills: 0, otherKills: 0, inPersonDays: 0, flotillaMax: 0, warDays: 0, fwWarDays: 0, multiWarDays: 0, measuredSieges: [], promotions: 0, captures: 0, treaty: 0, uprisings: 0 };
@@ -193,6 +214,7 @@ test(DAYS + ' simulated days keep the invariants', { skip }, () => {
 		const now = fleets(game);
 		stats.flotillaMax = Math.max(stats.flotillaMax, now.length);
 		for (let f = 1; f <= 3; f++) check(now.filter(x => x.side === f && x.kind !== 3).length <= 4, 'at most 4 flotillas per major (besides those going home)');
+		const inSight = sightRange(game.cond('diplomacy: member'), now);
 		for (const x of now) {
 			if (x.side > 4) check(now.filter(y => y.side === x.side && y.kind !== 3).length <= 2, 'at most 2 flotillas per rebel faction');
 			if (x.kind === 0) {
@@ -204,7 +226,7 @@ test(DAYS + ' simulated days keep the invariants', { skip }, () => {
 			check(x.size >= 1 && x.size <= 3, 'flotilla size 1..3');
 			check(x.at >= 0 && x.at < game.names.length && minorOf.has(game.names[x.at]), 'flotillas stay in human space');
 			if (x.target !== 0) check(now.some(y => y.id === x.target && hostileNow(ws, x.side, y.side)), 'an interception target is a live enemy');
-			if (x.side !== PIRATES) {
+			if (x.side !== PIRATES && (x.side === game.cond('diplomacy: member') || inSight(game.names[x.at]))) {
 				const title = (x.side <= 3 ? GOVS[x.side] : MINORS[x.side - 5].rebels) + ' flotilla (' + SIZES[x.size] + ')';
 				check(game.map.markers.some(m => m.system === game.names[x.at] && m.label === title), 'each flotilla has a marker: ' + title);
 			}
@@ -214,8 +236,9 @@ test(DAYS + ' simulated days keep the invariants', { skip }, () => {
 			const k = minorOf.get(r.system);
 			check(ws.some(w => w.goals.includes(k)), 'rings mark war goals only: ' + r.system);
 		}
-		check(game.labels.length === MINORS.length, 'every minor has a label on the map');
-		for (const r of fleets(game).filter(x => x.side === PIRATES)) {
+		check(game.labels.filter(l => !/ ago$/.test(l.text)).length === MINORS.length, 'every minor has a label on the map');
+		check(game.labels.filter(l => / ago$/.test(l.text)).length <= 32, 'at most 32 faded sightings');
+		for (const r of fleets(game).filter(x => x.side === PIRATES && inSight(game.names[x.at]))) {
 			check(r.kind === 2 && r.stops.length >= 1 && r.stops.length <= 3, 'pirate raids have 1-3 stops');
 			check(game.map.markers.some(m => m.system === game.names[r.at] && m.label.startsWith('Pirate raiders')), 'each raid has a marker');
 		}
@@ -312,7 +335,7 @@ test(DAYS + ' simulated days keep the invariants', { skip }, () => {
 		mod.on_day(other, other.today);
 		check(other.map.markers.length === 0 && other.data('state') === '', 'and stays clean');
 		mod.on_load(game);
-		check(game.labels.length === MINORS.length, 'reloading the first pilot reads its world again and redraws its map');
+		check(game.labels.filter(l => !/ ago$/.test(l.text)).length === MINORS.length, 'reloading the first pilot reads its world again and redraws its map');
 	}
 	{
 		game.setCond('diplomacy: force peace', 1);

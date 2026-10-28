@@ -43,8 +43,14 @@ function build() {
 	}
 }
 
+// Without dadoc the tests fail, loudly, unless DIPLOMACY_ALLOW_SKIP=1 says a
+// quiet skip is wanted (a machine without the Dado toolchain).
+const allowSkip = process.env.DIPLOMACY_ALLOW_SKIP === '1';
 export let Diplomacy = null, buildError = null;
-if (hasDadoc()) {
+if (!hasDadoc() && !allowSkip) {
+	buildError = new Error('dadoc was not found (put the Dado toolchain on PATH or set DADOC); set DIPLOMACY_ALLOW_SKIP=1 to skip the Diplomacy tests instead');
+	console.error('mods/diplomacy tests: ' + buildError.message);
+} else if (hasDadoc()) {
 	try {
 		build();
 		({ Diplomacy } = await import(join(SDK, 'dist/Diplomacy/scripts/diplomacy.js')));
@@ -52,7 +58,7 @@ if (hasDadoc()) {
 		buildError = e;
 	}
 }
-export const skip = !hasDadoc() ? 'no Dado toolchain' : (!Diplomacy && 'the mod did not build (see "the mod builds")');
+export const skip = buildError ? false : (!hasDadoc() ? 'no Dado toolchain (DIPLOMACY_ALLOW_SKIP=1)' : (!Diplomacy && 'the mod did not build (see "the mod builds")'));
 
 export const loadTestGalaxy = () => process.env.ES_DATA
 	? loadGalaxy(process.env.ES_DATA)
@@ -110,6 +116,8 @@ export function day(game, mod, dest) {
 		game.ships = [];
 		mod.on_day(game, game.today);
 	}
+	// A mod API 10 game asks for the state when it saves (on_save): here, every day.
+	if (game.has) mod.on_save(game);
 }
 
 export function state(game) {
@@ -125,7 +133,7 @@ export function wars(game) {
 
 export function fleets(game) {
 	const s = state(game);
-	return s ? s.fleets.map(f => ({ id: f[0], side: f[1], war: f[2], strength: f[3], size: f[4], kind: f[5], admiral: f[6], full: f[7], at: f[8], goal: f[9], home: f[10], target: f[11], siege: f[12], stops: [f[14], f[15], f[16]].filter(x => x >= 0), leg: f[17] })) : [];
+	return s ? s.fleets.map(f => ({ id: f[0], side: f[1], war: f[2], strength: f[3], size: f[4], kind: f[5], admiral: f[6], full: f[7], at: f[8], goal: f[9], home: f[10], target: f[11], siege: f[12], stops: [f[14], f[15], f[16]].filter(x => x >= 0), leg: f[17], squadron: f[21] || 0, order: f[22] || 0 })) : [];
 }
 
 // Systems each side holds in minor k.

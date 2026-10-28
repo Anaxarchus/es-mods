@@ -141,6 +141,13 @@ void sync(es.Game game):
             continue
         int left = int(float(sim_base[tag]) * now / base)
         if tag_slot[tag] > 0:
+            // Ships of this flotilla the player destroyed: its commander remembers.
+            int n = game.player_kills(tag)
+            if n > 0:
+                Flotilla x = world.fleet_by_id(tag_slot[tag])
+                if x.alive():
+                    sim.rivals.killed(x, n)
+                    changed = true
             sync_flotilla(game, tag, left)
         else:
             sync_garrison(game, tag, left)
@@ -159,7 +166,9 @@ void sync_flotilla(es.Game game, string tag, int left):
             game.message("The " + factions.adjective(x.side) + " flotilla in this system has been destroyed.")
         world.stat("destroyed in person", 1)
         sim_base.delete(tag)
+        sim.in_person = true
         sim.lost(game, x, game.day(), 0)
+        sim.in_person = false
         sim.tidy()
         redraw = true
 

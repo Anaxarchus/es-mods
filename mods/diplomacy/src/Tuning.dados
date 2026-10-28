@@ -136,6 +136,14 @@ int neglect_cap = 20
 int rebellion_unrest = 40
 int rebellion_divisor = 400
 int rebellion_cooldown = 600
+// And at most one rising against a side in rising_gap days (M2: no cascades).
+int rising_gap = 240
+// A major holding under rally_below percent of its default minors' systems
+// rallies: garrisons at rally_garrison percent, no risings, no opportunist wars on it.
+int rally_below = 60
+int rally_garrison = 150
+// A war on a side that rallies ends once it has run rally_peace_days, and its captures from that side count half.
+int rally_peace_days = 30
 // Weights (percent) for how a rebellion goes: separatist, or defection to a
 // bordering major (more if it is the minor's default parent, or already holds
 // part of it; less if it is at war twice already).
@@ -229,7 +237,7 @@ int merit_per_friendly_kill = 3
 // Daily salary by rank, Recruit to Admiral: a curve, not a straight line.
 // Commodore matches the 8,900 a day the Free Worlds pay at the end of their
 // campaign, the rank a campaign veteran joins them at.
-[]int salaries = [200, 600, 1800, 3600, 6000, 8900, 12000]
+[]int salaries = [200, 600, 1800, 3600, 6000, 8900, 12000, 15500, 19000]
 // The rank (5 Commodore) a pilot who finished the Free Worlds campaign holds
 // in the Free Worlds when they turn Diplomacy on.
 int veteran_rank = 5
@@ -316,4 +324,106 @@ int debug_raid_chance = 60
 int debug_credits = 100000000
 // Set while debug mode is on: message launches and sieges.
 bool verbose = false
+
+// ---- M2: command and consequence ----
+
+// The player's squadrons: how many a member commands at each rank (Recruit
+// to the highest), taken from their faction's flotilla places.
+[]int squadrons_by_rank = [0, 0, 0, 0, 0, 1, 2, 2, 3]
+// A squadron's strength: a medium flotilla's (scaled for ship quality), plus
+// one point per squadron_credits credits of the player's own fleet's value, at
+// most squadron_fleet_cap points; and squadron_presence percent while the
+// player is in its system.
+int squadron_credits = 50000
+int squadron_fleet_cap = 200
+int squadron_presence = 130
+// Losing a squadron costs this much merit.
+int squadron_loss_merit = 15
+int squadron_loss_standing = 5
+// No new squadron for squadron_cooldown days after one is lost.
+int squadron_cooldown = 30
+// A ship of the player's counts at squadron_value percent of a new one's price.
+int squadron_value = 50
+
+// Rivals: an enemy commander's history with the player grows by history_battle
+// per day of battle with the player's squadron or with the player there, and
+// by history_kill per ship of theirs the player destroys. Past rival_threshold
+// they become the player's rival (one at a time per side, at most max_rivals).
+int history_battle = 3
+int history_kill = 1
+int rival_threshold = 12
+int max_rivals = 2
+// Rival traits: grudge (attack on the player's squadron), learned tactics
+// (damage taken from it), veteran (attack), siege engineer (sieges), ambusher
+// (how much farther it chases the player's squadron).
+int grudge_bonus = 125
+int learned_tactics = 80
+int veteran_bonus = 115
+int siege_engineer_bonus = 135
+int ambusher_reach = 4
+int rival_reach = 6
+
+// Fog of war: enemy forces show within visibility_range jumps of the player's
+// faction's systems or flotillas (2 of the player's own system for a pilot
+// serving no one), or in systems scouted in the last scout_days days; a last
+// sighting is drawn as a faded label for sighting_days.
+int visibility_range = 1
+int scout_days = 10
+int sighting_days = 20
+
+// Supply: a flotilla within supply_free jumps of one of its side's depots (an
+// inhabited system it holds whose depot is not raided) fights at full
+// strength; each jump farther takes supply_per_jump percent, down to
+// supply_floor. A raided depot is out for depot_raid_days.
+int supply_free = 2
+int supply_per_jump = 8
+int supply_floor = 70
+int depot_raid_days = 20
+
+// Occupation: a capture adds capture_damage damage and occupation unrest
+// (occupation_unrest, or occupation_unrest_home in a system of the occupier's
+// own default minor). Unrest falls unrest_fall a day (tenths), damage
+// damage_fall; a garrison stands at 100 - unrest / 2 percent. Damage tiers
+// (every damage_tier points) raise the price of each damaged_goods commodity by
+// damage_price percent a tier, and trim shipyard and outfitter stock.
+int capture_damage = 30
+int occupation_unrest = 60
+int occupation_unrest_home = 25
+int unrest_fall = 5
+// A minor's unrest target rises by its systems' average occupation unrest / 10, at most this.
+int occupation_minor_cap = 4
+int damage_fall = 2
+int damage_tier = 30
+int damage_price = 12
+// Prices held back (a Corporations crisis) or moved by others are checked every resync_days.
+int resync_days = 5
+// (Mod API 10.) Munitions a damaged outfitter runs short of: damaged_outfit_count at tier 1, none from tier 2.
+[]string damaged_outfits = ["Meteor Missile", "Sidewinder Missile", "Javelin", "Heavy Rocket", "Torpedo"]
+int damaged_outfit_count = 10
+[]string damaged_goods = ["Food", "Medical", "Clothing"]
+// Jobs: suppressing (or backing) resistance moves unrest by resistance_effect,
+// refugees lower it by refugee_effect, reconstruction lowers damage by
+// rebuild_effect.
+int resistance_effect = 30
+int refugee_effect = 10
+int rebuild_effect = 25
+
+// The Corporations link (mod API 10's bus): a warship tender delivered to a
+// government sends its next flotilla out at tender_boost percent, at most once
+// in tender_gap days; a failed one sends its next flotilla out at
+// tender_penalty percent; a bankruptcy is a profiteering scandal
+// (scandal_unrest defeat points for each major at war).
+int tender_gap = 60
+int tender_boost = 125
+int tender_penalty = 75
+int scandal_unrest = 6
+// Corporations' crises: prices it raised stay its own this many days past the
+// crisis's end; at most reserved_cap (system, commodity) entries.
+int crisis_margin = 5
+// Corporations M3's shortfall (the share of a side's military shelves left
+// empty, 0-100) takes shortfall * shortfall_weight / 100 percent off the side's
+// new flotillas.
+int shortfall_weight = 40
+int reserved_cap = 120
+string corporations_plugin = "Corporations"
 

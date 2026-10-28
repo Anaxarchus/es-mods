@@ -31,8 +31,10 @@ Regions regions = Regions()
 // mode hands them over on a pilot that has not reached the war yet.
 []string free_worlds_territory = ["Gamma Corvi", "Spica", "Minkar", "Acrux", "Mimosa", "Kraz", "Izar", "Zeta Centauri", "Hadar", "Alkaid", "Zubeneschamali", "Kochab", "Ildaria", "Zubenelgenubi", "Sabik", "Unukalhai", "Kornephoros", "Sargas", "Lesath", "Aldhibain", "Dschubba", "Atria", "Alniyat", "Han", "Pherkad", "Yed Prior", "Beta Lupi", "Kappa Centauri"]
 // The ranks a member climbs, and the merit each needs.
-[]string ranks = ["Recruit", "Ensign", "Lieutenant", "Commander", "Captain", "Commodore", "Admiral"]
-[]int rank_merit = [0, 10, 25, 50, 100, 200, 400]
+[]string ranks = ["Recruit", "Ensign", "Lieutenant", "Commander", "Captain", "Commodore", "Admiral", "Fleet Admiral", "High Admiral"]
+[]int rank_merit = [0, 10, 25, 50, 100, 200, 400, 700, 1100]
+// The ranks above Admiral (M2), by faction: they command more squadrons.
+[][]string high_ranks = [[], ["Fleet Admiral", "Grand Admiral"], ["Vice Marshal", "Marshal of the Free Worlds"], ["Senior Director", "Executive Director"]]
 
 // Licenses a faction issues its members at a rank, kept after leaving, as
 // licenses are. Only the Republic issues any: its Navy licenses.
@@ -173,7 +175,13 @@ bool is_capital(string system):
             return true
     return false
 
-// The rank merit earns: 0 (Recruit) .. 6 (Admiral).
+// A rank's name in faction f's service.
+string rank_name(int f, int r):
+    if r >= 7 && f >= 1 && f <= 3 && r - 7 < high_ranks[f].len():
+        return high_ranks[f][r - 7]
+    return ranks[r] if r >= 0 && r < ranks.len() else ""
+
+// The rank merit earns: 0 (Recruit) .. 8.
 int rank_of(int merit):
     int r = 0
     for k in 0..<rank_merit.len():

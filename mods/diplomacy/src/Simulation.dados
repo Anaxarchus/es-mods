@@ -23,6 +23,27 @@ Admirals admirals = Admirals()
 Quality quality = Quality()
 Politics politics = Politics()
 Chronicle chronicle = Chronicle()
+Rivals rivals = Rivals()
+
+// The player's faction and how many flotilla places its squadrons hold back
+// from the faction's own launches (set by the mod each day).
+int player = 0
+int reserved = 0
+// Set by Battlefield while a flotilla is destroyed in front of the player.
+bool in_person = false
+// Each side's jumps from its depots, worked out once a day (supply).
+{int: []int} depot_dist = {}
+int depot_version = -1
+int depot_down_sig = -1
+int depot_day = -1
+
+void wire_rivals(Rivals rv):
+    rivals = rv
+
+Intel intel = Intel()
+
+void wire_intel(Intel i):
+    intel = i
 
 void wire(Tuning t, Factions f, Galaxy g, World w, Rng r, Garrisons gs, Admirals a, Quality q, Politics p, Chronicle c):
     tune = t
@@ -64,6 +85,15 @@ int cap(int side):
     return tune.max_flotillas
 
 // Room for another: flotillas going home to disband do not hold a place.
+// Room for one of the faction's own flotillas: its squadrons' places held back.
+bool ai_room(int side):
+    int n = 0
+    for x in world.fleets:
+        if x.alive() && x.side == side && x.kind != 3 && x.squadron == 0:
+            n += 1
+    int keep = reserved if side == player else 0
+    return n < cap(side) - keep
+
 bool has_room(int side):
     int n = 0
     for x in world.fleets:
@@ -163,7 +193,53 @@ float quality_of(es.Game game, Flotilla x):
     return quality.side_quality(game, factions.small_fleets[st], factions.large_fleets[st])
 
 float score(es.Game game, Flotilla x):
-    return float(x.strength) * quality_of(game, x) * float(admirals.attack(x.side, x.admiral)) / 100.0
+    float s = float(x.strength) * quality_of(game, x) * float(admirals.attack(x.side, x.admiral)) / 100.0
+    // Supply: away from its depots a flotilla fights at less than full strength.
+    s = s * float(x.supply) / 100.0
+    // The player with their squadron.
+    if x.squadron == 1 && galaxy.name(x.at) == game.here():
+        s = s * float(tune.squadron_presence) / 100.0
+    return s
+
+// ---- Supply ----
+
+// Jumps from side s's depots (the inhabited systems it holds whose depot is
+// not raided) to every system, once a day.
+[]int depots(es.Game game, int s, int day):
+    // Worked out again when an owner changes or a raided depot goes down or back up.
+    int down = 0
+    for r in world.depots_down:
+        if r[1] >= day:
+            down = down * 7 + r[0] + 1
+    if galaxy.owner_version != depot_version || down != depot_down_sig || day < depot_day:
+        depot_dist = {}
+        depot_version = galaxy.owner_version
+        depot_down_sig = down
+    depot_day = day
+    if depot_dist.has(s):
+        return depot_dist[s]
+    []int src = []
+    for i in galaxy.human:
+        if galaxy.owner(i) == s && galaxy.inhabited(game, i) && !world.depot_down(i, day):
+            src.append(i)
+    []int d = galaxy.distances_from(src)
+    depot_dist[s] = d
+    return d
+
+// Each flotilla's supply today: full within tune.supply_free jumps of a depot,
+// less for each jump farther (pirates live off their raids).
+void supply(es.Game game, int day):
+    for x in world.fleets:
+        if !x.alive() || x.side == factions.pirates():
+            x.supply = 100
+            continue
+        int d = depots(game, x.side, day)[x.at]
+        int v = 100
+        if d < 0:
+            v = tune.supply_floor
+        else if d > tune.supply_free:
+            v = 100 - (d - tune.supply_free) * tune.supply_per_jump
+        x.supply = v if v > tune.supply_floor else tune.supply_floor
 
 bool roll(float a, float b):
     if a + b <= 0.0:
@@ -179,11 +255,19 @@ int full_strength(es.Game game, int i):
     int k = world.capture_index(i)
     if k >= 0 && world.day - world.captures[k][3] < tune.consolidation_days && world.captures[k][2] == galaxy.owner(i):
         full = full * tune.consolidation / 100
-    return full
+    // A side down to a fraction of its home rallies (Galaxy.rallying).
+    if galaxy.rallying(galaxy.owner(i)):
+        full = full * tune.rally_garrison / 100
+    // Occupation unrest weakens it (Occupation).
+    int o = world.occupation_index(i)
+    if o >= 0:
+        full = full * (100 - world.occupation[o][1] / 20) / 100
+    return full if full > 1 else 1
 
 // ---- The day ----
 
 void day(es.Game game, int day):
+    supply(game, day)
     // The wars take turns launching first, so a side's flotillas are shared
     // between its wars (see launch).
     int n = world.wars.len()
@@ -282,7 +366,7 @@ void launch(es.Game game, int day, War w):
     for s in [w.a, w.b]:
         // A war the side has no flotilla in yet launches twice as readily.
         int chance = tune.launch_chance * 2 if count_war(s, w.id) == 0 else tune.launch_chance
-        if count_war(s, w.id) >= war_cap(s) || !has_room(s) || !rng.chance(chance):
+        if count_war(s, w.id) >= war_cap(s) || !ai_room(s) || !rng.chance(chance):
             continue
         []int t = targets(w, s)
         int goal = -1
@@ -302,7 +386,22 @@ void launch(es.Game game, int day, War w):
         if start < 0 || galaxy.jumps(start, goal) < 0:
             continue
         int size = size_roll(tune.small_odds, tune.medium_odds)
-        Flotilla x = commission(s, w.id, 0, size, flotilla_strength(game, s, size), start, day)
+        int strength = flotilla_strength(game, s, size)
+        // A warship tender delivered to the government (Corporations): this
+        // launch only, at tender_boost percent.
+        if world.boost[s] != 0:
+            strength = strength * tune.tender_boost / 100
+            world.boost[s] = 0
+            world.stat("tender boosts", 1)
+        if world.penalty[s] != 0:
+            strength = strength * tune.tender_penalty / 100
+            world.penalty[s] = 0
+            world.stat("tender penalties", 1)
+        // Corporations' shortfall of warships on the side's military shelves.
+        int short = world.shortfall[s] if s < world.shortfall.len() else 0
+        if short > 0:
+            strength = strength * (100 - short * tune.shortfall_weight / 100) / 100
+        Flotilla x = commission(s, w.id, 0, size, strength, start, day)
         x.goal = goal
         world.stat("launches", 1)
         if tune.verbose:
@@ -432,6 +531,9 @@ void move(es.Game game, int day):
     for x in world.fleets:
         if !x.alive():
             continue
+        if x.squadron == 1:
+            move_squadron(game, x)
+            continue
         // A cautious commander, badly hurt, turns for home.
         if x.side != factions.pirates() && x.kind != 3 && admirals.personality(x.side, x.admiral) == 2 && x.strength * 100 < x.full * tune.cautious_retreat:
             if besieging(x):
@@ -446,6 +548,40 @@ void move(es.Game game, int day):
             move_raid(x)
         else:
             step_toward(x, x.home)
+
+// A squadron follows the player's order; one carried out (the system taken,
+// the siege lifted, the quarry gone) leaves it holding where it is.
+void move_squadron(es.Game game, Flotilla x):
+    War w = war_of(x)
+    bool done = false
+    if x.order == 1 && !can_take(w, x.side, x.goal):
+        done = true
+    else if x.order == 2:
+        Flotilla y = by_id(x.target)
+        if !y.alive() || !besieging(y) || y.goal != x.goal:
+            if x.at == x.goal || !y.alive():
+                done = true
+    else if x.order == 3:
+        // The quarry is followed while in sight; out of sight the squadron
+        // makes for where it was last seen, and gives up there.
+        Flotilla y = by_id(x.target)
+        if !y.alive() || !hostile(x.side, y.side):
+            done = true
+        else if intel.sees_force(game, x.side, y, world.day):
+            x.goal = y.at
+        else if x.at == x.goal:
+            done = true
+    if done:
+        x.order = 4
+        x.target = 0
+        x.goal = x.at
+        if x.side == player:
+            game.message("Your squadron under " + led_by(x) + " has carried out its orders at " + galaxy.name(x.at) + ", and awaits new ones (War Room, Command).")
+    if x.order == 0 || x.order == 4:
+        x.goal = x.goal if x.goal >= 0 else x.at
+    if x.goal >= 0 && x.goal != x.at:
+        x.at = galaxy.next_hop(x.at, x.goal)
+        x.siege = 0
 
 void step_toward(Flotilla x, int dest):
     if dest >= 0 && dest != x.at:
@@ -502,6 +638,15 @@ void move_war(es.Game game, Flotilla x):
         chase = y.id
         chase_at = y.at
         cd = dist[y.at]
+    // A rival goes after the player's squadron, farther still if an ambusher.
+    if admirals.is_rival(x.side, x.admiral):
+        int far = tune.rival_reach + (tune.ambusher_reach if admirals.trait(x.side, x.admiral) == 5 else 0)
+        for y in world.fleets:
+            if y.alive() && y.squadron == 1 && y.side == e && dist[y.at] >= 0 && dist[y.at] <= far:
+                chase = y.id
+                chase_at = y.at
+                cd = 0
+                break
     int dest = x.goal
     if chase != 0 && (cd < d_goal + reach_more || d_goal < 0):
         if x.target != chase:
@@ -571,16 +716,32 @@ void fight(es.Game game, int day, int here, int a, int b):
     float sb = 0.0
     int pa = 0
     int pb = 0
+    bool squad_a = false
+    bool squad_b = false
+    for y in world.fleets:
+        if y.alive() && y.at == here && y.squadron == 1:
+            squad_a = squad_a || y.side == a
+            squad_b = squad_b || y.side == b
+    bool player_here = galaxy.name(here) == game.here()
     for y in world.fleets:
         if y.alive() && y.at == here:
+            // A rival with a grudge hits the player's squadron harder.
+            float sc = score(game, y)
+            bool facing = (y.side == a && squad_b) || (y.side == b && squad_a)
+            if facing && admirals.is_rival(y.side, y.admiral) && admirals.trait(y.side, y.admiral) == 1:
+                sc = sc * float(tune.grudge_bonus) / 100.0
             if y.side == a:
-                sa += score(game, y)
+                sa += sc
                 pa += y.strength
             else if y.side == b:
-                sb += score(game, y)
+                sb += sc
                 pb += y.strength
     if pa == 0 || pb == 0:
         return
+    // Commanders who meet the player (their squadron, or the player there) remember it.
+    for y in world.fleets:
+        if y.alive() && y.at == here && ((y.side == a && (squad_b || (player_here && player == b))) || (y.side == b && (squad_a || (player_here && player == a)))):
+            rivals.met(y)
     bool a_wins = roll(sa, sb)
     float loss_a = sb * float(tune.battle_rate) / 100.0 * float(tune.win_losses if a_wins else tune.lose_losses) / 100.0 * rng.factor(90, 110)
     float loss_b = sa * float(tune.battle_rate) / 100.0 * float(tune.lose_losses if a_wins else tune.win_losses) / 100.0 * rng.factor(90, 110)
@@ -590,7 +751,11 @@ void fight(es.Game game, int day, int here, int a, int b):
             continue
         float share = loss_a * float(y.strength) / float(pa) if y.side == a else loss_b * float(y.strength) / float(pb)
         bool sieging = besieging(y)
-        damage(y, int(share * float(admirals.damage_taken(y.side, y.admiral)) / 100.0))
+        int taken = admirals.damage_taken(y.side, y.admiral)
+        // A rival who learned the player's tactics takes less from their squadron.
+        if ((y.side == a && squad_b) || (y.side == b && squad_a)) && admirals.is_rival(y.side, y.admiral) && admirals.trait(y.side, y.admiral) == 2:
+            taken = taken * tune.learned_tactics / 100
+        damage(y, int(share * float(taken) / 100.0))
         if !y.alive():
             if sieging:
                 politics_siege_broken(game, y, day)
@@ -609,6 +774,7 @@ void fight(es.Game game, int day, int here, int a, int b):
             for y in world.fleets:
                 if y.alive() && y.at == here && y.side == winner:
                     admirals.add_win(y.side, y.admiral)
+                    rivals.promoted(game, y.side, y.admiral, day)
     for y in fallen:
         lost(game, y, day, a if y.side == b else b)
     if galaxy.name(here) == game.here():
@@ -637,7 +803,26 @@ void politics_siege_broken(es.Game game, Flotilla x, int day):
 // fallen with it; in a war, the other side scores and its own side tires.
 void lost(es.Game game, Flotilla x, int day, int by):
     string who = led_by(x)
-    bool died = x.admiral != 0 && admirals.fallen(x.side, x.admiral)
+    bool rival = x.admiral != 0 && admirals.is_rival(x.side, x.admiral)
+    bool died = false
+    if rival && in_person:
+        // A rival destroyed in front of the player does not get away.
+        admirals.kill(x.side, x.admiral)
+        died = true
+    else:
+        died = x.admiral != 0 && admirals.fallen(x.side, x.admiral)
+    if died:
+        rivals.fell(game, who, x.side, rival, in_person, day)
+    if x.squadron == 1:
+        // The player's squadron: merit and standing lost.
+        int merit = game.condition("diplomacy: merit") - tune.squadron_loss_merit
+        game.set_condition("diplomacy: merit", merit if merit > 0 else 0)
+        world.stat("squadrons lost", 1)
+        world.squadron_lost = day
+        string gov = factions.governments[x.side] if x.side <= 3 else ""
+        if gov != "":
+            game.set_reputation(gov, game.reputation(gov) - float(tune.squadron_loss_standing))
+        chronicle.add(game, day, "Your squadron under " + who + " is destroyed at " + galaxy.name(x.at) + "; " + factions.name(x.side) + " hold you to account (" + string(tune.squadron_loss_merit) + " merit, and standing).", true, false)
     if x.side == factions.pirates():
         world.stat("raids destroyed", 1)
     else:
@@ -704,6 +889,7 @@ void capture(es.Game game, Flotilla x, War w, int day, int siege_days):
     world.stat("siege days", siege_days)
     politics.capture(game, i, x.side, w, day, full_strength(game, i), siege_days)
     admirals.add_win(x.side, x.admiral)
+    rivals.promoted(game, x.side, x.admiral, day)
     x.siege = 0
 
 // ---- Raids at their stops ----
@@ -756,7 +942,7 @@ void alert(es.Game game, int day, Flotilla raid, int stop, int f):
         if y.alive() && y.side == f && y.kind == 1 && y.target == raid.id:
             return
     int chance = tune.relief_chance_war if world.at_war(f) else tune.relief_chance
-    if !rng.chance(chance) || !has_room(f):
+    if !rng.chance(chance) || !ai_room(f):
         return
     int start = nearest_owned(f, stop, stop)
     if start < 0:

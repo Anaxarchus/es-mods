@@ -1,0 +1,26 @@
+# The Racing League end to end, run by mods/racing/test/ingame/run.sh with
+# The Racing League (built with the mod SDK), the Dado loader (0.3.0, mod
+# API 11) and the real game. A pilot landed on Earth departs (a day passes:
+# the mod makes its world and plays the day), lands again (the mod saves
+# its world with the pilot), departs and lands once more.
+
+test "Racing League E2E"
+	status active
+	description "The Racing League loads, plays its days and keeps its world with the pilot."
+	sequence
+		inject "Three Earthly Barges Save"
+		call "Load First Savegame"
+		call "Depart"
+		navigate
+			"travel destination" Earth
+		call "Land"
+		assert
+			"flagship landed" > 0
+			"racing: season" == 1
+			"racing: league" == 0
+		call "Depart"
+		navigate
+			"travel destination" Earth
+		call "Land"
+		assert
+			"racing: season" == 1

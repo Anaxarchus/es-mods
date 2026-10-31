@@ -1,0 +1,38 @@
+class Currents
+
+// The weekly current through the Shoal: week = day / 7, current = hash(week) % 4.
+// The hash is a fixed integer mix (every product stays below 2^53, so it is
+// exact in JavaScript), so a week's current is the same on every game.
+
+Tuning tune = Tuning()
+
+void wire(Tuning t):
+    tune = t
+
+int week(int day):
+    return (day if day > 0 else 0) / 7
+
+int hash(int week):
+    int h = (week % 1000003 * 7919 + 104729) % 2147483647
+    h = h * 48271 % 2147483647
+    h = h * 48271 % 2147483647
+    return h / 7
+
+// The current, 0 ..< 4, for a day.
+int of(int day):
+    int n = tune.current_names.len()
+    int c = hash(week(day)) % n
+    return c if c >= 0 else 0
+
+string name(int current):
+    return tune.current_names[current] if current >= 0 && current < tune.current_names.len() else ""
+
+float mult(int current):
+    return tune.current_mult[current] if current >= 0 && current < tune.current_mult.len() else 1.0
+
+string text(int current):
+    return tune.current_text[current] if current >= 0 && current < tune.current_text.len() else ""
+
+// The heat at which the Undertow wakes under this current.
+int boss_heat(int current):
+    return tune.calm_boss_heat if current == 3 else tune.boss_heat

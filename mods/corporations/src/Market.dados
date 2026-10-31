@@ -9,12 +9,14 @@ import "imports:sdk/es"
 
 // ---- Tuning ----
 // A unit of work: what a client expects to pay for it, and what it costs a
-// company of average efficiency to do.
-float UNIT = 10000.0
-float VARIABLE = 7000.0
+// company of average efficiency to do. (M4: 25 times what they were, so the
+// established companies are worth about a billion: SCALE.)
+float SCALE = 25.0
+float UNIT = 250000.0
+float VARIABLE = 175000.0
 // A unit of capacity (work a day): its upkeep a day, and its book value.
-float UPKEEP = 600.0
-float CAPITAL = 1500000.0
+float UPKEEP = 11000.0
+float CAPITAL = 37500000.0
 // New contracts a day, in Normal times.
 // (M2: 5.2 before, with loads of 0.5 to 3; fewer, larger contracts keep the
 // saved state small now that supplier sectors win their work.)
@@ -42,6 +44,9 @@ float MERGER_MARGIN = 0.05
 // A company worth more than this share of the whole exchange is reviewed too.
 float VALUE_SHARE = 0.15
 float CANON_REVIEW_SHARE = 0.5
+// (M4) A canonical company is never broken up for its value, but grows and
+// buys no further once it is worth this share of the exchange.
+float CANON_VALUE_CAP = 0.15
 int REVIEW_DAYS = 60
 // The player's broker: a fee, and a cap on the share of a company they hold.
 float FEE = 0.01
@@ -95,14 +100,15 @@ float BID_FAIL_SALE = 45.0
 // Shipyard restocks: what the owner of a hull's design earns on each one
 // delivered, as a share of its full new price (0.12 before M1); the work a day
 // one hull of each class (Hulls) takes in the owner's yards while it is built.
-float RESTOCK_MARGIN = 0.01
+// (M4: 0.01 before, when a unit of work paid a 25th of what it does now.)
+float RESTOCK_MARGIN = 0.02
 []float restock_load = [0.15, 0.1, 0.3, 0.8]
 // NPC hull sales (C3): the chance a day that one shelf with stock sells a hull
 // in a quiet region (loss index 1), by class; the index multiplies it. The
 // owner of the design earns ROYALTY of the price on each (military hulls: the
 // builder of the model's last tender).
 []float npc_rate = [0.0045, 0.004, 0.0025, 0.0012]
-float ROYALTY = 0.004
+float ROYALTY = 0.008
 // Military tenders (C6): a tender's work is TENDER_LOAD times a restock's for
 // the same hulls; the client asks for delivery in TENDER_DAYS times a
 // restock's base days; at most TENDER_MAX hulls a tender. Bids weigh price
@@ -121,6 +127,47 @@ int URGENT_DAYS = 30
 int NEWS_ACTIVE = 8
 int NEWS_DAYS = 20
 int DYNAMIC_EVERY = 10
+// ---- M4: the economy ----
+// Each sector's base demand (running load) grows ECON_GROWTH a year from
+// the day it was set (econ_day). At setup it is DEMAND_SHARE of the sector's
+// effective capacity.
+float ECON_GROWTH = 0.035
+float DEMAND_SHARE = 0.62
+// Each sector's share against DEMAND_SHARE: shipbuilders' restocks and
+// tenders come on top of their base demand, so theirs is less; consumer goods
+// have no derived demand, so theirs is more.
+[]float demand_shares = [0.72, 1.0, 1.0, 1.0, 1.12, 1.0, 1.0, 1.0]
+// Contracts are sized against an anchor company of the sector (drawn by
+// effective capacity ^ ANCHOR_POWER): ANCHOR_LO to ANCHOR_HI of its
+// effective capacity; their days DAYS_LO to DAYS_HI.
+float ANCHOR_POWER = 0.6
+float ANCHOR_LO = 0.08
+float ANCHOR_HI = 0.4
+int DAYS_LO = 10
+int DAYS_HI = 60
+// A company does not bid for work under this share of its effective capacity.
+float MIN_SHARE = 0.02
+// Bids blend the bidder's own cost with the sector's reference cost (BLEND
+// of its own).
+float BLEND = 0.5
+// The margin a bid starts from (M4: 0.06 before), and the share of a running
+// subcontract's budget its shipyard saves.
+float BASE_MARGIN = 0.13
+// Fair value: the price-earnings multiple, the blue-chip premium, and how
+// growth and a technological edge move it.
+float PE = 12.0
+float BLUE_CHIP = 1.1
+float GROWTH_PE = 0.6
+float EDGE = 2.5
+// The share of R&D spending the market adds back to earnings.
+float RD_BACK = 0.6
+// Smaller companies' prices are more volatile: up to SMALL_SIGMA more below 100M.
+float SMALL_SIGMA = 0.8
+// What a unit of effective capacity earns a day, about, for a new company's
+// first reports (tools/growth.mjs measures it).
+float SEED_EARNINGS = 13000.0
+// At most this many companies listed (the saved state's size).
+int MAX_LISTED = 48
 
 Rng rng = Rng()
 Names names = Names()
@@ -143,6 +190,13 @@ Tips tips_desk = Tips()
 Sanctions sanctions = Sanctions()
 Charter charter = Charter()
 Refits refits = Refits()
+// (M4) Technology and corporate finance.
+Research research = Research()
+Capital capital = Capital()
+Fleets fleets = Fleets()
+// (M4) Each sector's base demand (running load), and the day it was set.
+[]float demand_base = []
+int econ_day = 0
 
 string world = ""
 int day = 0
@@ -265,8 +319,21 @@ int next_covert = 1
 bool api_trade = false
 bool timing = false
 bool notify = false
-// (M3) Executives out of a job, "name:trait:last company", saved as "a|".
+// (M3) Executives out of a job, "name:trait:last company", as saves from
+// before 0.4 have them ("a|"); read once into the pool (Executives.migrate).
 []string executives = []
+// (0.4) The chiefs' pool (Executives), saved as "i|" lines; by id; the next
+// id; their own dice (so the pool does not move the market's); an offer for
+// the player's chief: the chief, the company offering, the salary, the last
+// day to match it (offer_chief 0: none). Saved in "I|".
+[]Chief chiefs = []
+{int: Chief} chief_by_id = {}
+int next_chief = 1
+Rng chief_rng = Rng()
+int offer_chief = 0
+int offer_from = 0
+float offer_salary = 0.0
+int offer_until = 0
 // The regulator's attention in the player's name (Board), 0-100; buyouts
 // whose target's holder voted for them (Board.demand, sell), by target id.
 int scrutiny = 0
@@ -317,33 +384,66 @@ void setup(es.Game game, Galaxy galaxy, int today):
     day = today
     cycle_since = today
     last_listing = today
+    // (0.4) The chiefs' pool first: every company hires from it.
+    chief_rng.seed(today * 104729 + 977)
+    execs.seed_pool(self, today)
     for i in 0..<names.canon_names.len():
         string home = names.canon_homes[i]
         Company c = add_company(names.canon_names[i], true, names.canon_sectors[i], home, galaxy.system_of(game, home), names.canon_capacity[i], today)
-        c.efficiency = rng.between(0.88, 1.0)
+        c.efficiency = rng.between(0.97, 1.03)
         c.reliability = rng.between(0.86, 0.95)
         execs.appoint(self, c, 0, -1)
         c.ceo_since = today
+        research.seed(self, c, true)
         seed_finances(c)
     for s in 0..<names.invented_start.len():
         for k in 0..<names.invented_start[s]:
-            Company c = invent_company(game, galaxy, s, rng.between(3.0, 8.0), today)
+            Company c = invent_company(game, galaxy, s, tier_capacity(), today)
+            research.seed(self, c, false)
             seed_finances(c)
+    set_demand(today)
     say(today, "The exchange opens with " + string(listed_count()) + " listed companies.")
+
+// (M4) A newcomer's size: about 1M, 10M or 100M of yards and cash.
+float tier_capacity():
+    float r = rng.unit()
+    float value = 1000000.0 if r < 0.3 else (10000000.0 if r < 0.72 else 100000000.0)
+    return value * rng.between(0.6, 1.6) / (CAPITAL * 1.2)
 
 // A new company's books: some cash, a little debt, and four reports of about
 // what a company its size earns, so its first price is a fair one.
 void seed_finances(Company c):
     c.cash = c.capacity * CAPITAL * rng.between(0.15, 0.3)
     c.debt = c.capacity * CAPITAL * rng.between(0.05, 0.2)
-    c.shares = shares_for(c.capacity)
+    c.shares = shares_for(c.capacity * rng.between(0.5, 2.0))
     for q in 0..<4:
-        c.earnings.append(c.capacity * 30.0 * 380.0 * rng.between(0.6, 1.3))
+        c.earnings.append(eff(c) * 30.0 * SEED_EARNINGS * rng.between(0.7, 1.3) * edge(c))
+    c.cap_mark = eff(c)
+    rate_day = -1
     c.price = fair(c)
 
+// (M4: 100,000 a unit of capacity before, when a unit was worth a 25th as much.)
 int shares_for(float capacity):
-    int n = globalThis.Math.round(capacity * 100000.0)
-    return n
+    int n = globalThis.Math.round(capacity * 2000000.0)
+    return n if n > 10000 else 10000
+
+// (M4) The work a company's yards carry: its capacity times its scale.
+float eff(Company c):
+    return c.capacity * research.scale_factor(c)
+
+// (M4) Each sector's base demand, from its effective capacity now.
+void set_demand(int d):
+    demand_base = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    for c in companies:
+        if c.listed():
+            demand_base[c.sector] = demand_base[c.sector] + eff(c) * DEMAND_SHARE * demand_shares[c.sector]
+    econ_day = d
+
+// The economy's size against the day demand was set: ECON_GROWTH a year.
+float economy(int d):
+    float years = float(d - econ_day) / 365.0
+    float g = globalThis.Math.pow(1.0 + ECON_GROWTH, years)
+    return g
 
 Company add_company(string name, bool canon, int sector, string home, string system, float capacity, int today):
     Company c = Company()
@@ -368,7 +468,7 @@ Company add_company(string name, bool canon, int sector, string home, string sys
 Company invent_company(es.Game game, Galaxy galaxy, int sector, float capacity, int today):
     string home = galaxy.planets[rng.range(0, galaxy.planets.len() - 1)] if galaxy.planets.len() > 0 else "Earth"
     Company c = add_company(names.invent(rng, sector, used), false, sector, home, galaxy.system_of(game, home), capacity, today)
-    c.efficiency = rng.between(0.85, 1.18)
+    c.efficiency = rng.between(0.95, 1.08)
     c.reliability = rng.between(0.7, 0.86)
     execs.appoint(self, c, 0, -1)
     c.ceo_since = today
@@ -426,6 +526,9 @@ void step(es.Game game, Galaxy galaxy, int d):
     tips_desk.daily(game, self, d)
     sanctions.daily(game, galaxy, self, d)
     charter.daily(game, self, d)
+    // (M4) The labs; security fleets and their strikes on pirates.
+    research.daily(game, self, d)
+    fleets.daily(game, galaxy, self, d)
     section(game, "market")
     // Shipyards gain and lose listings through events (Diplomacy adds the Navy
     // shipyard to Luna; Geminus is cleared and rebuilt): every 30 days every
@@ -682,24 +785,74 @@ void issue_contracts(es.Game game, Galaxy galaxy, int d):
     if galaxy.served.len() == 0:
         return
     read_clients(game, galaxy)
-    float rate = CONTRACTS_A_DAY * demand_by_cycle[cycle]
-    int n = int(rate)
-    if rng.unit() < rate - float(n):
-        n += 1
-    for i in 0..<n:
-        issue_one(game, galaxy, d)
+    if demand_base.len() != 8:
+        set_demand(d)
+    // (M4) Each sector's demand today (running load: the economy's size, the
+    // cycle, wars and crises) over the load-days a contract carries: so many
+    // contracts, each sized against an anchor company of the sector.
+    float econ = economy(d) * demand_by_cycle[cycle]
+    float days = float(DAYS_LO + DAYS_HI) / 2.0
+    for sector in 0..<8:
+        float want = demand_base[sector] * econ * sector_boost[sector] * war_factor(sector)
+        float ml = mean_load(sector)
+        if want <= 0.0 || ml <= 0.0:
+            continue
+        for n in 0..<draws(want / (ml * days)):
+            issue_one(game, galaxy, sector, d)
 
-void issue_one(es.Game game, Galaxy galaxy, int d):
-    // Wars raise demand for ships, outfits and security; a crisis in a sector
-    // (M2) raises demand for its rivals' work.
-    []float weights = sector_weight.copy()
-    for i in 0..<8:
-        weights[i] = weights[i] * sector_boost[i]
-    if at_war.len() > 0:
-        weights[0] = weights[0] * 1.6
-        weights[1] = weights[1] * 1.6
-        weights[7] = weights[7] * 2.0
-    int sector = pick(weights)
+// Wars raise demand for ships, outfits and security.
+float war_factor(int sector):
+    if at_war.len() == 0:
+        return 1.0
+    if sector == 0 || sector == 1:
+        return 1.6
+    return 2.0 if sector == 7 else 1.0
+
+// (M4) The listed companies of a sector that can take work (worked out once
+// a day: worker_day).
+[][]Company worker_lists = []
+int worker_day = -1
+
+[]Company workers(int sector):
+    if worker_day != today || worker_lists.len() != 8:
+        worker_day = today
+        worker_lists = [[], [], [], [], [], [], [], []]
+        for c in companies:
+            if c.listed() && c.capacity > 0.0 && c.system != "":
+                worker_lists[c.sector].append(c)
+    return worker_lists[sector]
+
+// The load a sector's contract carries on average: anchors are drawn evenly,
+// so each company is offered work in proportion to its size.
+float mean_load(int sector):
+    float sum = 0.0
+    int n = 0
+    for c in workers(sector):
+        sum += eff(c)
+        n += 1
+    return sum / float(n) * (ANCHOR_LO + ANCHOR_HI) / 2.0 if n > 0 else 0.0
+
+Company anchor(int sector):
+    []Company pool = workers(sector)
+    if pool.len() == 0:
+        return Company()
+    Company a = pool[rng.range(0, pool.len() - 1)]
+    // A company with its yards full is passed over once: clients go where
+    // there is room (most of the time).
+    if a.load > eff(a) * 0.95:
+        a = pool[rng.range(0, pool.len() - 1)]
+    // (The day's list: a company gone since this morning anchors nothing.)
+    return a if a.listed() && a.capacity > 0.0 else Company()
+
+// A contract's load against its anchor.
+float anchored_load(Company a):
+    float l = eff(a) * rng.between(ANCHOR_LO, ANCHOR_HI)
+    return l if l > 0.0005 else 0.0005
+
+void issue_one(es.Game game, Galaxy galaxy, int sector, int d):
+    Company a = anchor(sector)
+    if a.id == 0:
+        return
     Contract k = Contract()
     k.id = next_contract
     next_contract += 1
@@ -710,20 +863,23 @@ void issue_one(es.Game game, Galaxy galaxy, int d):
     if government:
         int g = pick_power()
         []string held = client_systems[client_govs[g]]
+        // (M4) One of its systems the anchor reaches, if any.
+        []string near = held.filter(bool(string x): return galaxy.jumps(a.system, x) >= 0 && galaxy.jumps(a.system, x) <= reach(a))
+        []string from = near if near.len() > 0 else held
         k.kind = k.GOVERNMENT
         k.client = client_govs[g]
-        k.system = held[rng.range(0, held.len() - 1)]
+        k.system = from[rng.range(0, from.len() - 1)]
     if !government:
         // (M2) Most planets' contracts go to planets near a company of the
         // sector (LOCAL_SHARE), so fewer lapse for want of a bidder in reach.
-        string planet = planet_near(game, galaxy, sector) if rng.chance(LOCAL_SHARE * 100.0) else ""
+        string planet = planet_by(galaxy, a) if rng.chance(LOCAL_SHARE * 100.0) else ""
         if planet == "":
             planet = galaxy.planets[rng.range(0, galaxy.planets.len() - 1)]
         k.kind = k.PLANET
         k.client = game.planet_name(planet)
         k.system = galaxy.system_of(game, planet)
-    k.load = rng.between(0.7, 4.3) * (1.2 if sector == 0 else 1.0)
-    k.days = rng.range(10, 60)
+    k.load = anchored_load(a)
+    k.days = rng.range(DAYS_LO, DAYS_HI)
     k.budget = k.load * float(k.days) * UNIT * budget_by_cycle[cycle] * rng.between(0.95, 1.35) * sector_boost[sector]
     if k.kind == k.GOVERNMENT && at_war.contains(k.client):
         k.budget = k.budget * 1.2
@@ -769,7 +925,7 @@ int pick([]float weights):
     return weights.len() - 1
 
 int reach(Company c):
-    int r = 4 + int(c.capacity / 5.0)
+    int r = 4 + int(eff(c) / 5.0)
     return r if r < 9 else 9
 
 void award_contracts(es.Game game, Galaxy galaxy, int d):
@@ -784,6 +940,10 @@ void award_contracts(es.Game game, Galaxy galaxy, int d):
 // (Before M1 canonical companies bid 2% dearer; that, with restock work not
 // counted as busy, starved them.)
 void award(es.Game game, Galaxy galaxy, Contract k, int d):
+    // (M4) A strike on pirates: security companies' fleets (Fleets).
+    if k.kind == fleets.OPERATION:
+        fleets.award(game, galaxy, self, k, d)
+        return
     bool tender = k.kind == k.TENDER
     Company best = Company()
     Company second = Company()
@@ -799,7 +959,11 @@ void award(es.Game game, Galaxy galaxy, Contract k, int d):
             continue
         if k.kind == k.COMPANY && k.client == string(c.id):
             continue
-        if c.load + k.load > c.capacity:
+        float room = eff(c)
+        if c.load + k.load > room:
+            continue
+        // (M4) Work too small to bother with.
+        if !tender && k.load < room * MIN_SHARE:
             continue
         // (M3) A government at war deals with no company its enemy holds the home of.
         if (k.kind == k.TENDER || k.kind == k.GOVERNMENT) && sanctions.embargoed(self, c, k.client):
@@ -808,15 +972,15 @@ void award(es.Game game, Galaxy galaxy, Contract k, int d):
             int j = galaxy.jumps(c.system, k.system)
             if j < 0 || j > reach(c) + (REISSUE_REACH if k.reissued else 0):
                 continue
-        float est = k.load * float(k.days) * VARIABLE * c.efficiency
-        float margin = 0.06 + 0.28 * (c.load / c.capacity) + rng.between(-0.04, 0.04) + execs.margin[c.trait] + bias_margin(c)
+        float est = k.load * float(k.days) * VARIABLE * research.cost_factor(c)
+        float margin = BASE_MARGIN + 0.28 * (c.load / room) + rng.between(-0.04, 0.04) + execs.margin_of(self, c) + bias_margin(c)
         if c.cash < c.capacity * UPKEEP * 30.0:
             margin -= 0.08
         if c.status != c.LISTED:
             margin -= 0.05
         if margin < -0.05:
             margin = -0.05
-        float bid = est * (1.0 + margin)
+        float bid = quote(k, c, est, margin)
         bidders += 1
         if bid > k.budget:
             continue
@@ -860,13 +1024,19 @@ void award(es.Game game, Galaxy galaxy, Contract k, int d):
     if tender:
         k.days = best_days
     k.ends = d + k.days
-    float spread = 0.06 + 0.15 * (best.efficiency - 0.8 if best.efficiency > 0.8 else 0.0)
+    float spread = 0.06 + 0.15 * (research.cost_factor(best) - 0.8 if research.cost_factor(best) > 0.8 else 0.0)
     float overrun = globalThis.Math.exp(rng.gauss() * spread)
     k.cost = best_est * overrun
     if second_score >= 0.0:
         k.runner_up = second.id
         k.runner_price = second_bid
     best.load += k.load
+    // (M4) A subcontract taken: its shipyard no longer builds that part itself.
+    if k.kind == k.COMPANY && k.parent != 0:
+        for p in contracts:
+            if p.id == k.parent && p.status == p.RUNNING:
+                p.cost = p.cost - k.budget * 0.8
+                break
     // 30% on award; the rest on delivery. (M2) The revenue is booked a day at
     // a time as the work is done (run_contracts), not as the cash comes: a
     // report no longer swings with which payments fell in its month, which
@@ -881,7 +1051,7 @@ void award(es.Game game, Galaxy galaxy, Contract k, int d):
                 subcontract(k, best, s, d)
     if tender:
         tender_won(game, k, best, d)
-    else if k.price >= 3000000.0:
+    else if k.price >= 75000000.0:
         best.note("after a " + fmt.short_credits(k.price) + " contract from " + client_name(k))
         say_tagged(d, best.name + " wins a " + names.sectors[k.sector].to_lower() + " contract from " + client_name(k) + " worth " + fmt.short_credits(k.price) + ".", "c" + string(best.id) + (",s" if k.sector == 0 else ""))
 
@@ -903,9 +1073,19 @@ void subcontract(Contract parent, Company buyer, int sector, int d):
     k.issued = d
     k.closes = d + 3
     k.parent = parent.id
-    // The shipyard no longer builds that part itself.
-    parent.cost = parent.cost - k.budget * 0.8
+    // (M4) The shipyard stops building the part itself only once a supplier
+    // takes it (award): before M4 its cost fell at once, and a subcontract
+    // that lapsed left it paying for nothing.
     contracts.append(k)
+
+// (M4) A bid: the bidder's cost blended with the sector's reference cost,
+// plus its margin; never under its own cost less 5%.
+float quote(Contract k, Company c, float est, float margin):
+    rates()
+    float reference = k.load * float(k.days) * VARIABLE * ref_cost[k.sector]
+    float bid = (BLEND * est + (1.0 - BLEND) * reference) * (1.0 + margin)
+    float least = est * 0.95
+    return bid if bid > least else least
 
 // A company client pays its supplier.
 void charge_client(Contract k, float amount):
@@ -918,6 +1098,8 @@ void charge_client(Contract k, float amount):
         payer.costs += amount
 
 string client_name(Contract k):
+    if k.kind == fleets.OPERATION:
+        return "the " + k.client + " (a sweep against pirates around " + k.system + ")"
     if k.kind == k.RESTOCK:
         return k.client + " shipyard"
     if k.kind == k.TENDER:
@@ -931,7 +1113,7 @@ string client_name(Contract k):
 // delivered, or fails and pays 20% less.
 void run_contracts(es.Game game, Galaxy galaxy, int d):
     for k in contracts:
-        if k.status != k.RUNNING || k.convoy != 0 || k.kind == k.ORDER:
+        if k.status != k.RUNNING || k.convoy != 0 || k.kind == k.ORDER || k.kind == fleets.OPERATION:
             continue
         if !by_id.has(k.winner):
             // A tender the government's own yards build (no builder could bid).
@@ -959,7 +1141,7 @@ void deliver(es.Game game, Contract k, Company c, int d):
         deliver_tender(game, k, c, d)
         return
     float chance = 3.0 + 12.0 * (1.0 - c.reliability)
-    if c.load > c.capacity:
+    if c.load > eff(c):
         chance += 10.0
     if k.sector == 6 && at_war.contains(game.system_government(k.system)):
         chance += 5.0
@@ -972,7 +1154,7 @@ void deliver(es.Game game, Contract k, Company c, int d):
     if failed:
         k.status = k.FAILED
         c.reliability = c.reliability - 0.1 if c.reliability > 0.1 else 0.0
-        if k.price >= 1000000.0:
+        if k.price >= 25000000.0:
             say(d, c.name + " fails to deliver on a " + names.sectors[k.sector].to_lower() + " contract for " + client_name(k) + ".")
     else:
         k.status = k.DELIVERED
@@ -990,15 +1172,19 @@ float booked_gap(Contract k, float pay, int d):
 
 // ---- Money ----
 
+// (M4: 0.6 before; at the new scale few companies ever reached it.)
+float DEBT_LIMIT = 0.45
+
 float upkeep(Company c):
     return c.capacity * UPKEEP
 
 float debt_limit(Company c):
-    return 0.6 * (c.capacity * CAPITAL + (c.cash if c.cash > 0.0 else 0.0))
+    return DEBT_LIMIT * (c.capacity * CAPITAL + (c.cash if c.cash > 0.0 else 0.0))
 
 void finances(es.Game game, Galaxy galaxy, Company c, int d):
     float rate = rate_by_cycle[cycle] + (0.03 if c.status != c.LISTED else 0.0)
-    float daily = upkeep(c) + c.debt * rate / 365.0
+    // (0.4) The chief's salary is a cost like the yards'.
+    float daily = upkeep(c) + c.debt * rate / 365.0 + execs.salary_of(self, c) / 365.0
     c.cash -= daily
     c.costs += daily
     if c.cash < 0.0:
@@ -1020,6 +1206,8 @@ void finances(es.Game game, Galaxy galaxy, Company c, int d):
             c.status = c.DISTRESSED
             c.since = d
             say(d, c.name + " is in distress: out of cash, and at its debt limit.")
+            if c.owner == 1:
+                player_events.append("Your company " + c.name + " is out of cash at its debt limit. Put money in at an exchange within 30 days, or it will be offered for sale and then wound up.")
     else if c.status == c.DISTRESSED || (c.status == c.FOR_SALE && c.suitor == 0):
         bool was_for_sale = c.status == c.FOR_SALE
         c.status = c.LISTED
@@ -1029,6 +1217,8 @@ void finances(es.Game game, Galaxy galaxy, Company c, int d):
         c.status = c.FOR_SALE
         c.since = d
         say(d, c.name + " is offered for sale to its rivals.")
+        if c.owner == 1:
+            player_events.append("Your company " + c.name + " is offered for sale to its rivals. Put money in within 30 days to save it.")
     if c.status == c.FOR_SALE && c.suitor == 0 && d - c.since >= 30:
         bankrupt(game, c, d)
 
@@ -1059,7 +1249,16 @@ void report(es.Game game, Company c, int d):
     float before = fair(c)
     earnings_total += e
     ensure_norm(c)
-    c.norm = c.norm + NORM_WEIGHT * (e - c.norm)
+    // (M4) The market looks through research spending: part of it is added
+    // back to the earnings fair value rests on.
+    c.norm = c.norm + NORM_WEIGHT * (e + RD_BACK * c.rd_spent - c.norm)
+    // (M4) Growth: its effective capacity against the last report, a year's
+    // worth, smoothed over about ten reports.
+    float now_cap = eff(c)
+    if c.cap_mark > 0.0 && now_cap > 0.0:
+        float g = 12.0 * float(globalThis.Math.log(now_cap / c.cap_mark))
+        c.growth = c.growth + 0.1 * (clamp(g, -0.6, 1.2) - c.growth)
+    c.cap_mark = now_cap
     c.earnings.append(e)
     if c.earnings.len() > 4:
         c.earnings.remove_at(0)
@@ -1103,22 +1302,44 @@ void report(es.Game game, Company c, int d):
     float avg = c.busy / float(c.busy_days) if c.busy_days > 0 else c.load
     c.busy = 0.0
     c.busy_days = 0
-    float util = avg / c.capacity if c.capacity > 0.0 else 0.0
+    float util = avg / eff(c) if c.capacity > 0.0 else 0.0
     // A company near the antitrust line, or losing money, does not grow.
-    bool room = sector_share(c, 0.0) < review_line(peers(c.sector)) - MERGER_MARGIN && value_share(c) < VALUE_SHARE - 0.03
-    if util > 0.8 && c.status == c.LISTED && e > 0.0 && room:
-        float add = c.capacity * 0.08
-        add = add if add > 0.5 else 0.5
-        if add * CAPITAL < c.cash - upkeep(c) * 60.0:
-            c.capacity += add
-            c.cash -= add * CAPITAL
-    else if util < 0.35 && c.capacity > 3.0 && !(c.canon && e > 0.0) && c.capacity > canon_floor(c):
+    // (M4) Canonical companies answer only to the capacity line (antitrust).
+    bool room = (c.acquired.len() == 0 || sector_share(c, 0.0) < review_line(peers(c.sector)) - MERGER_MARGIN) && value_share(c) < (CANON_VALUE_CAP if c.canon else VALUE_SHARE - 0.03)
+    // (M4) Growth by plan and financing (Capital): raised money, cash, debt,
+    // and new shares when they are dear.
+    bool grew = capital.grow(game, self, c, e, util, room, d)
+    // (M4) Canonical companies too, down to their floor: profitable ones kept
+    // every yard before, so they grew in booms and never gave any back.
+    if !grew && util < 0.35 && c.capacity > 0.05 && c.capacity > canon_floor(c) && c.owner == 0:
         float cut = c.capacity * 0.08
         c.capacity -= cut
         c.cash += cut * CAPITAL * 0.6
-    float drift = rng.gauss() * 0.01 + (1.0 - c.efficiency) * 0.02
-    c.efficiency = clamp(c.efficiency + drift, 0.75, 1.3)
+    // Efficiency is the company's condition (M4): it wanders around 1.0 and
+    // comes back to it; technology (Research) is what lasts.
+    // (0.4) A thrifty chief keeps it cheaper (Executives.cost_drift).
+    float drift = rng.gauss() * 0.01 + (1.0 - c.efficiency) * 0.08 + execs.cost_drift(self, c)
+    c.efficiency = clamp(c.efficiency + drift, 0.8, 1.25)
     execs.after_report(self, c, d)
+    // (M4) Research: reliability toward its quality; the chief's budget and focus.
+    research.after_report(self, c, util, d)
+    // (M4) Debt, buybacks, splits.
+    capital.after_report(game, self, c, util, d)
+    // (M4) The player's company: its report, and milestones.
+    if c.owner == 1:
+        player_report(c, e, before, util, d)
+
+// (M4) The player's company reports to them: earnings, how busy, its worth,
+// and a milestone when its value passes 10M, 100M, 1B or 10B.
+[]float milestones = [10000000.0, 100000000.0, 1000000000.0, 10000000000.0]
+void player_report(Company c, float e, float before, float util, int d):
+    float v = c.market_value()
+    float was = before * float(c.shares)
+    player_events.append(c.name + " reports " + earned(e) + " for the month; it is " + fmt.whole_percent(util) + " busy and worth " + fmt.short_credits(v) + ".")
+    for m in milestones:
+        if was < m && v >= m:
+            player_events.append(c.name + " is now worth more than " + fmt.short_credits(m) + ".")
+            say_tagged(d, c.name + ", an independent captain's company, is now worth more than " + fmt.short_credits(m) + ".", "c" + string(c.id))
 
 // A canonical company keeps at least half the yards it started with (M1):
 // its government will not let an established builder sell its docks for
@@ -1145,15 +1366,23 @@ float fair(Company c):
     // (M3 review) The player's company is valued on its own capacity only:
     // ships assigned to it can be taken back at any time (Charter.firm).
     float cap = charter.firm(c) if c.owner == 1 else c.capacity
-    float book = (cap * CAPITAL - 0.5 * c.debt) / float(c.shares)
+    float shares = float(c.shares if c.shares > 0 else 1)
+    // (M4) Money raised and not yet spent on yards counts in full.
+    float raised = (c.raised if c.raised < c.cash else c.cash) / shares
+    raised = raised if raised > 0.0 else 0.0
+    float book = (cap * CAPITAL - 0.5 * c.debt) / shares
     if c.earnings.len() == 0:
-        return book if book > 0.05 else 0.05
+        return (book if book > 0.05 else 0.05) + raised
     ensure_norm(c)
     rates()
-    float base = OWN_WEIGHT * c.norm + (1.0 - OWN_WEIGHT) * cap * sector_rate[c.sector]
+    // (M4) The sector's earnings per unit of effective capacity, times this
+    // company's edge over the sector (its process and quality against the
+    // sector's average): a company ahead in technology earns more on the
+    // same yards. A growing company is worth more than its earnings now.
+    float base = OWN_WEIGHT * c.norm + (1.0 - OWN_WEIGHT) * cap * research.scale_factor(c) * sector_rate[c.sector] * edge(c)
     float yearly = base * 365.0 / 30.0
-    float eps = yearly / float(c.shares)
-    float pe = 12.0 * pe_by_cycle[cycle]
+    float eps = yearly / shares
+    float pe = PE * pe_by_cycle[cycle] * clamp(1.0 + GROWTH_PE * c.growth, 0.9, 1.3) * (BLUE_CHIP if c.canon else 1.0)
     // One floor for profit and loss alike (before M1 a loss-maker's floor was
     // 0.6 of book against a small earner's 0.5: a turn to losses lifted fair
     // value), and a soft one: near it, fair value keeps some of the chance
@@ -1164,26 +1393,57 @@ float fair(Company c):
     float width = FLOOR_SOFT * floor_value
     float over = (earn - floor_value) / width
     float f = floor_value + (earn - floor_value if over > 20.0 else width * float(globalThis.Math.log(1.0 + float(globalThis.Math.exp(over)))))
-    return f if f > 0.05 else 0.05
+    return (f if f > 0.05 else 0.05) + raised
+
+// (M4) A company's technological edge over its sector: its process and
+// quality against the sector's capacity-weighted average.
+float edge(Company c):
+    rates()
+    float p = ref_process[c.sector] - research.process_factor(c)
+    float q = research.quality_base(c) - ref_quality[c.sector]
+    return clamp(1.0 + EDGE * p + 0.5 * EDGE * q, 0.6, 1.8)
 
 float book(Company c):
     return (c.capacity * CAPITAL + c.cash - c.debt) / float(c.shares)
 
-// Each sector's normal earnings per unit of capacity, once a day.
+// Each sector's normal earnings per unit of effective capacity, once a day;
+// (M4) and its reference costs: the capacity-weighted average cost factor
+// (bids blend it with their own), process factor and quality.
+[]float ref_cost = []
+[]float ref_process = []
+[]float ref_quality = []
+
 void rates():
     if rate_day == day && sector_rate.len() == 8:
         return
     rate_day = day
     []float earn = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     []float cap = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    []float all = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    []float cost = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    []float proc = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    []float qual = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     for c in companies:
-        if c.listed() && c.earnings.len() > 0:
+        if !c.listed():
+            continue
+        float e = eff(c)
+        if c.earnings.len() > 0:
             ensure_norm(c)
             earn[c.sector] = earn[c.sector] + c.norm
-            cap[c.sector] = cap[c.sector] + c.capacity
+            cap[c.sector] = cap[c.sector] + e
+        all[c.sector] = all[c.sector] + e
+        cost[c.sector] = cost[c.sector] + e * research.cost_factor(c)
+        proc[c.sector] = proc[c.sector] + e * research.process_factor(c)
+        qual[c.sector] = qual[c.sector] + e * research.quality_base(c)
     sector_rate = []
+    ref_cost = []
+    ref_process = []
+    ref_quality = []
     for s in 0..<8:
         sector_rate.append(earn[s] / cap[s] if cap[s] > 0.0 else 0.0)
+        ref_cost.append(cost[s] / all[s] if all[s] > 0.0 else 1.0)
+        ref_process.append(proc[s] / all[s] if all[s] > 0.0 else 1.0)
+        ref_quality.append(qual[s] / all[s] if all[s] > 0.0 else 0.8)
 
 // A company read from a save from before M1 has no normal earnings yet: the
 // average of its reports.
@@ -1216,6 +1476,11 @@ void shock(Company c, float factor):
 // pending buyout holds it at DEAL_GAP of the offer at least.
 void move_price(Company c):
     float sigma = sigma_by_kind[0 if c.canon else (2 if c.status == c.FOR_SALE else 1)] * (1.5 if c.trait == 2 else 1.0)
+    // (M4) Small companies swing more: up to SMALL_SIGMA more at 1M and under.
+    float v = c.market_value()
+    if v < 100000000.0 && v > 0.0:
+        float small = float(globalThis.Math.log10(100000000.0 / v)) / 2.0
+        sigma = sigma * (1.0 + SMALL_SIGMA * clamp(small, 0.0, 1.0))
     c.mood = c.mood * (1.0 - MOOD_DECAY) + sigma * rng.gauss()
     float lift = globalThis.Math.exp(c.mood)
     float target = fair(c) * lift
@@ -1305,6 +1570,10 @@ void seek_buyer(Company t, int d, float premium):
         if sector_share(b, t.capacity) > review_line(after) - MERGER_MARGIN:
             blocked = true
             continue
+        // (M4) Nor one that would pass its value line.
+        if value_share(b) + value_share(t) > (CANON_VALUE_CAP if b.canon else VALUE_SHARE - 0.03):
+            blocked = true
+            continue
         if means > best_means:
             best = b
             best_means = means
@@ -1373,6 +1642,11 @@ void complete_deal(es.Game game, Company t, Company b, float cost, int d):
         b.debt += -b.cash
         b.cash = 0.0
     b.capacity += t.capacity
+    // (M4) A security company's ships join its buyer's fleet.
+    if t.fleet != "" && b.sector == 7:
+        for model, n in fleets.parse(t.fleet):
+            fleets.add(b, model, n)
+    t.fleet = ""
     t.brought = t.capacity
     b.acquired.append(t.id)
     move_contracts(t, b)
@@ -1439,6 +1713,11 @@ void release_contracts(Company c, int d):
         if k.kind == k.RESTOCK:
             drop_restock(k)
             continue
+        // (M4) A strike whose company is gone: its flotilla goes with it.
+        if k.kind == fleets.OPERATION:
+            k.status = k.FAILED
+            k.load = 0.0
+            continue
         if k.kind == k.TENDER:
             // The government issues the tender again (tenders(), tomorrow).
             k.status = k.FAILED
@@ -1449,7 +1728,7 @@ void release_contracts(Company c, int d):
             post_bus("corporations.tender_failed", "{\"government\":" + json(k.client) + ",\"model\":" + json(k.model) + ",\"units\":" + string(k.units) + ",\"winner\":" + json(c.name) + ",\"reason\":\"bankrupt\"}")
             continue
         Company r = by_id.get(k.runner_up, Company())
-        if r.id != 0 && r.status == r.LISTED && r.load + k.load <= r.capacity:
+        if r.id != 0 && r.status == r.LISTED && r.load + k.load <= eff(r):
             k.winner = r.id
             k.price = k.price if k.price > k.runner_price else k.runner_price
             r.load += k.load
@@ -1464,6 +1743,7 @@ void bankrupt_done(Company c, float per, int d):
     c.capacity = 0.0
     c.cash = 0.0
     c.debt = 0.0
+    c.fleet = ""
     c.price = per
 
 // Antitrust: over its review line opens a review; still over after
@@ -1481,6 +1761,12 @@ void antitrust(es.Game game, Galaxy galaxy, int d):
         float share = sector_share(c, 0.0)
         float line = review_line(peers(c.sector))
         float worth = value_share(c)
+        // (M4) Companies of very different sizes share a sector now: a large
+        // one among small newcomers holds most of its capacity by growing,
+        // which is no offence. Only a company that bought rivals answers for
+        // its share of the sector.
+        if c.acquired.len() == 0:
+            share = 0.0
         if c.canon:
             line = line if line > CANON_REVIEW_SHARE else CANON_REVIEW_SHARE
             worth = 0.0
@@ -1598,19 +1884,23 @@ void new_listings(es.Game game, Galaxy galaxy, int d):
         if per[s] < per[thinnest]:
             thinnest = s
     int n = listed_count()
-    if !(n < 40 || per[thinnest] < 3 || (cycle == 0 && n < 50)):
+    if n >= MAX_LISTED || !(n < 40 || per[thinnest] < 3 || (cycle == 0 && n < 46)):
         return
     // A sector short of companies first; otherwise one drawn by its share of
     // the work and how busy it is, less likely the more companies it has
     // (before M1 always the busiest, which with restock work was always
     // shipbuilding: it grew to nineteen companies).
     int sector = thinnest if per[thinnest] < 3 else draw_sector(per)
-    Company c = invent_company(game, galaxy, sector, rng.between(3.0, 6.0), d)
+    // (M4) A newcomer of about 1M, 10M or 100M, young in technology, often
+    // led by a visionary founder.
+    Company c = invent_company(game, galaxy, sector, tier_capacity(), d)
+    research.seed(self, c, false)
     c.cash = c.capacity * CAPITAL * 0.3
-    c.shares = shares_for(c.capacity)
+    c.shares = shares_for(c.capacity * rng.between(0.5, 2.0))
+    c.cap_mark = eff(c)
     c.price = fair(c)
     last_listing = d
-    say(d, "New listing: " + c.name + " (" + names.sectors[sector].to_lower() + ", " + game.planet_name(c.home) + ") opens at " + fmt.price(c.price) + ".")
+    say(d, "New listing: " + c.name + " (" + names.sectors[sector].to_lower() + ", " + game.planet_name(c.home) + ") opens at " + fmt.price(c.price) + ", valuing it at " + fmt.short_credits(c.market_value()) + ".")
 
 // A sector for a newcomer: weighted by its share of the work, how busy its
 // companies are, and how few they are.
@@ -1620,7 +1910,7 @@ int draw_sector([]int per):
     for c in companies:
         if c.listed():
             load[c.sector] = load[c.sector] + c.load
-            capacity[c.sector] = capacity[c.sector] + c.capacity
+            capacity[c.sector] = capacity[c.sector] + eff(c)
     []float w = []
     for s in 0..<8:
         float util = load[s] / capacity[s] if capacity[s] > 0.0 else 1.0
@@ -1634,7 +1924,7 @@ int busiest():
     for c in companies:
         if c.listed():
             load[c.sector] = load[c.sector] + c.load
-            capacity[c.sector] = capacity[c.sector] + c.capacity
+            capacity[c.sector] = capacity[c.sector] + eff(c)
     int best = 0
     float best_util = -1.0
     for s in 0..<8:
@@ -1671,6 +1961,36 @@ void prune(int d):
         by_id[c.id] = c
     if news.len() > 50:
         news = news[news.len() - 50..<news.len()]
+
+// (0.5) "corporations.book" {"company", "amount", "note"}: another mod's
+// income (amount > 0) or cost (< 0) for a listed company, booked like its
+// own: cash, and revenue or costs toward its next report (so its earnings,
+// and through them its price). `note`, for income, can say what drove the
+// report ("on its racing sponsorship"). False when nothing was booked.
+bool book_external(string payload):
+    any parse = globalThis.Function("s", "try { const o = JSON.parse(s); if (!o || typeof o.company !== 'string') return ''; const a = Number(o.amount); if (!isFinite(a)) return ''; return [o.company, a, String(o.note || '')].join('\\t'); } catch (e) { return ''; }")
+    string flat = parse(payload)
+    if flat == "":
+        return false
+    []string f = flat.split("\t")
+    if f.len() < 3:
+        return false
+    float amount = f[1].to_float()
+    Company c = Company()
+    for x in companies:
+        if x.name == f[0] && x.listed():
+            c = x
+    if c.id == 0 || amount == 0.0:
+        return false
+    if amount > 0.0:
+        c.cash += amount
+        c.revenue += amount
+        if f[2] != "" && c.cause == "" && amount > upkeep(c) * 10.0:
+            c.note(f[2])
+    else:
+        c.cash += amount
+        c.costs -= amount
+    return true
 
 void say(int d, string text):
     say_tagged(d, text, "")
@@ -1814,7 +2134,7 @@ void random_events(es.Game game, int d):
         if !c.listed() || !rng.chance(EVENT_CHANCE * 100.0):
             continue
         float position = range_position(c)
-        bool good = rng.chance((LUCK_LOW - LUCK_SPAN * position + execs.luck[c.trait]) * 100.0)
+        bool good = rng.chance((LUCK_LOW - LUCK_SPAN * position + execs.luck_of(self, c)) * 100.0)
         if good:
             good_turn(game, c, d)
         else:
@@ -1851,13 +2171,13 @@ void good_turn(es.Game game, Company c, int d):
         c.reliability = clamp(c.reliability + 0.08, 0.0, 0.99)
         text = c.name + " wins an award for safety and quality."
     else if which == 3:
-        // (M3) A real change of chief: the old one to the pool.
+        // (M3) A real change of chief: the old one back to the pool.
+        // (0.4) The player's company keeps the chief its owner chose.
+        if c.owner == 1:
+            good_turn(game, c, d)
+            return
         string old = c.ceo
-        int old_trait = c.trait
-        string who = execs.appoint(self, c, d, 2 if rng.chance(50.0) else 1)
-        executives.append(old + ":" + string(old_trait) + ":" + c.name.replace_all(":", " "))
-        if executives.len() > execs.POOL:
-            executives.remove_at(0)
+        string who = execs.appoint(self, c, d, -1)
         shock(c, rng.between(1.12, 1.2))
         c.efficiency = clamp(c.efficiency - 0.02, 0.75, 1.3)
         text = c.name + " names a celebrated new chief executive, " + who + ", in place of " + old + "; its shares jump."
@@ -1916,7 +2236,7 @@ void offer_jobs(es.Game game, Galaxy galaxy):
     string from = galaxy.system_of(game, here)
     []Contract open = []
     for k in contracts:
-        if k.status != k.RUNNING || k.kind == k.RESTOCK || k.kind == k.ORDER || k.convoy != 0 || !by_id.has(k.winner) || !by_id[k.winner].listed() || k.ends - day < 12:
+        if k.status != k.RUNNING || k.kind == k.RESTOCK || k.kind == k.ORDER || k.kind == fleets.OPERATION || k.convoy != 0 || !by_id.has(k.winner) || !by_id[k.winner].listed() || k.ends - day < 12:
             continue
         if !galaxy.system_planet.has(k.system) || k.system == from:
             continue
@@ -2210,7 +2530,7 @@ string model_label(string model, int n):
 // The days a builder would take: the tender's asked days, faster with spare
 // yards and slower when busy or in poor health.
 int delivery_days(Company c, Contract k):
-    float util = c.load / c.capacity if c.capacity > 0.0 else 1.0
+    float util = c.load / eff(c) if c.capacity > 0.0 else 1.0
     int days = globalThis.Math.round(float(k.days) * (0.6 + 0.6 * util) * health(c))
     return days if days > 3 else 3
 
@@ -2218,7 +2538,7 @@ int delivery_days(Company c, Contract k):
 []string tender_bidders(Contract k):
     []string out = []
     for c in companies:
-        if c.listed() && c.sector == k.sector && c.capacity > 0.0 && c.load + k.load <= c.capacity:
+        if c.listed() && c.sector == k.sector && c.capacity > 0.0 && c.load + k.load <= eff(c):
             out.append(c.name)
     return out
 
@@ -2257,7 +2577,7 @@ void deliver_tender(es.Game game, Contract k, Company c, int d):
     if c.id != 0:
         bool failed = false
         if !c.canon:
-            float chance = 3.0 + 12.0 * (1.0 - c.reliability) + (10.0 if c.load > c.capacity else 0.0)
+            float chance = 3.0 + 12.0 * (1.0 - c.reliability) + (10.0 if c.load > eff(c) else 0.0)
             failed = rng.chance(chance)
         float pay = k.price * (0.5 if failed else 0.7)
         c.cash += pay
@@ -2542,7 +2862,7 @@ void order_restock(es.Game game, Galaxy galaxy, Shelf s, int d):
     k.model = s.model
     k.units = units
     k.load = restock_load[cls] * float(units)
-    float busy = c.load / c.capacity if c.capacity > 0.0 else 1.0
+    float busy = c.load / eff(c) if c.capacity > 0.0 else 1.0
     float lead = float(hulls.lead_days[cls]) * (1.0 + busy) * health(c)
     int days = globalThis.Math.round(lead)
     k.days = days if days > 3 else 3
@@ -2765,6 +3085,61 @@ float sell(es.Game game, Company c, int n):
         holdings[c.id] = held - n
     return total
 
+// ---- M4: the player's company bids for a rival ----
+
+// The premium over the market price the player's company offers.
+float TAKEOVER_PREMIUM = 1.3
+
+// Why the player's company can't bid for t now; "" when it can.
+string takeover_refusal(Company mine, Company t):
+    if mine.id == 0:
+        return "You have no company to bid with."
+    if mine.status != mine.LISTED:
+        return mine.name + " is in no state to buy anything."
+    if t.canon:
+        return "Its government will not allow a takeover of " + t.name + ", one of human space's established companies."
+    if !t.listed() || t.private() || t.id == mine.id:
+        return t.name + " is not for sale."
+    if t.suitor > 0:
+        return "Someone is already bidding for " + t.name + "."
+    if !may_buy(mine, t):
+        return mine.name + " can buy only companies of its own sector" + (" or its suppliers" if mine.sector == 0 else "") + "."
+    float cost = takeover_cost(t)
+    float means = mine.cash + (debt_limit(mine) - mine.debt)
+    if means < cost:
+        return mine.name + " can't finance " + fmt.short_credits(cost) + ": it has " + fmt.short_credits(mine.cash) + " and can borrow " + fmt.short_credits(debt_limit(mine) - mine.debt if debt_limit(mine) > mine.debt else 0.0) + ". Put money in first."
+    int after = peers(mine.sector) - (1 if t.sector == mine.sector else 0)
+    if sector_share(mine, t.capacity) > review_line(after) - MERGER_MARGIN:
+        return "Regulators would block it: " + mine.name + " would hold too much of its sector."
+    return ""
+
+// What a takeover of t costs (complete_buyout pays for every share but a
+// suitor's stake, the player's own among them).
+float takeover_cost(Company t):
+    return t.price * TAKEOVER_PREMIUM * float(t.shares - t.suitor_stake)
+
+// The player's company bids for t: the buyout machinery (complete_buyout,
+// a week on) with it as the suitor. Answers whether the bid stands. A bid
+// for a company the player holds shares in (their own company paying them a
+// premium) draws the regulator's attention, as selling a stake to a suitor does.
+bool player_bid(es.Game game, Company mine, Company t, int d):
+    if takeover_refusal(mine, t) != "":
+        return false
+    if holdings.get(t.id, 0) > 0:
+        board.attention(game, self, board.SCRUTINY_SELL, d)
+    t.suitor = mine.id
+    t.offer_day = d + 7
+    t.offer = t.price * TAKEOVER_PREMIUM
+    t.pre_offer = t.price
+    if t.price < t.offer * DEAL_GAP:
+        t.price = t.offer * DEAL_GAP
+    // The player's own votes are with the bid.
+    approved[t.id] = true
+    t.note("while " + mine.name + " bids for it")
+    say_tagged(d, mine.name + " bids for " + t.name + " at " + fmt.price(t.offer) + " a share; " + t.name + " jumps to " + fmt.price(t.price) + ".", "c" + string(t.id) + ",c" + string(mine.id))
+    must_save = true
+    return true
+
 // ---- M3: helpers ----
 
 // A canonical company by name, or none.
@@ -2792,10 +3167,10 @@ Company favourite(Contract k):
     Company best = Company()
     float best_score = -1.0
     for c in companies:
-        if !c.listed() || c.sector != k.sector || c.capacity <= 0.0 || c.load + k.load > c.capacity || sanctions.embargoed(self, c, k.client):
+        if !c.listed() || c.sector != k.sector || c.capacity <= 0.0 || c.load + k.load > eff(c) || sanctions.embargoed(self, c, k.client):
             continue
-        float est = k.load * float(k.days) * VARIABLE * c.efficiency
-        float bid = est * (1.06 + 0.28 * (c.load / c.capacity) + execs.margin[c.trait] + bias_margin(c))
+        float est = k.load * float(k.days) * VARIABLE * research.cost_factor(c)
+        float bid = quote(k, c, est, BASE_MARGIN + 0.28 * (c.load / eff(c)) + execs.margin_of(self, c) + bias_margin(c))
         if bid > k.budget:
             continue
         float score = bid / (0.5 + 0.5 * c.reliability) * (1.0 + DAYS_WEIGHT * (float(delivery_days(c, k)) / float(k.days) - 1.0))
@@ -2854,8 +3229,14 @@ void tidy():
         c.hull_income = whole(c.hull_income)
         c.norm = whole(c.norm)
         c.busy = fine(c.busy, 1000.0)
-        c.capacity = fine(c.capacity, 10000.0)
-        c.brought = fine(c.brought, 10000.0)
+        c.capacity = fine(c.capacity, 1000000.0)
+        c.brought = fine(c.brought, 1000000.0)
+        c.progress = whole(c.progress)
+        c.rd_spent = whole(c.rd_spent)
+        c.raised = whole(c.raised)
+        c.luck = fine(c.luck, 1000.0)
+        c.growth = fine(c.growth, 10000.0)
+        c.cap_mark = fine(c.cap_mark, 1000000.0)
         c.efficiency = fine(c.efficiency, 10000.0)
         c.reliability = fine(c.reliability, 10000.0)
         c.payout = fine(c.payout, 10000.0)
@@ -2908,16 +3289,13 @@ void drivers(es.Game game, Galaxy galaxy, int d):
     float boom = demand_by_cycle[cycle]
     // Mining: ore for the slips.
     float rate = MINING_PER_LOAD * ships * boom * sector_boost[5]
-    for n in 0..<draws(rate):
-        issue_near(game, galaxy, 5, d)
+    derived(game, galaxy, 5, rate, d)
     // Parts and refits for today's hulls.
     float parts = PARTS_PER_VALUE * hull_value_today
     for sector in [1, 2, 3]:
-        for n in 0..<draws(parts * sector_boost[sector] * (1.2 if sector == 3 else (1.3 if sector == 2 else 1.0))):
-            issue_near(game, galaxy, sector, d)
+        derived(game, galaxy, sector, parts * sector_boost[sector] * (1.2 if sector == 3 else (1.3 if sector == 2 else 1.0)), d)
     // Freight: delivery crews and hauling.
-    for n in 0..<draws(HAUL_PER_HULL * float(hulls_today) * sector_boost[6]):
-        issue_near(game, galaxy, 6, d)
+    derived(game, galaxy, 6, HAUL_PER_HULL * float(hulls_today) * sector_boost[6], d)
     // Security: patrols where losses run high (an index over PATROL_FROM:
     // near pirates alone most regions sit over 1, which made security boom).
     float hot = 0.0
@@ -2925,8 +3303,17 @@ void drivers(es.Game game, Galaxy galaxy, int d):
         float x = losses.index(r)
         hot += (x - PATROL_FROM) if x > PATROL_FROM else 0.0
     float patrols = PATROLS * hot / float(losses.regions.len() if losses.regions.len() > 0 else 1) * 10.0
-    for n in 0..<draws(patrols * sector_boost[7]):
-        issue_near(game, galaxy, 7, d)
+    derived(game, galaxy, 7, patrols * sector_boost[7], d)
+
+// (M4) Derived demand: `rate` contracts a day of the old size (DERIVED_LOAD
+// load each), issued as anchored contracts carrying the same load in all.
+float DERIVED_LOAD = 1.7
+void derived(es.Game game, Galaxy galaxy, int sector, float rate, int d):
+    float ml = mean_load(sector)
+    if rate <= 0.0 || ml <= 0.0:
+        return
+    for n in 0..<draws(rate * DERIVED_LOAD / ml):
+        issue_near(game, galaxy, sector, d)
 
 // How many contracts a rate a day makes today: its whole part, and one more
 // with the chance of its fraction.
@@ -2941,7 +3328,8 @@ int draws(float rate):
 // A sector's contract issued near one of its companies (drawn by capacity),
 // as a planet's.
 void issue_near(es.Game game, Galaxy galaxy, int sector, int d):
-    string planet = planet_near(game, galaxy, sector)
+    Company a = anchor(sector)
+    string planet = planet_by(galaxy, a) if a.id != 0 else ""
     if planet == "":
         return
     Contract k = Contract()
@@ -2953,7 +3341,7 @@ void issue_near(es.Game game, Galaxy galaxy, int sector, int d):
     k.kind = k.PLANET
     k.client = game.planet_name(planet)
     k.system = galaxy.system_of(game, planet)
-    k.load = rng.between(0.8, 3.8)
+    k.load = anchored_load(a)
     k.days = rng.range(10, 45)
     k.budget = k.load * float(k.days) * UNIT * budget_by_cycle[cycle] * rng.between(1.0, 1.35) * sector_boost[sector]
     contracts.append(k)
@@ -2966,10 +3354,13 @@ string planet_near(es.Game game, Galaxy galaxy, int sector):
     for c in companies:
         if c.listed() && c.sector == sector && c.capacity > 0.0 && c.system != "":
             pool.append(c)
-            w.append(c.capacity)
+            w.append(eff(c))
     if pool.len() == 0:
         return ""
-    Company c = pool[pick(w)]
+    return planet_by(galaxy, pool[pick(w)])
+
+// (M4) A bank planet within reach of company c (its home if none).
+string planet_by(Galaxy galaxy, Company c):
     []string near = nearby(galaxy, c.system, reach(c) - 1)
     if near.len() == 0:
         return c.home
@@ -3018,8 +3409,8 @@ string galaxy_planet(string system):
 // ---- Saving ----
 
 string encode():
-    []string lines = ["corporations 1"]
-    []string m = [world, string(day), string(rng.state), string(cycle), string(cycle_since), string(next_company), string(next_contract), string(last_listing), string(dividends_paid)]
+    []string lines = ["corporations 2"]
+    []string m = [world, string(day), string(rng.state), string(cycle), string(cycle_since), string(next_company), string(next_contract), string(last_listing), string(dividends_paid), floats(demand_base), string(econ_day)]
     lines.append("m|" + m.join("|"))
     for c in companies:
         ensure_norm(c)
@@ -3060,8 +3451,10 @@ string encode():
     for v in covert_jobs:
         lines.append("v|" + v)
     // (M3)
-    for e in executives:
-        lines.append("a|" + e)
+    // (0.4) The chiefs' pool.
+    lines.append("I|" + string(next_chief) + "|" + string(chief_rng.state) + "|" + string(offer_chief) + "|" + string(offer_from) + "|" + string(int(offer_salary)) + "|" + string(offer_until))
+    for ch in chiefs:
+        lines.append("i|" + ch.encode())
     for id, n in shorts:
         lines.append("q|" + string(id) + "|" + string(n) + "|" + string(short_proceeds.get(id, 0.0)) + "|" + string(short_margin.get(id, 0.0)))
     for t in tips:
@@ -3137,6 +3530,13 @@ void decode(string text):
     last_credits = -1
     convoy_orphans = []
     executives = []
+    chiefs = []
+    chief_by_id = {}
+    next_chief = 1
+    offer_chief = 0
+    offer_from = 0
+    offer_salary = 0.0
+    offer_until = 0
     shorts = {}
     short_proceeds = {}
     short_margin = {}
@@ -3149,6 +3549,10 @@ void decode(string text):
     next_tip = 1
     charter_returns = []
     outfit_limited = []
+    demand_base = []
+    econ_day = 0
+    // (M4) "corporations 2"; anything else is a market from before M4.
+    version = 2 if text.starts_with("corporations 2") else 1
     for line in text.split("\n"):
         if line.len() < 2 || line[1] != "|":
             continue
@@ -3165,6 +3569,9 @@ void decode(string text):
             next_contract = f[6].to_int()
             last_listing = f[7].to_int()
             dividends_paid = f[8].to_float()
+            if f.len() > 10:
+                demand_base = read_floats(f[9])
+                econ_day = f[10].to_int()
         else if kind == "c":
             Company c = Company()
             c.decode(rest)
@@ -3186,6 +3593,20 @@ void decode(string text):
             covert_jobs.append(rest)
         else if kind == "a":
             executives.append(rest)
+        else if kind == "i":
+            Chief ch = Chief()
+            ch.decode(rest)
+            chiefs.append(ch)
+            chief_by_id[ch.id] = ch
+        else if kind == "I":
+            []string f = rest.split("|")
+            if f.len() >= 6:
+                next_chief = f[0].to_int()
+                chief_rng.state = f[1].to_int()
+                offer_chief = f[2].to_int()
+                offer_from = f[3].to_int()
+                offer_salary = f[4].to_float()
+                offer_until = f[5].to_int()
         else if kind == "q":
             []string f = rest.split("|")
             if f.len() >= 4:
@@ -3271,3 +3692,78 @@ void decode(string text):
     // A save from before M3: every company gets a chief.
     for c in companies:
         execs.ensure(self, c)
+    // (0.4) A save from before the chiefs' pool: its chiefs join one.
+    if chiefs.len() == 0:
+        execs.migrate(self)
+        must_save = true
+    if demand_base.len() != 8 && version >= 2:
+        set_demand(day)
+
+// ---- M4: a market from before M4 ----
+
+// The version of the saved market this one was read from (decode): 1 for a
+// market from before M4, which the mod replaces (migrate).
+int version = 2
+
+// A new exchange for a pilot whose market is from before M4 (its money was a
+// 25th of what it is now, and its companies knew no research): the player's
+// shares are bought out at their last price, their shorts closed there, their
+// company's parked ships sent back (its shares are bought out with the rest),
+// running crises end with their prices restored. Hull orders, shelves (their
+// restocks ordered again), losses, the news, fines owed, the regulator's
+// attention and standing (conditions) carry over. Answers the new market.
+Market migrate(es.Game game, Galaxy galaxy):
+    for c in companies:
+        if c.owner == 1 && c.listed():
+            charter.release(self, c)
+    float back = 0.0
+    for id in shorts.keys():
+        Company c = by_id.get(id, Company())
+        if c.id != 0:
+            back += shorts_desk.cover(game, self, c, shorts.get(id, 0), c.price)
+    float paid = 0.0
+    for id, held in holdings:
+        Company c = by_id.get(id, Company())
+        if c.id != 0 && held > 0 && c.price > 0.0:
+            paid += c.price * float(held)
+    credit(game, paid)
+    for x in crises:
+        crisis_desk.restore(game, self, x)
+    Market n = Market()
+    n.api_trade = api_trade
+    n.api_park = api_park
+    n.api_remove = api_remove
+    n.api_outfits = api_outfits
+    n.notify = notify
+    n.timing = timing
+    n.setup(game, galaxy, game.day())
+    n.owed = owed
+    n.scrutiny = scrutiny
+    n.charter_returns = charter_returns
+    n.losses = losses
+    n.seen_captures = seen_captures
+    n.seen_destroyed = seen_destroyed
+    n.seen_war = seen_war
+    n.urgent_until = urgent_until
+    n.dividends_paid = dividends_paid
+    n.next_contract = next_contract if next_contract > n.next_contract else n.next_contract
+    for k in contracts:
+        if k.kind == k.ORDER && n.by_id.has(k.winner) && n.by_id[k.winner].name == by_id.get(k.winner, Company()).name:
+            n.contracts.append(k)
+    for s in shelves:
+        n.add_shelf(s.planet, s.model, s.row, s.count, 0)
+    for model, id in builders:
+        if n.by_id.has(id) && n.by_id[id].canon && by_id.has(id) && by_id[id].name == n.by_id[id].name:
+            n.builders[model] = id
+    // Old news keeps its words, not its links: ids belong to the old exchange.
+    for line in news:
+        []string f = line.split("|")
+        n.news.append(f[0] + "|" + (f[1] if f.len() > 1 else "") + "|")
+    string text = "The exchange is reorganised and relisted: established companies are now valued in the billions"
+    n.say(n.day, text + ".")
+    string yours = ""
+    if paid > 0.0 || back != 0.0:
+        yours = " Your holdings were bought out at their last prices for " + fmt.credits(paid) + " credits" + (", and your shorts closed (" + fmt.credits(back) + " credits)" if back != 0.0 else "") + "."
+    n.player_events.append(text + "." + yours)
+    n.must_save = true
+    return n

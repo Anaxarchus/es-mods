@@ -309,6 +309,12 @@ export class MockGame {
 				if (!this.shipyards.has(top[1])) this.shipyards.set(top[1], []);
 				this.shipyards.get(top[1]).push(l.t[1]);
 				applied = true;
+			} else if (top[0] === 'government' && l.depth === 1 && l.t[0] === 'swizzle') {
+				const v = Number(l.t[1]);
+				if (!Number.isInteger(v) || v < 0) throw new Error('change: bad swizzle ' + JSON.stringify(text));
+				this.swizzles = this.swizzles || new Map();
+				this.swizzles.set(top[1], v);
+				applied = true;
 			} else if (top[0] === 'government' && l.depth === 1 && l.t[0] === 'color') {
 				if (l.t.length !== 2 && !(l.t.length === 4 && l.t.slice(1).every(v => !Number.isNaN(parseFloat(v))))) throw new Error('change: bad color ' + JSON.stringify(text));
 				this.governmentColors = this.governmentColors || new Map();

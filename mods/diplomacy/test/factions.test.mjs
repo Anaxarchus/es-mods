@@ -314,6 +314,7 @@ test('operations from the live war write their outcome back into the simulation'
 	assert.ok(job, 'landing nearby offers "Relieve the siege of ' + where + '": ' + game.jobs.map(j => j.name).join('; '));
 	assert.match(job.text, new RegExp('"diplomacy: op relieve ' + where + '" = 1'));
 	assert.match(job.text, /npc kill/);
+	assert.match(job.text, /personality [^\n]*\btracked\b/, 'the target is tracked on the map');
 	game.landed = '';
 	const before = fleets(game).find(x => x.id === target.id).strength;
 	game.setCond('diplomacy: op relieve ' + where, 1);

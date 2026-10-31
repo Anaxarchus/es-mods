@@ -59,6 +59,20 @@ test('a member can land on every world of its faction, which stands out on the m
 	assert.equal(game.governmentColors.get('Republic'), 'governments: Republic');
 });
 
+test('a member\'s ships fly in its faction\'s colours, and their own again on leaving', { skip }, () => {
+	const { game, mod } = atWar();
+	assert.equal(game.swizzles.get('Escort'), 2, 'Free Worlds colours');
+	mod.service.leave(game);
+	assert.equal(game.swizzles.get('Escort'), 5, 'the player\'s own');
+	mod.service.join(game, 3);
+	assert.equal(game.swizzles.get('Escort'), 4, 'the Syndicate\'s');
+	const n = game.changes.length;
+	mod.on_enter(game, 'Sol');
+	assert.equal(game.changes.filter((c) => c.text.includes('swizzle')).length, game.changes.slice(0, n).filter((c) => c.text.includes('swizzle')).length, 'set once, not every jump');
+	mod.service.leave(game);
+	assert.equal(game.swizzles.get('Escort'), 5);
+});
+
 // ---- Squadrons ----
 
 test('a Commodore commands one squadron from the War Room; it follows an attack order', { skip }, () => {
@@ -496,6 +510,7 @@ test('a bounty on a rival: the job is an npc kill, and it pays a medal', { skip 
 	assert.equal(mod.ops.try_offer(game, 'Bourne', 'bounty', x, mod.world.wars[0], x.at, game.today), 1);
 	const job = game.jobs.find(j => /^Bounty: /.test(j.name));
 	assert.ok(job && /npc kill/.test(job.text), 'an npc kill job');
+	assert.ok(/personality [^\n]*\btracked\b/.test(job.text), 'the rival is tracked on the map');
 	const key = job.text.match(/"diplomacy: op (bounty [^"]+)" = 1/)[1];
 	game.landed = '';
 	game.setCond('diplomacy: op ' + key, 1);
@@ -918,4 +933,31 @@ test('stabilisers: a side below 60% of its home rallies (garrisons, no risings, 
 	assert.equal(risen, 0, 'no rising against a side that rallies');
 	// The war on it ends once it has run rally_peace_days.
 	assert.ok(!mod.world.wars.some(w => w.involves(2) && game.today - w.since > mod.tune.rally_peace_days + 1), 'peace: ' + JSON.stringify(mod.world.wars.map(w => [w.a, w.b, game.today - w.since])));
+});
+
+test('flotillas stay at least a day after every jump, so they can be caught; the rest is saved', { skip }, () => {
+	const { game, mod } = atWar();
+	const seen = new Map();
+	let stops = 0;
+	for (let d = 0; d < 120; d++) {
+		day(game, mod);
+		for (const x of mod.world.fleets) {
+			if (!x.alive()) continue;
+			const s = seen.get(x.id);
+			if (s && s.at === x.at) { s.days++; continue; }
+			if (s && !s.first) {
+				// It left: it was there two days at least (one of them its rest).
+				assert.ok(s.days >= 2, `flotilla ${x.id} left ${s.at} after ${s.days} day`);
+				stops++;
+			}
+			// Its first stop is seen only from the test's first day: not counted.
+			seen.set(x.id, { at: x.at, days: 1, first: !s && d === 0 });
+		}
+	}
+	assert.ok(stops > 10, `stops seen (${stops})`);
+	const x = mod.world.fleets.find((f) => f.alive());
+	x.rest = 1;
+	const y = new x.constructor();
+	y.decode(x.encode());
+	assert.equal(y.rest, 1);
 });

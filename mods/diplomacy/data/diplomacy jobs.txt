@@ -21,7 +21,7 @@ mission "Diplomacy: Republic Job: Courier vs Free Worlds"
 		government "Republic"
 	npc kill
 		government "Free Worlds Flotilla"
-		personality timid staying marked target
+		personality timid staying marked target tracked
 		system
 			distance 1 3
 			government "Free Worlds"
@@ -49,7 +49,7 @@ mission "Diplomacy: Republic Job: Scout Ship vs Free Worlds"
 		government "Republic"
 	npc kill
 		government "Free Worlds Flotilla"
-		personality timid staying marked target
+		personality timid staying marked target tracked
 		system
 			distance 1 3
 			government "Free Worlds"
@@ -99,7 +99,7 @@ mission "Diplomacy: Republic Job: Medium Warship vs Free Worlds"
 		government "Republic"
 	npc kill
 		government "Free Worlds Flotilla"
-		personality heroic staying marked target
+		personality heroic staying marked target tracked
 		system
 			distance 1 4
 			government "Free Worlds"
@@ -128,7 +128,7 @@ mission "Diplomacy: Republic Job: Large Warship vs Free Worlds"
 		government "Republic"
 	npc kill
 		government "Free Worlds Flotilla"
-		personality heroic staying marked target
+		personality heroic staying marked target tracked
 		system
 			distance 1 4
 			government "Free Worlds"
@@ -157,7 +157,7 @@ mission "Diplomacy: Republic Job: Warfleet vs Free Worlds"
 		government "Republic"
 	npc kill
 		government "Free Worlds Flotilla"
-		personality heroic staying marked target
+		personality heroic staying marked target tracked
 		system
 			distance 1 4
 			government "Free Worlds"
@@ -182,7 +182,7 @@ mission "Diplomacy: Free Worlds Job: Courier vs Republic"
 		government "Free Worlds"
 	npc kill
 		government "Republic Flotilla"
-		personality timid staying marked target
+		personality timid staying marked target tracked
 		system
 			distance 1 3
 			government "Republic"
@@ -210,7 +210,7 @@ mission "Diplomacy: Free Worlds Job: Scout Ship vs Republic"
 		government "Free Worlds"
 	npc kill
 		government "Republic Flotilla"
-		personality timid staying marked target
+		personality timid staying marked target tracked
 		system
 			distance 1 3
 			government "Republic"
@@ -260,7 +260,7 @@ mission "Diplomacy: Free Worlds Job: Medium Warship vs Republic"
 		government "Free Worlds"
 	npc kill
 		government "Republic Flotilla"
-		personality heroic staying marked target
+		personality heroic staying marked target tracked
 		system
 			distance 1 4
 			government "Republic"
@@ -289,7 +289,7 @@ mission "Diplomacy: Free Worlds Job: Large Warship vs Republic"
 		government "Free Worlds"
 	npc kill
 		government "Republic Flotilla"
-		personality heroic staying marked target
+		personality heroic staying marked target tracked
 		system
 			distance 1 4
 			government "Republic"
@@ -318,7 +318,7 @@ mission "Diplomacy: Free Worlds Job: Warfleet vs Republic"
 		government "Free Worlds"
 	npc kill
 		government "Republic Flotilla"
-		personality heroic staying marked target
+		personality heroic staying marked target tracked
 		system
 			distance 1 4
 			government "Republic"
@@ -343,7 +343,7 @@ mission "Diplomacy: Republic Job: Courier vs Syndicate"
 		government "Republic"
 	npc kill
 		government "Syndicate Flotilla"
-		personality timid staying marked target
+		personality timid staying marked target tracked
 		system
 			distance 1 3
 			government "Syndicate"
@@ -371,7 +371,7 @@ mission "Diplomacy: Republic Job: Scout Ship vs Syndicate"
 		government "Republic"
 	npc kill
 		government "Syndicate Flotilla"
-		personality timid staying marked target
+		personality timid staying marked target tracked
 		system
 			distance 1 3
 			government "Syndicate"
@@ -421,7 +421,7 @@ mission "Diplomacy: Republic Job: Medium Warship vs Syndicate"
 		government "Republic"
 	npc kill
 		government "Syndicate Flotilla"
-		personality heroic staying marked target
+		personality heroic staying marked target tracked
 		system
 			distance 1 4
 			government "Syndicate"
@@ -450,7 +450,7 @@ mission "Diplomacy: Republic Job: Large Warship vs Syndicate"
 		government "Republic"
 	npc kill
 		government "Syndicate Flotilla"
-		personality heroic staying marked target
+		personality heroic staying marked target tracked
 		system
 			distance 1 4
 			government "Syndicate"
@@ -479,7 +479,7 @@ mission "Diplomacy: Republic Job: Warfleet vs Syndicate"
 		government "Republic"
 	npc kill
 		government "Syndicate Flotilla"
-		personality heroic staying marked target
+		personality heroic staying marked target tracked
 		system
 			distance 1 4
 			government "Syndicate"
@@ -504,7 +504,7 @@ mission "Diplomacy: Syndicate Job: Courier vs Republic"
 		government "Syndicate"
 	npc kill
 		government "Republic Flotilla"
-		personality timid staying marked target
+		personality timid staying marked target tracked
 		system
 			distance 1 3
 			government "Republic"
@@ -532,7 +532,7 @@ mission "Diplomacy: Syndicate Job: Scout Ship vs Republic"
 		government "Syndicate"
 	npc kill
 		government "Republic Flotilla"
-		personality timid staying marked target
+		personality timid staying marked target tracked
 		system
 			distance 1 3
 			government "Republic"
@@ -582,7 +582,7 @@ mission "Diplomacy: Syndicate Job: Medium Warship vs Republic"
 		government "Syndicate"
 	npc kill
 		government "Republic Flotilla"
-		personality heroic staying marked target
+		personality heroic staying marked target tracked
 		system
 			distance 1 4
 			government "Republic"
@@ -611,7 +611,7 @@ mission "Diplomacy: Syndicate Job: Large Warship vs Republic"
 		government "Syndicate"
 	npc kill
 		government "Republic Flotilla"
-		personality heroic staying marked target
+		personality heroic staying marked target tracked
 		system
 			distance 1 4
 			government "Republic"
@@ -640,7 +640,7 @@ mission "Diplomacy: Syndicate Job: Warfleet vs Republic"
 		government "Syndicate"
 	npc kill
 		government "Republic Flotilla"
-		personality heroic staying marked target
+		personality heroic staying marked target tracked
 		system
 			distance 1 4
 			government "Republic"
@@ -665,7 +665,7 @@ mission "Diplomacy: Free Worlds Job: Courier vs Syndicate"
 		government "Free Worlds"
 	npc kill
 		government "Syndicate Flotilla"
-		personality timid staying marked target
+		personality timid staying marked target tracked
 		system
 			distance 1 3
 			government "Syndicate"
@@ -693,7 +693,7 @@ mission "Diplomacy: Free Worlds Job: Scout Ship vs Syndicate"
 		government "Free Worlds"
 	npc kill
 		government "Syndicate Flotilla"
-		personality timid staying marked target
+		personality timid staying marked target tracked
 		system
 			distance 1 3
 			government "Syndicate"
@@ -743,7 +743,7 @@ mission "Diplomacy: Free Worlds Job: Medium Warship vs Syndicate"
 		government "Free Worlds"
 	npc kill
 		government "Syndicate Flotilla"
-		personality heroic staying marked target
+		personality heroic staying marked target tracked
 		system
 			distance 1 4
 			government "Syndicate"
@@ -772,7 +772,7 @@ mission "Diplomacy: Free Worlds Job: Large Warship vs Syndicate"
 		government "Free Worlds"
 	npc kill
 		government "Syndicate Flotilla"
-		personality heroic staying marked target
+		personality heroic staying marked target tracked
 		system
 			distance 1 4
 			government "Syndicate"
@@ -801,7 +801,7 @@ mission "Diplomacy: Free Worlds Job: Warfleet vs Syndicate"
 		government "Free Worlds"
 	npc kill
 		government "Syndicate Flotilla"
-		personality heroic staying marked target
+		personality heroic staying marked target tracked
 		system
 			distance 1 4
 			government "Syndicate"
@@ -826,7 +826,7 @@ mission "Diplomacy: Syndicate Job: Courier vs Free Worlds"
 		government "Syndicate"
 	npc kill
 		government "Free Worlds Flotilla"
-		personality timid staying marked target
+		personality timid staying marked target tracked
 		system
 			distance 1 3
 			government "Free Worlds"
@@ -854,7 +854,7 @@ mission "Diplomacy: Syndicate Job: Scout Ship vs Free Worlds"
 		government "Syndicate"
 	npc kill
 		government "Free Worlds Flotilla"
-		personality timid staying marked target
+		personality timid staying marked target tracked
 		system
 			distance 1 3
 			government "Free Worlds"
@@ -904,7 +904,7 @@ mission "Diplomacy: Syndicate Job: Medium Warship vs Free Worlds"
 		government "Syndicate"
 	npc kill
 		government "Free Worlds Flotilla"
-		personality heroic staying marked target
+		personality heroic staying marked target tracked
 		system
 			distance 1 4
 			government "Free Worlds"
@@ -933,7 +933,7 @@ mission "Diplomacy: Syndicate Job: Large Warship vs Free Worlds"
 		government "Syndicate"
 	npc kill
 		government "Free Worlds Flotilla"
-		personality heroic staying marked target
+		personality heroic staying marked target tracked
 		system
 			distance 1 4
 			government "Free Worlds"
@@ -962,7 +962,7 @@ mission "Diplomacy: Syndicate Job: Warfleet vs Free Worlds"
 		government "Syndicate"
 	npc kill
 		government "Free Worlds Flotilla"
-		personality heroic staying marked target
+		personality heroic staying marked target tracked
 		system
 			distance 1 4
 			government "Free Worlds"

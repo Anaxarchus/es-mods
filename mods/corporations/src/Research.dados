@@ -1,0 +1,252 @@
+class Research
+
+import "imports:sdk/es"
+
+// (M4) Technology and research. Every company has three levels, kept for
+// good once reached (Company.tech):
+//   process  what its work costs: cost factor 1 - PROCESS_MAX (1 - e^(-P/PROCESS_K))
+//   scale    the work its yards carry: effective capacity
+//            × 1 + SCALE_MAX (1 - e^(-S/SCALE_K)); upkeep stays on the yards
+//   quality  the reliability it recovers toward at each report:
+//            QUALITY_BASE + QUALITY_MAX (1 - e^(-Q/QUALITY_K))
+// It spends rd_rates[rd] of the work its yards could earn a day (RUN_RATE of
+// its effective capacity's worth) on one focus; the spending is a cost, and
+// the level comes when it passes the level's cost (cost(), times a hidden
+// draw `luck`, LUCK_LO to LUCK_HI). Below the sector's frontier less
+// CATCH_UP_GAP a level costs CATCH_UP of what it would (the leaders' work is
+// there to learn from). A breakthrough is news and lifts the price.
+// Chiefs set the budget and focus at each report (decide): by trait, by how
+// far behind the sector they are, and by need. The player sets their own
+// company's; a board seat can set any company's (Company.board_rd).
+
+[]string focus_names = ["process", "scale", "quality"]
+[]string focus_words = ["production process", "throughput", "quality"]
+[]float rd_rates = [0.0, 0.01, 0.025, 0.045, 0.07]
+[]string rd_names = ["none", "light", "steady", "heavy", "all-in"]
+float PROCESS_MAX = 0.35
+float PROCESS_K = 8.0
+float SCALE_MAX = 0.5
+float SCALE_K = 8.0
+float QUALITY_BASE = 0.70
+float QUALITY_MAX = 0.28
+float QUALITY_K = 6.0
+// The share of its effective capacity a company's R&D budget is reckoned on.
+float RUN_RATE = 0.6
+// A level's cost: R0 × capacity^SIZE_POWER × GROWTH^level.
+float R0 = 860000.0
+float SIZE_POWER = 0.6
+float GROWTH = 1.32
+float CATCH_UP = 0.5
+int CATCH_UP_GAP = 2
+float LUCK_LO = 0.6
+float LUCK_HI = 1.5
+// How far a breakthrough lifts the price (a share of it, drawn).
+float LIFT_LO = 0.02
+float LIFT_HI = 0.06
+// Each trait's usual budget level: aggressive, prudent, visionary, crooked.
+[]int trait_rd = [1, 2, 3, 1]
+
+// Counted since the mod started (not saved), for tests and tools.
+int breakthroughs = 0
+
+// Each sector's frontier, by focus (the highest level among its listed
+// companies), worked out once a day (frontiers()); not saved.
+[][]int frontier = []
+int frontier_day = -1
+
+float exp(float x):
+    float r = globalThis.Math.exp(x)
+    return r
+
+float pow(float x, float y):
+    float r = globalThis.Math.pow(x, y)
+    return r
+
+float process_factor(Company c):
+    return 1.0 - PROCESS_MAX * (1.0 - exp(-float(c.tech[0]) / PROCESS_K))
+
+float scale_factor(Company c):
+    return 1.0 + SCALE_MAX * (1.0 - exp(-float(c.tech[1]) / SCALE_K))
+
+float quality_base(Company c):
+    return QUALITY_BASE + QUALITY_MAX * (1.0 - exp(-float(c.tech[2]) / QUALITY_K))
+
+// What a unit of its work costs against the average company's (1.0): its
+// condition (efficiency) times its process.
+float cost_factor(Company c):
+    return c.efficiency * process_factor(c)
+
+// The sector's frontier for a focus.
+int frontier_of(Market m, int sector, int focus):
+    frontiers(m)
+    return frontier[sector][focus] if sector >= 0 && sector < frontier.len() else 0
+
+void frontiers(Market m):
+    if frontier_day == m.today && frontier.len() == 8:
+        return
+    frontier_day = m.today
+    frontier = []
+    for s in 0..<8:
+        frontier.append([0, 0, 0])
+    for c in m.companies:
+        if !c.listed():
+            continue
+        for f in 0..<3:
+            if c.tech[f] > frontier[c.sector][f]:
+                frontier[c.sector][f] = c.tech[f]
+
+// What the next level of a focus costs the company (before its draw).
+float cost(Market m, Company c, int focus):
+    float size = c.capacity if c.capacity > 0.01 else 0.01
+    int level = c.tech[focus]
+    float k = R0 * pow(size, SIZE_POWER) * pow(GROWTH, float(level))
+    if level < frontier_of(m, c.sector, focus) - CATCH_UP_GAP:
+        k = k * CATCH_UP
+    return k
+
+// What its research costs a day now.
+float daily_cost(Market m, Company c):
+    if c.rd <= 0 || c.rd >= rd_rates.len():
+        return 0.0
+    return rd_rates[c.rd] * m.eff(c) * m.UNIT * RUN_RATE
+
+// How far along the next level is: 0 to 1 (by the cost before the draw, so
+// it can pass 1 and still be waiting).
+float along(Market m, Company c):
+    float k = cost(m, c, c.focus)
+    return c.progress / k if k > 0.0 else 0.0
+
+// A word for how far along: for the player, who never sees the draw.
+string along_word(Market m, Company c):
+    float a = along(m, c)
+    if c.rd <= 0:
+        return "no research under way"
+    if a < 0.25:
+        return "early days"
+    if a < 0.6:
+        return "making progress"
+    if a < 0.9:
+        return "well along"
+    return "close, by its engineers' account"
+
+void new_draw(Market m, Company c):
+    c.luck = m.rng.between(LUCK_LO, LUCK_HI)
+
+// Each day: every listed company in good standing spends its budget; a
+// breakthrough when the spending passes the level's cost.
+void daily(es.Game game, Market m, int d):
+    for c in m.companies:
+        if !c.listed() || c.rd <= 0:
+            continue
+        // In trouble, the labs stop: no money for them.
+        if c.status != c.LISTED || c.cash <= 0.0:
+            continue
+        float spend = daily_cost(m, c)
+        c.cash -= spend
+        c.costs += spend
+        c.rd_spent += spend
+        // (0.4) A chief with vision gets more from the same spending.
+        c.progress += spend * m.execs.rd_factor(m, c)
+        float need = cost(m, c, c.focus) * c.luck
+        if c.progress >= need:
+            breakthrough(game, m, c, need, d)
+
+void breakthrough(es.Game game, Market m, Company c, float need, int d):
+    breakthroughs += 1
+    c.tech[c.focus] = c.tech[c.focus] + 1
+    c.progress = c.progress - need
+    c.progress = c.progress if c.progress > 0.0 else 0.0
+    new_draw(m, c)
+    float lift = m.rng.between(LIFT_LO, LIFT_HI)
+    m.shock(c, 1.0 + lift)
+    if c.focus == 2:
+        c.reliability = m.clamp(c.reliability + 0.03, 0.0, 0.99)
+    int lead = frontier_of(m, c.sector, c.focus)
+    bool leads = c.tech[c.focus] > lead
+    frontier_day = -1
+    string what = focus_words[c.focus]
+    string text = c.name + " announces a breakthrough in " + what + (", taking the lead in " + m.names.sectors[c.sector].to_lower() if leads else "") + "; its shares rise."
+    m.say_tagged(d, text, "c" + string(c.id) + (",s" if c.sector == 0 else ""))
+    c.note("after a breakthrough in " + what)
+    if leads && c.market_value() > 200000000.0:
+        m.post_news(c, "", c.name + "'s engineers have made a breakthrough in " + what + " that puts the company ahead of its rivals. Its recruiters are everywhere.")
+    if c.owner == 1:
+        m.player_events.append("Your company " + c.name + " reaches " + focus_names[c.focus] + " level " + string(c.tech[c.focus]) + ": a breakthrough in " + what + ".")
+    else if m.holdings.get(c.id, 0) > 0:
+        m.player_events.append(text)
+
+// At each report: reliability recovers toward its quality's level, and the
+// chief sets the budget and focus (not for the player's company, nor where
+// the player's board seat has set them).
+void after_report(Market m, Company c, float util, int d):
+    float base = quality_base(c)
+    if c.reliability < base:
+        // (0.4) A chief with nerve restores it sooner.
+        c.reliability = c.reliability + m.clamp(0.25 * m.execs.recover_factor(m, c), 0.05, 0.6) * (base - c.reliability)
+    else:
+        c.reliability = c.reliability - 0.1 * (c.reliability - base)
+    c.rd_spent = 0.0
+    if c.owner == 1:
+        return
+    if c.board_rd == 1 && m.board.has_seat(m, c):
+        return
+    c.board_rd = 0
+    decide(m, c, util, d)
+
+// The chief's choice of budget and focus.
+void decide(Market m, Company c, float util, int d):
+    int level = trait_rd[c.trait] if c.trait >= 0 && c.trait < trait_rd.len() else 1
+    if c.trait == 3 && m.rng.chance(40.0):
+        level = 0
+    int gap = 0
+    for f in 0..<3:
+        int g = frontier_of(m, c.sector, f) - c.tech[f]
+        gap = g if g > gap else gap
+    if gap >= 3:
+        level += 1
+    int n = c.earnings.len()
+    if n >= 2 && c.earnings[n - 1] < 0.0 && c.earnings[n - 2] < 0.0:
+        level -= 1
+    if c.cash < m.upkeep(c) * 60.0:
+        level = level if level < 1 else 1
+    if c.status != c.LISTED:
+        level = 0
+    level = 0 if level < 0 else (4 if level > 4 else level)
+    c.rd = level
+    // Focus: by need, with the work under way favoured (a change of focus
+    // throws away what was spent toward the old one).
+    []float score = [1.0, 1.0, 1.0]
+    for f in 0..<3:
+        int behind = frontier_of(m, c.sector, f) - c.tech[f]
+        score[f] = score[f] + 0.3 * float(behind if behind < 4 else 4)
+    if util > 0.8:
+        score[1] = score[1] + 2.0
+    if c.reliability < quality_base(c) - 0.05:
+        score[2] = score[2] + 1.0
+    if c.trait == 2:
+        score[c.id % 3] = score[c.id % 3] + 0.5
+    score[c.focus] = score[c.focus] + (0.8 + 1.5 * along(m, c))
+    for f in 0..<3:
+        score[f] = score[f] * m.rng.between(0.85, 1.15)
+    int best = c.focus
+    for f in 0..<3:
+        if score[f] > score[best]:
+            best = f
+    set_focus(m, c, best)
+
+// A new focus: what was spent toward the old one is lost.
+void set_focus(Market m, Company c, int f):
+    if f == c.focus || f < 0 || f > 2:
+        return
+    c.focus = f
+    c.progress = 0.0
+    new_draw(m, c)
+
+// Starting levels: an established company's (canonical) or a newcomer's.
+void seed(Market m, Company c, bool established):
+    for f in 0..<3:
+        c.tech[f] = m.rng.range(5, 10) if established else m.rng.range(0, 4)
+    c.focus = m.rng.range(0, 2)
+    c.rd = trait_rd[c.trait] if c.trait >= 0 && c.trait < trait_rd.len() else 1
+    c.progress = cost(m, c, c.focus) * m.rng.between(0.0, 0.6)
+    new_draw(m, c)

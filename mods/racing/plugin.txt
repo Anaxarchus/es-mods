@@ -1,0 +1,9 @@
+name "The Racing League"
+version "0.1.0"
+authors
+	"Anaxarchus"
+tags
+	"gameplay"
+	"scripting"
+about "Own a racing team. Three leagues race every week across real systems of human space, from the scrappy B League to the S League, where fortunes are made and lost. Buy a franchise, hire pilots, engineers and crew from a pool of named people with track records, fund research on your racing ship, sign sponsors, and climb by promotion; or watch a bad team eat your savings. With Corporations and the Racing League and Corporations plugin installed, the exchange's companies are the sponsors."
+about "It needs the Dado mod loader (mod API 10 or newer) in the game's modloaders folder. The Racing League button is on every planet with a bank."

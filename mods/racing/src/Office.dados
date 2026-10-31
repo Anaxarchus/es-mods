@@ -1,0 +1,1156 @@
+class Office
+
+// The racing office: a full screen of its own over the planet screen (mod
+// API 7), at any planet with a bank, opened by the "Racing League" button.
+// Tabs: Team (the seats: two pilots and the crew; the approach; renaming;
+// without a team, the teams for sale and the archive of defunct teams, to
+// buy one or revive one), Staff (the pool's market), R&D (the departments'
+// budgets), Calendar, Standings (the teams' and the drivers' championships),
+// Finances, Sponsors, Race (the last result, both cars of every team, and lap
+// by lap), News and Bets (the Paddock Book: Book; for a player without a team). The buttons sit in the same places on every tab, so their keys stay
+// put. Events (Events) open as a plain panel (panel_open) on landing, one
+// after another.
+
+import "imports:sdk/es"
+
+int TEAM = 0
+int STAFF = 1
+int RND = 2
+int CALENDAR = 3
+int STANDINGS = 4
+int FINANCES = 5
+int SPONSORS = 6
+int RACE = 7
+int NEWS = 8
+int BETS = 9
+[]string tab_names = ["team", "staff market", "research and development", "calendar", "standings", "finances", "sponsors", "last race", "news", "the Paddock Book"]
+
+int BUY_OK = 1
+int REVIVE_OK = 14
+int RENAME_OK = 15
+int HIRE_OK = 2
+int FIRE_OK = 3
+int MATCH_OK = 4
+int SELL_OK = 5
+int SIGN_OK = 6
+int DROP_OK = 7
+int RENEW_OK = 8
+int BET_OK = 9
+int BUDGET_ASK = 10
+int INVEST_ASK = 11
+int WITHDRAW_ASK = 12
+int BET_ASK = 13
+
+int tab = 0
+// What the screen shows: the league in view, the staff role, the chosen
+// rows (a seat, a person's id, a department, a deal's id), and the race view.
+int league = -1
+int role = 0
+int seat = -1
+int person = 0
+int dept = -1
+int deal = 0
+bool laps = false
+// The contract length (seasons) for hiring and renewing.
+int years = 2
+// The pilot's seat a hire goes to (0 the #1's, 5 the #2's; -1 the first empty).
+int slot = -1
+// The Standings tab shows the drivers' championship (else the teams').
+bool drivers = false
+// A dialog's subject, until its confirm or number comes back.
+int pending = 0
+// Without a team: the archive of defunct teams instead of the teams for sale.
+bool archive_view = false
+// The chosen team (a team's id: the teams for sale, the Standings; or a
+// defunct team's in the archive).
+int pick_team = 0
+// Renaming the team: the names offered (the generator's page, and the
+// player's ships' names) and the chosen one.
+bool naming = false
+int name_page = 0
+[]string name_list = []
+int name_pick = -1
+string name_pending = ""
+// The Paddock Book (Bets tab): the market in view (an index into markets()),
+// the bet slip instead of the board, the chosen offer (its row), and the
+// offer and stake a bet waits on.
+int market = 0
+bool slip = false
+int pick = -1
+Bet bet_offer = Bet()
+float bet_stake = 0.0
+// The plain panel is an event's (not the screen).
+bool event_mode = false
+int event_id = 0
+bool event_done = false
+[]string actions = []
+[]int row_keys = []
+string note = ""
+
+Names names = Names()
+Fmt fmt = Fmt()
+
+// ---- Opening ----
+
+void open(es.Game game, World w):
+    event_mode = false
+    if league < 0 || league > 2:
+        league = w.mine().league if w.has_team() else 0
+    show(game, w)
+
+void button(es.Game game, string label, string action):
+    game.panel_button(label)
+    actions.append(action)
+
+void show(es.Game game, World w):
+    event_mode = false
+    actions = []
+    row_keys = []
+    if league < 0 || league > 2:
+        league = 0
+    Team me = w.mine()
+    game.screen_open("Racing League: " + tab_names[tab], sidebar(game, w))
+    if tab == FINANCES && me.id != 0:
+        chart(game, w)
+    if tab == TEAM:
+        team_table(game, w)
+    else if tab == STAFF:
+        staff_table(game, w)
+    else if tab == RND:
+        rnd_table(game, w)
+    else if tab == CALENDAR:
+        calendar_table(game, w)
+    else if tab == STANDINGS:
+        standings_table(game, w)
+    else if tab == FINANCES:
+        finance_table(game, w)
+    else if tab == SPONSORS:
+        sponsor_table(game, w)
+    else if tab == RACE:
+        race_table(game, w)
+    else if tab == BETS:
+        bets_table(game, w)
+    else:
+        news_table(game, w)
+    int chosen = -1
+    int key = selection(w)
+    if key != -1 && row_keys.contains(key):
+        chosen = row_keys.index_of(key)
+    game.panel_select(chosen)
+    button(game, "Team", "tab 0")
+    button(game, "Staff", "tab 1")
+    button(game, "R&D", "tab 2")
+    button(game, "Calendar", "tab 3")
+    button(game, "Standings", "tab 4")
+    button(game, "Finances", "tab 5")
+    button(game, "Sponsors", "tab 6")
+    button(game, "Last race", "tab 7")
+    button(game, "News", "tab 8")
+    button(game, "Bets", "tab 9")
+    context_buttons(game, w)
+    button(game, "Leave", "close")
+    note = ""
+
+int selection(World w):
+    if tab == TEAM:
+        return name_pick if naming else (seat if w.has_team() else pick_team)
+    if tab == STAFF:
+        return person
+    if tab == RND:
+        return dept
+    if tab == SPONSORS:
+        return deal
+    if tab == BETS:
+        return pick
+    if tab == STANDINGS && !drivers:
+        return pick_team
+    return -1
+
+void context_buttons(es.Game game, World w):
+    Team me = w.mine()
+    if tab == TEAM:
+        if me.id == 0:
+            if archive_view:
+                button(game, "Teams for sale", "archive")
+                Team a = w.archived(pick_team)
+                if a.id != 0 && w.not_revivable(a) == "":
+                    button(game, "Revive", "revive")
+            else:
+                button(game, "League: " + names.league_short[league], "league")
+                button(game, "Archive", "archive")
+                Team t = w.team(pick_team)
+                if t.id != 0 && w.not_for_sale(t) == "":
+                    button(game, "Buy", "buy")
+            return
+        if naming:
+            button(game, "More names", "more names")
+            if name_pick >= 0 && name_pick < name_list.len():
+                button(game, "Rename", "rename")
+            button(game, "Back", "unname")
+            return
+        button(game, "Rename the team", "naming")
+        button(game, "Approach: " + names.approach_names[me.approach].to_lower(), "approach")
+        if seat >= 0 && seat < w.SEATS:
+            button(game, "Find a " + names.role_short[me.seat_role(seat)].to_lower(), "find")
+            if me.seat_role(seat) == 0:
+                button(game, "Swap #1 and #2", "swap")
+            Person p = w.seat(me, seat)
+            if p.id != 0:
+                button(game, "Release", "fire")
+                if p.offer_until != 0:
+                    button(game, "Match the offer", "match")
+                if w.staff.can_renew(w, p):
+                    button(game, "Renew", "renew")
+                    button(game, "Contract: " + seasons_text(years), "years")
+    else if tab == STAFF:
+        button(game, "Role: " + names.role_short[role].to_lower(), "role")
+        if me.id != 0 && person != 0 && w.person_by_id.has(person):
+            Person p = w.person(person)
+            if p.team == 0:
+                button(game, "Hire", "hire")
+            else if p.team != me.id:
+                button(game, "Sign away", "hire")
+            if p.team != me.id:
+                button(game, "Contract: " + seasons_text(years), "years")
+                if p.role == 0:
+                    button(game, "Seat: " + seat_name(hire_seat(w, me, p)), "slot")
+    else if tab == RND:
+        if me.id != 0 && dept >= 0 && dept < 5:
+            button(game, "Set budget", "budget")
+            if me.budgets[dept] > 0.0:
+                button(game, "Stop funding", "unfund")
+    else if tab == CALENDAR:
+        button(game, "League: " + names.league_short[league], "league")
+    else if tab == STANDINGS:
+        button(game, "League: " + names.league_short[league], "league")
+        button(game, "Table: drivers" if drivers else "Table: teams", "table")
+    else if tab == FINANCES:
+        if me.id != 0:
+            button(game, "Put money in", "invest")
+            if me.cash >= 1000.0:
+                button(game, "Take money out", "withdraw")
+            button(game, "Sell the team", "sell")
+    else if tab == SPONSORS:
+        Deal d = deal_by_id(w, deal)
+        if d.id != 0 && d.team == me.id:
+            button(game, "Sign" if d.offer else "End the deal", "sign" if d.offer else "drop")
+    else if tab == RACE:
+        button(game, "League: " + names.league_short[league], "league")
+        button(game, "Classification" if laps else "Lap by lap", "laps")
+    else if tab == BETS:
+        button(game, "League: " + names.league_short[league], "league")
+        if !slip:
+            button(game, "Market: " + w.book.market_names[markets()[market]], "market")
+        button(game, "The board" if slip else "Bet slip", "slip")
+        Bet o = chosen_offer(w)
+        if !slip && o.sel != 0 && o.priced && w.book.can_bet(w):
+            button(game, "Place a bet", "bet")
+
+// The seat a hire of person p goes to: a pilot's the chosen (Seat), else the
+// first empty, else the #1's; anyone else's their role's.
+int hire_seat(World w, Team me, Person p):
+    if p.role != 0:
+        return p.role
+    if slot == 0 || slot == me.SECOND:
+        return slot
+    return me.free_seat(0)
+
+// A seat's name: "#1" or "#2" for the pilots', else the role's.
+string seat_name(int s):
+    if s == 0:
+        return "#1"
+    if s == 5:
+        return "#2"
+    return names.role_short[s]
+
+// A seat's row label on the Team tab.
+string seat_label(int s):
+    if s == 0 || s == 5:
+        return "Pilot " + seat_name(s)
+    return names.role_short[s]
+
+string seasons_text(int n):
+    return string(n) + (" season" if n == 1 else " seasons")
+
+string short_money(float v):
+    if v >= 1000000.0:
+        int m = globalThis.Math.round(v / 1000000.0)
+        return string(m) + "M"
+    return fmt.short_credits(v)
+
+Deal deal_by_id(World w, int id):
+    for d in w.deals:
+        if d.id == id:
+            return d
+    return Deal()
+
+// ---- The sidebar ----
+
+string sidebar(es.Game game, World w):
+    string t = ""
+    if note != "":
+        t = note + "\n\n"
+    Team me = w.mine()
+    string phase = "Off-season" if w.off_season() else ("Round " + string(w.round_now() + 1) + " of " + string(w.ROUNDS) if w.round_now() >= 0 else "Before the season")
+    t = t + "Season " + string(w.season) + ". " + phase + ".\n"
+    if me.id == 0:
+        t = t + "\nYou own no team. Buy one (Team tab): any team whose owners will sell, at what it is worth and a seller's premium, with its place, car, staff, cash, debts and sponsors. Or revive a defunct team from the archive in the place the league keeps for you in the " + names.league_names[0] + ". Then climb: the top two eligible teams of a league go up each season (a team is eligible in its " + string(w.PROMO_SEASONS) + names.ordinal_suffix(w.PROMO_SEASONS) + " season in a row there, or at once after relegation), and as many come down.\n"
+        t = t + "\nOr bet on the leagues with the Paddock Book (Bets): owners may not.\n"
+        return t + detail(game, w)
+    int pos = w.position(me)
+    t = t + "\n" + me.name + ", " + names.league_names[me.league] + ": " + string(pos) + names.ordinal_suffix(pos) + " in the teams' championship, " + string(me.points) + " points.\nCash: " + fmt.credits(me.cash) + " credits" + (" (overdrawn; the limit is " + fmt.credits(w.OVERDRAFT * w.franchise[me.league]) + ")" if me.cash < 0.0 else "") + ".\n"
+    if me.hq != "":
+        t = t + "Headquarters: " + game.planet_name(me.hq) + ".\n"
+    if w.promotion_text(me) != "":
+        t = t + w.promotion_text(me) + "\n"
+    return t + "\n" + detail(game, w)
+
+string detail(es.Game game, World w):
+    Team me = w.mine()
+    if tab == TEAM:
+        if me.id == 0:
+            if archive_view:
+                Team a = w.archived(pick_team)
+                if a.id == 0:
+                    return "The archive: teams that went defunct, with their names and their lifetime records. One can be revived in your reserved place in the " + names.league_names[0] + " (an extra team there while you own it): it comes back with its name, its history and part of its prestige (more as it earns results), a weaker car, stand-ins in every seat (you hire), and " + fmt.credits(w.REVIVE_CASH * w.franchise[0]) + " of first cash. Choose one."
+                return archived_text(w, a)
+            Team c = w.team(pick_team)
+            if c.id == 0:
+                return "Every team of the league in view, with what it is worth (assets, standings, marketability, prestige) and what its owners ask (its worth and a premium of " + fmt.whole_percent(w.MARKUP) + ", " + fmt.whole_percent(w.MARKUP + w.CHAMP_MARKUP) + " for champions and leaders). You take it as it is: its name, place and points, car, staff on their contracts, cash and debts, and sponsors. Owners of a team leading a season under way do not sell. Choose one."
+            return team_text(w, c)
+        if naming:
+            return "Rename " + me.name + ": choose a name (More names for others; your ships' names are offered too). Free. A name is unique, at most " + string(w.NAME_MAX) + " characters; the team keeps its record, its prestige and its history (old results keep the name they were won under).\n\nNames: " + w.names_text(me)
+        string t = me.name + ". " + w.record_text(me, w.season) + "\nNames: " + w.names_text(me) + "\n\nThe car (department levels):\n"
+        for d in 0..<5:
+            t = t + "  " + names.dept_names[d] + " " + fmt.one_decimal(me.levels[d]) + "\n"
+        t = t + "Approach: " + names.approach_names[me.approach].to_lower() + " (aggressive is quicker and crashes more, for both cars).\nTwo cars, the same design: the pilots make the difference. The crew work for both; the #1 gets the pit crew first when both stop on the same lap, and the #2 lets the #1 by.\n"
+        if seat >= 0 && seat < w.SEATS:
+            Person p = w.seat(me, seat)
+            if p.id == 0:
+                t = t + "\nThe " + (seat_name(seat) + " pilot" if me.seat_role(seat) == 0 else names.role_names[seat].to_lower()) + "'s seat is empty: a stand-in does the job, badly."
+            else:
+                if p.role == 0:
+                    t = t + "\n" + pilot_season(w, me, p) + "\n"
+                if w.staff.can_renew(w, p):
+                    t = t + "\nThe contract ends this season. To renew for " + seasons_text(years) + " more, " + p.name + " asks " + fmt.credits(w.staff.renewal(w, p, years)) + " a week, locked to the end of season " + string(w.season + years) + " (from now; left to run out, it renews for one season at " + fmt.credits(w.staff.renewal(w, p, 1)) + ").\n"
+                t = t + "\n" + person_text(w, p)
+        return t
+    if tab == STAFF:
+        if person != 0 && w.person_by_id.has(person):
+            Person p = w.person(person)
+            string t = person_text(w, p)
+            if me.id != 0 && p.team != me.id:
+                int hs = hire_seat(w, me, p)
+                t = t + "\nTo hire" + (" as your " + seat_name(hs) + " pilot" if p.role == 0 else "") + " for " + seasons_text(years) + ": " + fmt.credits(w.staff.player_salary_for(p, years)) + " credits a week, locked to the end of season " + string(w.season + years - 1) + ", and " + fmt.credits(w.staff.player_cost_at(w, me, p, years, hs)) + " now (signing" + (", the buyout of their contract" if p.team != 0 else "") + (", severance for " + w.seat(me, hs).name if me.seats[hs] != 0 else "") + ")."
+            return t
+        return "The pool every team hires from (every team runs two pilots: choose the Seat, #1 or #2, before hiring one). Choose a person to see their record and bio; click the first heading (or Role) for another role. Nobody's real talent is shown: only what they have done, what is said of them, and what the scouts guess (Potential: their range for how good the person may become, 0 to 100; wide for newcomers, narrower with a record). Fame (0 to 100) grows with notable results and titles and fades a little each season; famous people ask more, and draw sponsors. Tags in brackets are traits earned on the track (choose the person to read them). Contracts are exclusive and lock the salary: choose their length (Contract) before hiring."
+    if tab == RND:
+        if me.id == 0:
+            return "R&D funds the departments of your car each week."
+        float total = 0.0
+        for b in me.budgets:
+            total += b
+        Person ro = w.seat(me, 2)
+        return "Each department develops a little each week with what it is given (more money, less return; the better the car, the slower), times your research officer's yield" + (" (" + ro.name + ")" if ro.id != 0 else "") + ". Simulation speeds up the other four. New regulations each season take back part of every car's gains.\n\nR&D this week: " + fmt.credits(total) + " credits."
+    if tab == FINANCES:
+        if me.id == 0:
+            return ""
+        float sal = 0.0
+        for s in 0..<w.SEATS:
+            if me.seats[s] != 0:
+                sal += w.person(me.seats[s]).salary
+        float rd = 0.0
+        for b in me.budgets:
+            rd += b
+        return "A week: salaries " + fmt.credits(sal) + ", R&D " + fmt.credits(rd) + ", running costs " + fmt.credits(w.RUNNING[me.league]) + "; sponsors pay " + fmt.credits(w.sponsoring.weekly(w, me)) + ".\nThe team may overdraw up to " + fmt.credits(w.OVERDRAFT * w.franchise[me.league]) + " (at 1% a week); past it two weeks running, the league forces a sale.\nThe team would sell for " + fmt.credits(w.sale_value(me, false)) + " credits now: " + w.value.breakdown(w, me) + "."
+    if tab == SPONSORS:
+        string src = "Sponsors are outside companies (with Corporations and the Racing League and Corporations plugin, the exchange's)." if w.sponsoring.corp_live(w) else "Sponsors are independent companies (with Corporations and the Racing League and Corporations plugin installed, the exchange's companies sponsor instead)."
+        Deal d = deal_by_id(w, deal)
+        if d.id != 0:
+            Sponsor s = w.sponsor(d.sponsor)
+            src = src + "\n\n" + d.sponsor + (" (" + s.sector + ")" if s.sector != "" else "") + ": " + fmt.credits(d.pay) + " a week, " + fmt.credits(d.bonus) + " a podium (twice that for a win). Target: " + string(d.target) + names.ordinal_suffix(d.target) + " or better at the season's end, or the clause costs " + fmt.credits(d.penalty) + " and the deal ends; four finishes averaging worse than " + fmt.one_decimal(d.walk) + " and it walks away. Runs to the end of season " + string(d.until) + "." + (" Offer open until " + fmt.date(d.expires) + "." if d.offer else " Ending it early costs the penalty.")
+        return src + "\nAt most " + string(w.sponsoring.SLOTS) + " deals."
+    if tab == RACE:
+        Result r = w.last[league]
+        if r.order.len() == 0:
+            return "No race yet this season."
+        return names.circuit_titles[r.circuit] + " (" + names.circuit_systems[r.circuit] + "), " + names.kind_names[names.circuit_kinds[r.circuit]] + ", season " + string(r.season) + " round " + string(r.round + 1) + ", " + fmt.date(r.day) + "."
+    if tab == BETS:
+        return bets_detail(w)
+    if tab == STANDINGS:
+        Team st = w.team(pick_team)
+        if !drivers && st.id != 0:
+            return team_text(w, st)
+        if drivers:
+            return "The drivers' championship: every pilot's own points (both cars of every team score). Its champion's title is theirs for good; it raises their fame and their price."
+        return "The teams' championship: both cars' points. It is the one that counts for the team: the top " + string(w.MOVE) + " eligible teams go up at the season's end (a team is eligible in its " + string(w.PROMO_SEASONS) + names.ordinal_suffix(w.PROMO_SEASONS) + " season in a row in its league, or at once if it came down into it), and as many go down from the league above: the bottom ones, a team new to its league this season spared (no eligible team below, nobody goes down). " + promotion_line(w, league) + " The championship pool pays by it, and sponsors' targets are places in it."
+    return ""
+
+// This season's turn for the league in view: how many go up and come down.
+string promotion_line(World w, int league):
+    string s = ""
+    if league < 2:
+        int n = w.promotions(league, w.season)
+        s = "This season " + (string(n) if n > 0 else "no") + " team" + (" goes" if n == 1 else "s go") + " up from the " + names.league_names[league] + (" and as many come down from the " + names.league_names[league + 1] if n > 0 else ", so nobody comes down from the " + names.league_names[league + 1]) + "."
+    if league > 0:
+        int d = w.promotions(league - 1, w.season)
+        s = s + (" " if s != "" else "") + string(d) + " of the " + names.league_names[league] + " go" + ("es" if d == 1 else "") + " down" + (" (" + string(w.MOVE - d) + " fewer: the " + names.league_names[league - 1] + " has too few teams eligible to go up)" if d < w.MOVE else "") + "."
+    return s
+
+// A team as a buyer or a rival sees it: names, record, price.
+string team_text(World w, Team t):
+    int pos = w.position(t)
+    string s = t.name + (" (yours)" if t.player else "") + ", " + names.league_names[t.league] + ", " + string(pos) + names.ordinal_suffix(pos) + " with " + string(t.points) + " points. " + w.record_text(t, w.season) + " " + w.promotion_text(t) + "\nNames: " + w.names_text(t) + "\n"
+    if t.player:
+        return s
+    string why = w.not_for_sale(t)
+    s = s + "\nWorth " + fmt.credits(w.sale_value(t, false)) + ": " + w.value.breakdown(w, t) + ".\n"
+    if why != "":
+        return s + why
+    return s + "Its owners ask " + fmt.credits(w.asking_price(t)) + " credits (with its cash of " + fmt.credits(t.cash) + (", an overdraft the team keeps" if t.cash < 0.0 else "") + "). Its R&D budgets stay as they are until you change them."
+
+string archived_text(World w, Team a):
+    string s = a.name + ": defunct in season " + string(a.died) + " (" + w.fate_names[a.fate] + "), last in the " + names.league_names[a.league] + ". " + w.record_text(a, a.died) + "\nNames: " + w.names_text(a) + "\n"
+    string why = w.not_revivable(a)
+    float brand = w.brand_price(a)
+    s = s + "\nTo revive it in the " + names.league_names[0] + ": " + fmt.credits(w.revive_price(a)) + " credits (the place on the grid " + fmt.credits(w.SALE * w.franchise[0]) + ", the team's first cash " + fmt.credits(w.REVIVE_CASH * w.franchise[0]) + ", the brand " + fmt.credits(brand) + " for " + fmt.whole_percent(w.REVIVE_SHARE) + " of its prestige, and the seller's premium). It races from the next round, spared relegation this season."
+    return s + ("\n" + why if why != "" else "")
+
+string person_text(World w, Person p):
+    Team t = w.team(p.team)
+    string t1 = names.role_names[p.role] + " " + p.name + (", " + t.name if t.id != 0 else ", free") + ".\n"
+    t1 = t1 + string(p.races) + " races, " + string(p.wins) + " wins, " + string(p.podiums) + " podiums, " + string(p.titles) + " titles"
+    if p.role == 0:
+        t1 = t1 + ", " + string(p.crashes) + " crashes"
+    t1 = t1 + ". Best league: " + names.league_short[p.best_league] + ". " + w.staff.metric_text(p) + ". Crises: " + w.staff.crisis_text(p) + ".\n"
+    if p.team != 0:
+        int left = w.staff.seasons_left(w, p)
+        t1 = t1 + "Under contract at " + fmt.credits(p.salary) + " a week, locked to the end of season " + string(p.contract_end) + " (" + ("this season" if left <= 1 else seasons_text(left)) + "; signed season " + string(p.signed) + (", " + seasons_text(p.loyal) + " at the team" if p.loyal > 0 else "") + "). Releasing costs " + fmt.credits(w.staff.release_cost(w, p)) + "; a rival buys the contract out for " + fmt.credits(w.staff.buyout(w, p)) + ". "
+    t1 = t1 + "Asks " + fmt.credits(w.staff.ask(p)) + " a week."
+    if p.offer_until != 0:
+        t1 = t1 + "\n" + w.team(p.offer_team).name + " offers " + fmt.credits(p.offer_salary) + " a week, until " + fmt.date(p.offer_until) + ". Matching it costs a bonus of " + fmt.credits(w.staff.RETAIN * p.offer_salary) + "."
+    int fame = globalThis.Math.round(p.fame)
+    t1 = t1 + "\nFame: " + w.lore.fame_label(p) + " (" + string(fame) + " of 100)."
+    if p.traits.len() > 0:
+        []string tr = []
+        for k in p.traits:
+            tr.append(w.lore.trait_names[k] + " (" + w.lore.trait_effect[k] + ")")
+        t1 = t1 + " Traits: " + tr.join(", ") + "."
+    t1 = t1 + "\n" + w.bio.potential_text(w, p) + "\n\n" + w.bio.text(w, p)
+    []string hist = w.lore.lines(w, p)
+    if hist.len() > 0:
+        t1 = t1 + "\n\nNotable:\n" + hist.join("\n")
+    return t1
+
+// A pilot's season: the drivers' championship and the teammate head-to-head.
+string pilot_season(World w, Team me, Person p):
+    int dp = w.driver_position(p)
+    string t = ("Drivers' championship: " + string(dp) + names.ordinal_suffix(dp) + ", " + string(p.d_points) + " points." if dp > 0 && p.d_league == me.league else "No points in the drivers' championship yet this season.")
+    Person m = w.seat(me, me.SECOND if me.seats[0] == p.id else 0)
+    if m.id != 0 && p.h_mate == m.id && p.h_n > 0:
+        t = t + " Against " + m.name + " this season: ahead on the grid " + string(p.h_quali) + " of " + string(p.h_n) + ", at the flag " + string(p.h_race) + " of " + string(p.h_n) + "."
+    return t
+
+void chart(es.Game game, World w):
+    []string values = []
+    for line in w.ledger:
+        []string f = line.split("\t")
+        if f.len() >= 4:
+            values.append(f[3])
+    if values.len() >= 2:
+        game.panel_chart("Cash", values.join(","))
+
+// ---- Tables ----
+
+void team_table(es.Game game, World w):
+    Team me = w.mine()
+    if me.id == 0:
+        if archive_view:
+            game.panel_columns("Defunct team\tSeasons\tLast league\tTitles\tWins\tPodiums\tPrestige\tFate\tTo revive")
+            for k in 0..<w.archive.len():
+                Team a = w.archive[w.archive.len() - 1 - k]
+                float p = w.prestige_of(a, a.died)
+                game.panel_row(a.name + "\t" + string(a.born) + "-" + string(a.died) + "\t" + names.league_short[a.league] + "\t" + string(a.life_titles()) + "\t" + string(a.life[a.L_WINS]) + "\t" + string(a.life[a.L_PODIUMS]) + "\t" + string(int(globalThis.Math.round(p))) + " " + w.prestige_label(p) + "\t" + w.fate_names[a.fate] + "\t" + (fmt.credits(w.revive_price(a)) if w.not_revivable(a) == "" else "-"))
+                row_keys.append(a.id)
+            return
+        game.panel_columns("Pos\tTeam\tPrestige\tAge\tTitles\tAssets\tStandings\tMarketability\tPrestige value\tAsking")
+        for t in w.table(league):
+            float pr = w.prestige(t)
+            string ask = fmt.credits(w.asking_price(t)) if w.not_for_sale(t) == "" else "not for sale"
+            game.panel_row(string(w.position(t)) + "\t" + t.name + "\t" + string(int(globalThis.Math.round(pr))) + " " + w.prestige_label(pr) + "\t" + string(w.season - t.born) + "\t" + string(t.life_titles()) + "\t" + fmt.credits(w.value.assets(w, t, false)) + "\t" + fmt.credits(w.value.standings(w, t)) + "\t" + fmt.credits(w.value.marketability(w, t)) + "\t" + fmt.credits(w.value.prestige(w, t)) + "\t" + ask)
+            row_keys.append(t.id)
+        return
+    if naming:
+        game.panel_columns("New name")
+        for k in 0..<name_list.len():
+            game.panel_row(name_list[k])
+            row_keys.append(k)
+        return
+    game.panel_columns("Seat\tName\tRaces\tWins\tMeasure\tCrises\tPotential\tFame\tSalary\tTo season")
+    for s in [0, me.SECOND, 1, 2, 3, 4]:
+        Person p = w.seat(me, s)
+        if p.id == 0:
+            game.panel_row(seat_label(s) + "\t(empty: a stand-in)\t\t\t\t\t\t\t\t")
+        else:
+            game.panel_row(seat_label(s) + "\t" + p.name + w.lore.tags(p) + (" (offer!)" if p.offer_until != 0 else "") + "\t" + string(p.races) + "\t" + string(p.wins) + "\t" + w.staff.metric_text(p) + "\t" + w.staff.crisis_text(p) + "\t" + w.bio.range_text(w, p) + "\t" + fame_text(p) + "\t" + fmt.credits(p.salary) + "\t" + string(p.contract_end) + (" (renew)" if w.staff.can_renew(w, p) else ""))
+        row_keys.append(s)
+
+void staff_table(es.Game game, World w):
+    game.panel_columns(names.role_short[role] + "s\tTeam\tRaces\tWins\tPodiums\tTitles\tMeasure\tCrises\tPotential\tFame\tAsks a week")
+    []Person list = w.people.filter(bool(Person p): return p.role == role)
+    list.sort(bool(Person a, Person b): return w.staff.ask(a) > w.staff.ask(b))
+    for p in list:
+        Team t = w.team(p.team)
+        string where = (t.name + " (" + names.league_short[t.league] + ")") if t.id != 0 else "free"
+        game.panel_row(p.name + w.lore.tags(p) + "\t" + where + "\t" + string(p.races) + "\t" + string(p.wins) + "\t" + string(p.podiums) + "\t" + string(p.titles) + "\t" + w.staff.metric_text(p) + "\t" + w.staff.crisis_text(p) + "\t" + w.bio.range_text(w, p) + "\t" + fame_text(p) + "\t" + fmt.credits(w.staff.ask(p)))
+        row_keys.append(p.id)
+
+string fame_text(Person p):
+    int f = globalThis.Math.round(p.fame)
+    return string(f) if f > 0 else "-"
+
+void rnd_table(es.Game game, World w):
+    Team me = w.mine()
+    game.panel_columns("Department\tLevel\tBudget a week\tLast gain\tBest in league")
+    if me.id == 0:
+        return
+    for d in 0..<5:
+        float best = 0.0
+        for t in w.league_teams(me.league):
+            best = t.levels[d] if t.levels[d] > best else best
+        game.panel_row(names.dept_names[d] + "\t" + fmt.one_decimal(me.levels[d]) + "\t" + fmt.credits(me.budgets[d]) + "\t+" + fmt.price(me.gains[d]) + "\t" + fmt.one_decimal(best))
+        row_keys.append(d)
+
+void calendar_table(es.Game game, World w):
+    game.panel_columns("Round\tCircuit\tSystem\tCharacter\tDate\tWinner")
+    int run = w.rounds_run(league)
+    for r in 0..<w.ROUNDS:
+        int ci = w.circuit_of(league, r)
+        string winner = ""
+        if r < run && w.last[league].round == r && w.last[league].order.len() > 0:
+            Person wp = w.person(w.last[league].pilot_at(0))
+            winner = w.team(w.last[league].order[0]).name + (" (" + wp.name + ")" if wp.id != 0 else "")
+        else if r < run:
+            winner = "(run)"
+        game.panel_row(string(r + 1) + "\t" + names.circuit_titles[ci] + "\t" + names.circuit_systems[ci] + "\t" + names.kind_names[names.circuit_kinds[ci]] + "\t" + fmt.date(w.round_day(league, r)) + "\t" + winner)
+        row_keys.append(-1)
+
+void standings_table(es.Game game, World w):
+    if drivers:
+        game.panel_columns("Pos\tPilot\tTeam\tPoints\tWins\tPodiums\tRaces\tBest")
+        []Person dt = w.drivers_table(league)
+        for k in 0..<dt.len():
+            Person p = dt[k]
+            Team t = w.team(p.team)
+            game.panel_row(string(k + 1) + "\t" + p.name + w.lore.tags(p) + "\t" + (t.name + (" (you)" if t.player else "") if t.id != 0 else "free") + "\t" + string(p.d_points) + "\t" + string(p.d_wins) + "\t" + string(p.d_podiums) + "\t" + string(p.d_starts) + "\t" + ("P" + string(p.d_best) if p.d_best > 0 else "-"))
+            row_keys.append(-1)
+        return
+    game.panel_columns("Pos\tTeam\tPilots\tPoints\tWins\tPodiums\tCar\tPrestige\tZone")
+    []Team tab = w.table(league)
+    []string zones = zone_names(w, league, tab)
+    for k in 0..<tab.len():
+        Team t = tab[k]
+        Person p = w.seat(t, 0)
+        Person q = w.seat(t, t.SECOND)
+        string zone = zones[k]
+        game.panel_row(string(k + 1) + "\t" + t.name + (" (you)" if t.player else "") + "\t" + (p.name if p.id != 0 else "-") + ", " + (q.name if q.id != 0 else "-") + "\t" + string(t.points) + "\t" + string(t.wins) + "\t" + string(t.podiums) + "\t" + fmt.one_decimal(t.rating()) + "\t" + string(int(globalThis.Math.round(w.prestige(t)))) + "\t" + zone)
+        row_keys.append(t.id)
+
+// Each team's zone as the table stands (World.movers): the top eligible teams
+// go up ("promotion"), a team not yet eligible says when it will be; as many
+// of the bottom go down as can come up from below ("relegation"), a team new
+// to the league is "spared", and the bottom MOVE who stay up for want of
+// eligible challengers are "safe (no challenger)".
+[]string zone_names(World w, int league, []Team tab):
+    []string out = []
+    int n_up = w.promotions(league, w.season)
+    int n_down = w.promotions(league - 1, w.season) if league > 0 else 0
+    int up = 0
+    for k in 0..<tab.len():
+        Team t = tab[k]
+        string z = ""
+        if league < 2:
+            if !w.eligible(t, w.season):
+                int n = w.eligible_from(t) - w.season
+                z = "eligible in " + string(n) + " season" + ("s" if n > 1 else "")
+            else if up < n_up:
+                z = "promotion"
+                up += 1
+        out.append(z)
+    int down = 0
+    int seen = 0
+    for k in 0..<tab.len():
+        int i = tab.len() - 1 - k
+        Team t = tab[i]
+        if league == 0 || seen >= w.MOVE:
+            break
+        if t.protect:
+            out[i] = "spared"
+            continue
+        seen += 1
+        if down < n_down:
+            out[i] = "relegation"
+            down += 1
+        else:
+            out[i] = "safe (no challenger)"
+    return out
+
+void finance_table(es.Game game, World w):
+    game.panel_columns("Week to\tIn\tOut\tNet\tCash")
+    for k in 0..<w.ledger.len():
+        []string f = w.ledger[w.ledger.len() - 1 - k].split("\t")
+        if f.len() < 4:
+            continue
+        float i = f[1].to_float()
+        float o = f[2].to_float()
+        game.panel_row(fmt.date(f[0].to_int()) + "\t" + fmt.credits(i) + "\t" + fmt.credits(o) + "\t" + fmt.credits(i - o) + "\t" + fmt.credits(f[3].to_float()))
+        row_keys.append(-1)
+
+void sponsor_table(es.Game game, World w):
+    Team me = w.mine()
+    game.panel_columns("Sponsor\tWeekly\tPodium bonus\tTarget\tTo season\tPaid\tStatus")
+    for d in w.deals:
+        if d.team != me.id || me.id == 0:
+            continue
+        game.panel_row(d.sponsor + "\t" + fmt.credits(d.pay) + "\t" + fmt.credits(d.bonus) + "\t" + string(d.target) + names.ordinal_suffix(d.target) + "\t" + string(d.until) + "\t" + fmt.credits(d.paid) + "\t" + ("offer" if d.offer else "signed"))
+        row_keys.append(d.id)
+
+void race_table(es.Game game, World w):
+    Result r = w.last[league]
+    if laps:
+        game.panel_columns("Lap\tWhat happened")
+        if w.story.len() == 0:
+            game.panel_row("\tThe story is told of the races your team runs.")
+            row_keys.append(-1)
+            return
+        for line in w.story:
+            []string f = line.split("\t")
+            game.panel_row((f[0] if f[0] != "0" else "start") + "\t" + (f[1] if f.len() > 1 else ""))
+            row_keys.append(-1)
+        return
+    game.panel_columns("Pos\tTeam\tPilot\tGrid\tGap\tPoints\tPrize")
+    for k in 0..<r.order.len():
+        Team t = w.team(r.order[k])
+        // The car's pilot (a result from before two cars has none: the #1's).
+        Person p = w.person(r.pilot_at(k)) if r.pilots.len() > 0 else w.seat(t, 0)
+        string gap = ""
+        if r.status[k] != 0:
+            gap = Result().status_names[r.status[k]] + " (lap " + string(r.laps_done[k]) + ")"
+        else if k > 0:
+            gap = "+" + fmt.one_decimal(r.gaps[k]) + " s"
+        string prize = fmt.credits(r.prizes[k]) if k < r.prizes.len() else ""
+        string tname = t.name if t.id != 0 else "(a team since gone)"
+        game.panel_row(string(k + 1) + "\t" + tname + (" (you)" if t.player else "") + "\t" + (p.name if p.id != 0 else "-") + "\t" + string(r.grid[k]) + "\t" + gap + "\t" + string(r.points[k]) + "\t" + prize)
+        row_keys.append(-1)
+
+void news_table(es.Game game, World w):
+    game.panel_columns("Date\tLeague\tNews")
+    for k in 0..<w.news.len():
+        []string f = w.news[w.news.len() - 1 - k].split("\t")
+        if f.len() < 3:
+            continue
+        int l = f[1].to_int()
+        game.panel_row(fmt.date(f[0].to_int()) + "\t" + (names.league_short[l] if l >= 0 && l < 3 else "") + "\t" + f[2])
+        row_keys.append(-1)
+
+// ---- Input ----
+
+void row(es.Game game, World w, int index):
+    if event_mode || index < 0 || index >= row_keys.len():
+        return
+    int key = row_keys[index]
+    if tab == TEAM:
+        if naming:
+            name_pick = key
+        else if w.has_team():
+            seat = key
+        else:
+            pick_team = key
+    else if tab == STANDINGS:
+        pick_team = key
+    else if tab == STAFF:
+        person = key
+    else if tab == RND:
+        dept = key
+    else if tab == SPONSORS:
+        deal = key
+    else if tab == BETS:
+        pick = key
+    show(game, w)
+
+void header(es.Game game, World w, int column):
+    if tab == STAFF && column == 0:
+        role = (role + 1) % 5
+        person = 0
+    show(game, w)
+
+void press(es.Game game, World w, int index):
+    if event_mode:
+        event_press(game, w, index)
+        return
+    string action = actions[index] if index >= 0 && index < actions.len() else "close"
+    Team me = w.mine()
+    if action == "close":
+        game.panel_close()
+        return
+    if action.starts_with("tab "):
+        tab = action[4..<action.len()].to_int()
+        laps = false
+        pick = -1
+        slot = -1
+        pick_team = 0
+        naming = false
+        if (tab == CALENDAR || tab == STANDINGS || tab == RACE) && me.id != 0:
+            league = me.league
+    else if action == "archive":
+        archive_view = !archive_view
+        pick_team = 0
+    else if action == "buy":
+        Team t = w.team(pick_team)
+        float cost = w.asking_price(t)
+        string why = w.not_for_sale(t)
+        if why != "":
+            note = why
+        else if float(game.condition("credits")) < cost:
+            note = "You need " + fmt.credits(cost) + " credits to buy " + t.name + "."
+        else:
+            pending = t.id
+            game.confirm("Buy " + t.name + " (" + names.league_names[t.league] + ", " + string(w.position(t)) + names.ordinal_suffix(w.position(t)) + ") for " + fmt.credits(cost) + " credits? It is worth " + fmt.credits(w.sale_value(t, false)) + " (" + w.value.breakdown(w, t) + "); its owners ask a premium. You take it as it is: its cash of " + fmt.credits(t.cash) + ", its staff on their contracts, its sponsors and its debts." + (" Your bets on the " + names.league_names[t.league] + " are void and refunded." if w.book.open_bets(w).len() > 0 else ""), BUY_OK)
+            return
+    else if action == "revive":
+        Team a = w.archived(pick_team)
+        float cost = w.revive_price(a)
+        string why = w.not_revivable(a)
+        if why != "":
+            note = why
+        else if float(game.condition("credits")) < cost:
+            note = "You need " + fmt.credits(cost) + " credits to revive " + a.name + "."
+        else:
+            pending = a.id
+            game.confirm("Revive " + a.name + " in the " + names.league_names[0] + " for " + fmt.credits(cost) + " credits? It returns with its name, its history and " + fmt.whole_percent(w.REVIVE_SHARE) + " of its prestige, a weaker car, " + fmt.credits(w.REVIVE_CASH * w.franchise[0]) + " of first cash and stand-ins in every seat: hire its people." + (" Your bets on the " + names.league_names[0] + " are void and refunded." if w.book.open_bets(w).len() > 0 else ""), REVIVE_OK)
+            return
+    else if action == "naming" || action == "more names":
+        if action == "more names":
+            name_page += 1
+        naming = true
+        name_pick = -1
+        name_list = w.name_ideas(me, name_page, 10)
+        for k in 0..<game.fleet_count():
+            string sn = w.clean_name(game.fleet_ship_name(game.fleet_ship(k)))
+            for c in [sn, sn + " Racing"]:
+                if w.name_problem(c, me.id) == "" && !name_list.contains(c):
+                    name_list.append(c)
+    else if action == "unname":
+        naming = false
+    else if action == "rename":
+        if name_pick >= 0 && name_pick < name_list.len():
+            string n = name_list[name_pick]
+            string why = w.name_problem(n, me.id)
+            if why != "":
+                note = why
+            else:
+                name_pending = n
+                game.confirm("Rename " + me.name + " to " + n + "? Its record, prestige, staff and sponsors stay with it; old results keep the name they were won under.", RENAME_OK)
+                return
+    else if action == "approach":
+        me.approach = (me.approach + 1) % 3
+    else if action == "find":
+        role = me.seat_role(seat)
+        slot = seat if role == 0 else -1
+        tab = STAFF
+        person = 0
+    else if action == "swap":
+        int a = me.seats[0]
+        me.seats[0] = me.seats[me.SECOND]
+        me.seats[me.SECOND] = a
+        seat = me.SECOND if seat == 0 else 0
+        note = "The pilots swap: " + (w.seat(me, 0).name if me.seats[0] != 0 else "the stand-in") + " is now your #1."
+    else if action == "slot":
+        slot = me.SECOND if hire_seat(w, me, w.person(person)) == 0 else 0
+    else if action == "table":
+        drivers = !drivers
+    else if action == "fire":
+        Person p = w.seat(me, seat)
+        if p.id != 0:
+            pending = p.id
+            game.confirm("Release " + p.name + "? The release clause costs " + fmt.credits(w.staff.release_cost(w, p)) + " credits (a share of the salary still owed to the end of season " + string(p.contract_end) + "); until you hire again a stand-in does the job.", FIRE_OK)
+            return
+    else if action == "match":
+        Person p = w.seat(me, seat)
+        if p.offer_until != 0:
+            pending = p.id
+            game.confirm("Keep " + p.name + " at " + fmt.credits(p.offer_salary) + " credits a week, with a bonus of " + fmt.credits(w.staff.RETAIN * p.offer_salary) + " now?", MATCH_OK)
+            return
+    else if action == "role":
+        role = (role + 1) % 5
+        person = 0
+    else if action == "years":
+        years = years % w.staff.MAX_YEARS + 1
+    else if action == "renew":
+        Person p = w.seat(me, seat)
+        if p.id != 0 && w.staff.can_renew(w, p):
+            pending = p.id
+            game.confirm("Renew " + p.name + "'s contract for " + seasons_text(years) + " more, to the end of season " + string(w.season + years) + ", at " + fmt.credits(w.staff.renewal(w, p, years)) + " credits a week (now " + fmt.credits(p.salary) + "), locked from now?", RENEW_OK)
+            return
+    else if action == "hire":
+        Person p = w.person(person)
+        if p.id != 0 && me.id != 0 && p.team != me.id:
+            pending = p.id
+            string away = " from " + w.team(p.team).name + " (buying out their contract)" if p.team != 0 else ""
+            int hs = hire_seat(w, me, p)
+            game.confirm("Hire " + p.name + away + " as your " + (seat_name(hs) + " pilot" if p.role == 0 else names.role_names[p.role].to_lower()) + " for " + fmt.credits(w.staff.player_salary_for(p, years)) + " credits a week, locked to the end of season " + string(w.season + years - 1) + " (" + seasons_text(years) + ")? It costs " + fmt.credits(w.staff.player_cost_at(w, me, p, years, hs)) + " now" + (", and " + w.seat(me, hs).name + " is released" if me.seats[hs] != 0 else "") + ".", HIRE_OK)
+            return
+    else if action == "budget":
+        pending = dept
+        game.ask_number("Weekly budget for " + names.dept_names[dept].to_lower() + ", in thousands of credits (now " + fmt.credits(me.budgets[dept]) + "):", BUDGET_ASK, 50000)
+        return
+    else if action == "unfund":
+        me.budgets[dept] = 0.0
+    else if action == "league":
+        league = (league + 1) % 3
+        pick = -1
+        if tab == BETS && market >= markets().len():
+            market = 0
+    else if action == "market":
+        market = (market + 1) % markets().len()
+        pick = -1
+    else if action == "slip":
+        slip = !slip
+        pick = -1
+    else if action == "bet":
+        Bet o = chosen_offer(w)
+        string why = w.book.refuse(w, o, w.book.MIN_STAKE[o.league]) if o.sel != 0 else "Choose a price first."
+        int most = int(w.book.max_stake(o) / 1000.0)
+        int have = game.condition("credits") / 1000
+        int least = int(w.book.MIN_STAKE[o.league] / 1000.0)
+        if why != "":
+            note = why
+        else if have < least:
+            note = "You need at least " + fmt.credits(w.book.MIN_STAKE[o.league]) + " credits to bet on the " + names.league_names[o.league] + "."
+        else:
+            bet_offer = o
+            most = most if most < have else have
+            game.ask_number("Stake on " + o.label + " at " + w.book.odds_text(o.odds) + ", in thousands of credits (" + string(least) + " to " + string(most) + "):", BET_ASK, most)
+            return
+    else if action == "laps":
+        laps = !laps
+    else if action == "invest":
+        int most = game.condition("credits") / 1000
+        if most < 1:
+            note = "You have no credits to put in."
+        else:
+            game.ask_number("Put how many thousand credits into " + me.name + "? (You have " + fmt.credits(float(game.condition("credits"))) + ".)", INVEST_ASK, most if most < 2000000000 else 2000000000)
+            return
+    else if action == "withdraw":
+        int most = int(me.cash / 1000.0)
+        if most >= 1:
+            game.ask_number("Take how many thousand credits out of " + me.name + "?", WITHDRAW_ASK, most)
+            return
+    else if action == "sell":
+        float v = w.sale_value(me, false)
+        game.confirm("Sell " + me.name + "? A buyer pays " + fmt.credits(v) + " credits for it: " + w.value.breakdown(w, me) + "." + (" Its overdraft is more than it is worth: you pay the difference." if v < 0.0 else ""), SELL_OK)
+        return
+    else if action == "sign":
+        Deal d = deal_by_id(w, deal)
+        if d.id != 0 && d.offer:
+            if w.deals_of(me.id).len() >= w.sponsoring.SLOTS:
+                note = "You have " + string(w.sponsoring.SLOTS) + " sponsors already: end a deal first."
+            else:
+                pending = d.id
+                game.confirm("Sign with " + d.sponsor + " for " + fmt.credits(d.pay) + " credits a week? Its target is " + string(d.target) + names.ordinal_suffix(d.target) + " or better at the season's end; missing it costs " + fmt.credits(d.penalty) + ".", SIGN_OK)
+                return
+    else if action == "drop":
+        Deal d = deal_by_id(w, deal)
+        if d.id != 0:
+            pending = d.id
+            game.confirm("End the deal with " + d.sponsor + "? Breaking it costs " + fmt.credits(d.penalty) + " credits.", DROP_OK)
+            return
+    show(game, w)
+
+void number(es.Game game, World w, int token, int value):
+    Team me = w.mine()
+    if token == BET_ASK:
+        Bet o = bet_offer
+        float stake = float(value) * 1000.0
+        string why = w.book.refuse(w, o, stake) if o.sel != 0 else "Choose a price first."
+        if why != "":
+            note = why
+        else if float(game.condition("credits")) < stake:
+            note = "You do not have " + fmt.credits(stake) + " credits."
+        else:
+            bet_stake = stake
+            game.confirm("Bet " + fmt.credits(stake) + " credits on " + o.label + " at " + w.book.odds_text(o.odds) + "? It returns " + fmt.credits(stake * o.odds) + " if it comes in.", BET_OK)
+            return
+        show(game, w)
+        return
+    if me.id == 0:
+        return
+    if token == BUDGET_ASK && pending >= 0 && pending < 5:
+        me.budgets[pending] = float(value) * 1000.0
+    else if token == INVEST_ASK:
+        int have = game.condition("credits")
+        int amount = value * 1000
+        if amount <= have:
+            game.set_condition("credits", have - amount)
+            me.cash += float(amount)
+            note = "You put " + fmt.credits(float(amount)) + " credits into the team."
+    else if token == WITHDRAW_ASK:
+        float amount = float(value) * 1000.0
+        if amount <= me.cash:
+            me.cash -= amount
+            int a = int(amount)
+            game.set_condition("credits", game.condition("credits") + a)
+            note = "You took " + fmt.credits(amount) + " credits out of the team."
+    show(game, w)
+
+void confirmed(es.Game game, World w, int token):
+    Team me = w.mine()
+    if token == BUY_OK:
+        Team bt = w.team(pending)
+        int c = globalThis.Math.round(w.asking_price(bt))
+        if me.id == 0 && w.not_for_sale(bt) == "" && game.condition("credits") >= c:
+            game.set_condition("credits", game.condition("credits") - c)
+            Team t = w.buy(pending, game.planet())
+            if t.id != 0:
+                tab = TEAM
+                seat = 0
+                pick_team = 0
+                league = t.league
+                note = "You own " + t.name + " in the " + names.league_names[t.league] + ", as it was: its people, its car, its sponsors and its cash. Set the departments' budgets (R&D) as you see fit."
+    else if token == REVIVE_OK:
+        Team a = w.archived(pending)
+        int c = globalThis.Math.round(w.revive_price(a))
+        if me.id == 0 && w.not_revivable(a) == "" && game.condition("credits") >= c:
+            game.set_condition("credits", game.condition("credits") - c)
+            Team t = w.revive(pending, game.planet())
+            if t.id != 0:
+                tab = TEAM
+                seat = 0
+                pick_team = 0
+                archive_view = false
+                league = t.league
+                note = t.name + " is back on the grid in the " + names.league_names[0] + ". It races two cars: hire two pilots first (Find a pilot), then the crew, and give the departments budgets."
+    else if token == RENAME_OK:
+        if me.id != 0 && name_pending != "":
+            string old = me.name
+            if w.rename(me, name_pending, w.RENAMED):
+                note = old + " is now " + me.name + "."
+                naming = false
+            else:
+                note = w.name_problem(name_pending, me.id)
+    else if token == HIRE_OK:
+        Person p = w.person(pending)
+        if p.id != 0 && me.id != 0 && p.team != me.id:
+            int hs = hire_seat(w, me, p)
+            w.staff.player_hire_at(w, p, years, hs)
+            note = p.name + " joins the team" + (" as your " + seat_name(hs) + " pilot" if p.role == 0 else "") + ", under contract to the end of season " + string(p.contract_end) + "."
+            tab = TEAM
+            seat = hs
+            slot = -1
+    else if token == FIRE_OK:
+        Person p = w.person(pending)
+        if p.team == me.id && me.id != 0:
+            w.staff.player_fire(w, p)
+            note = p.name + " leaves the team."
+    else if token == RENEW_OK:
+        Person p = w.person(pending)
+        if p.team == me.id && me.id != 0 && w.staff.can_renew(w, p):
+            w.staff.player_renew(w, p, years)
+            note = p.name + " signs on to the end of season " + string(p.contract_end) + "."
+    else if token == MATCH_OK:
+        Person p = w.person(pending)
+        if p.team == me.id && p.offer_until != 0:
+            w.staff.player_match(w, p)
+            note = p.name + " stays."
+    else if token == SELL_OK:
+        if me.id != 0:
+            float v = w.sell(false)
+            int have = game.condition("credits")
+            int amount = globalThis.Math.round(v)
+            int next = have + amount
+            game.set_condition("credits", next if next > 0 else 0)
+            tab = TEAM
+            note = "You sold the team for " + fmt.credits(v) + " credits."
+    else if token == SIGN_OK:
+        Deal d = deal_by_id(w, pending)
+        if d.id != 0 && w.sponsoring.sign(w, d):
+            note = d.sponsor + " is now a sponsor."
+    else if token == BET_OK:
+        int stake = globalThis.Math.round(bet_stake)
+        if game.condition("credits") < stake:
+            note = "You do not have " + fmt.credits(bet_stake) + " credits."
+        else:
+            Bet b = w.book.place(w, bet_offer, float(stake))
+            if b.id == 0:
+                note = w.book.why
+            else:
+                game.set_condition("credits", game.condition("credits") - stake)
+                note = "The clerk stamps your slip: " + fmt.credits(b.stake) + " on " + b.label + " at " + w.book.odds_text(b.odds) + "."
+    else if token == DROP_OK:
+        Deal d = deal_by_id(w, pending)
+        if d.id != 0 && d.team == me.id:
+            w.sponsoring.drop(w, d)
+            deal = 0
+            note = "The deal with " + d.sponsor + " is over."
+    show(game, w)
+
+// ---- The Paddock Book ----
+
+// The markets of the league in view: the race's, the season's, promotion
+// (B, A) and relegation (A, S).
+[]int markets():
+    []int out = [0, 1, 2, 3, 4, 5]
+    if league < 2:
+        out.append(6)
+    if league > 0:
+        out.append(7)
+    return out
+
+[]Bet board(World w):
+    []int ms = markets()
+    if market >= ms.len():
+        market = 0
+    return w.book.offers(w, league, ms[market])
+
+Bet chosen_offer(World w):
+    if tab != BETS || slip || pick < 0:
+        return Bet()
+    []Bet list = board(w)
+    return list[pick] if pick < list.len() else Bet()
+
+// "+0.12" or "-0.04": a rating.
+string signed(float x):
+    int c = globalThis.Math.round(x * 100.0)
+    return ("-" if c < 0 else "+") + fmt.price(float(-c if c < 0 else c) / 100.0)
+
+string odds_cell(World w, Bet o):
+    return w.book.odds_text(o.odds) if o.priced else "no price"
+
+void bets_table(es.Game game, World w):
+    if slip:
+        game.panel_columns("Placed\tBet\tStake\tOdds\tResult\tReturned")
+        []Bet list = w.book.open_bets(w)
+        for b in w.book.settled_bets(w):
+            list.append(b)
+        if list.len() == 0:
+            game.panel_row("\tNo bets yet.\t\t\t\t")
+            row_keys.append(-1)
+        for b in list:
+            []string result = ["open", "won", "lost", "void"]
+            string back = fmt.credits(b.payout) if b.status != b.OPEN else ("(" + fmt.credits(b.stake * b.odds) + ")")
+            game.panel_row(fmt.date(b.day) + "\t" + b.label + "\t" + fmt.credits(b.stake) + "\t" + w.book.odds_text(b.odds) + "\t" + result[b.status] + "\t" + back)
+            row_keys.append(-1)
+        return
+    int kind = markets()[market]
+    []Bet list = board(w)
+    if kind <= 3:
+        if kind == 2:
+            game.panel_columns("Team\tPilots\tCar\tPoints\tPos\tOdds")
+        else if kind == 3:
+            game.panel_columns("Pilot\tTo beat\tTeam\tAhead this season\tOdds")
+        else:
+            game.panel_columns("Pilot\tTeam\tCar\tPoints\tRating\tOdds")
+    else if kind == 4:
+        game.panel_columns("Pilot\tTeam\tPoints\tWins\tPodiums\tOdds")
+    else:
+        game.panel_columns("Team\tPos\tPoints\tWins\tCar\tOdds")
+    if list.len() == 0:
+        int r = w.book.race_round(w, league)
+        string why = ("The book is shut until the next season begins." if r < 0 else "The race markets are on round " + string(r + 1) + ".") if kind <= 3 else ("The season markets close with " + string(w.book.CLOSE) + " rounds to go; they open again with the next season." if w.book.run(w, league) >= 0 else "The book is shut until the next season begins.")
+        game.panel_row(why + "\t\t\t\t\t")
+        row_keys.append(-1)
+        return
+    for k in 0..<list.len():
+        Bet o = list[k]
+        if kind == 2 || kind >= 5:
+            Team t = w.team(o.sel)
+            Person a = w.seat(t, 0)
+            Person b = w.seat(t, t.SECOND)
+            if kind == 2:
+                game.panel_row(t.name + "\t" + (a.name if a.id != 0 else "-") + ", " + (b.name if b.id != 0 else "-") + "\t" + fmt.one_decimal(t.rating()) + "\t" + string(t.points) + "\t" + string(w.position(t)) + "\t" + odds_cell(w, o))
+            else:
+                game.panel_row(t.name + "\t" + string(w.position(t)) + "\t" + string(t.points) + "\t" + string(t.wins) + "\t" + fmt.one_decimal(t.rating()) + "\t" + odds_cell(w, o))
+        else:
+            Person p = w.person(o.sel)
+            Team t = w.team(p.team)
+            bool here = p.d_season == w.season && p.d_league == league
+            if kind == 3:
+                Person m = w.person(o.sel2)
+                string h = string(p.h_race) + " of " + string(p.h_n) if p.h_mate == m.id && p.h_n > 0 else "-"
+                game.panel_row(p.name + w.lore.tags(p) + "\t" + m.name + "\t" + t.name + "\t" + h + "\t" + odds_cell(w, o))
+            else if kind == 4:
+                game.panel_row(p.name + w.lore.tags(p) + "\t" + (t.name if t.id != 0 else "free") + "\t" + string(p.d_points if here else 0) + "\t" + string(p.d_wins if here else 0) + "\t" + string(p.d_podiums if here else 0) + "\t" + odds_cell(w, o))
+            else:
+                game.panel_row(p.name + w.lore.tags(p) + "\t" + t.name + "\t" + fmt.one_decimal(t.rating()) + "\t" + string(p.d_points if here else 0) + "\t" + signed(w.staff.rating(p)) + "\t" + odds_cell(w, o))
+        row_keys.append(k)
+
+string bets_detail(World w):
+    string t = w.book.blurb(w) + "\n\n" + w.book.summary(w)
+    if !w.book.can_bet(w):
+        t = "The league forbids team owners to bet: the book takes no bets from you while you own " + w.mine().name + ". Your open bets on other leagues stand.\n\n" + t
+    Bet o = chosen_offer(w)
+    if o.sel == 0:
+        return t
+    string head = o.label + ": " + (w.book.odds_text(o.odds) + " (a stake of " + fmt.credits(w.book.MIN_STAKE[o.league]) + " returns " + fmt.credits(w.book.MIN_STAKE[o.league] * o.odds) + "; at most " + fmt.credits(w.book.max_stake(o)) + ")." if o.priced else "the book will not price it.")
+    if o.kind == 2 || o.kind >= 5:
+        Team tm = w.team(o.sel)
+        return head + "\n\n" + tm.name + ": " + string(w.position(tm)) + names.ordinal_suffix(w.position(tm)) + " in the teams' championship, " + string(tm.points) + " points; car " + fmt.one_decimal(tm.rating()) + ". Pilots: " + w.seat(tm, 0).name + " and " + w.seat(tm, tm.SECOND).name + ".\n\n" + t
+    return head + "\n\n" + person_text(w, w.person(o.sel)) + "\n\n" + t
+
+// ---- Events ----
+
+// The oldest event waiting, as a plain panel: its three answers and Later.
+void open_incident(es.Game game, World w):
+    if w.incidents.len() == 0:
+        return
+    Incident inc = w.incidents[0]
+    inc.shown = true
+    event_mode = true
+    event_done = false
+    event_id = inc.id
+    actions = []
+    string kind = "Trouble at the team" if w.events.is_blunder(inc.template) else "Good news for the team"
+    string more = "" if w.incidents.len() == 1 else " (" + string(w.incidents.len() - 1) + " more waiting)"
+    game.panel_open(kind + ": " + w.events.title(w, inc) + more, w.events.text(w, inc) + "\n\nLeave it, and " + w.events.chief_name(w, inc) + " deals with it after " + fmt.date(inc.deadline) + ".")
+    for k in 0..<3:
+        game.panel_button(w.events.label(w, inc, k))
+    game.panel_button("Later")
+
+void event_press(es.Game game, World w, int index):
+    if event_done:
+        // The outcome panel: Next (another event), the office, or close.
+        event_mode = false
+        string action = actions[index] if index >= 0 && index < actions.len() else "close"
+        if action == "next" && w.incidents.len() > 0:
+            open_incident(game, w)
+        else if action == "office":
+            show(game, w)
+        else:
+            game.panel_close()
+        return
+    if index == 3 || index < 0:
+        event_mode = false
+        game.panel_close()
+        return
+    Incident inc = Incident()
+    for x in w.incidents:
+        if x.id == event_id:
+            inc = x
+    if inc.id == 0:
+        event_mode = false
+        game.panel_close()
+        return
+    string head = w.events.title(w, inc)
+    string said = w.events.label(w, inc, index)
+    string what = w.events.resolve(w, inc, index)
+    event_done = true
+    game.panel_open("Outcome: " + head, said + ".\n\n" + what)
+    actions = []
+    if w.incidents.len() > 0:
+        game.panel_button("Next event")
+        actions.append("next")
+    else if game.planet_service(game.planet(), "bank"):
+        game.panel_button("Racing office")
+        actions.append("office")
+    game.panel_button("Close")
+    actions.append("close")

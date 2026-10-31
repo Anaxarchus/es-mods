@@ -1,0 +1,343 @@
+# Copyright (c) 2026 by Anaxarchus
+#
+# Endless Sky is free software: you can redistribute it and/or modify it under the
+# terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later version.
+#
+# Endless Sky is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+# PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+# MOPS operations: repeatable job-board jobs for contractors ("mops: contractor",
+# set by "MOPS 2: Contract"). Each one sends the player from a human spaceport to
+# kill a hostile alien force in the systems where vanilla puts that species, then
+# land back at the job's planet to be paid.
+#
+# Rarity. Vanilla's "Spacediving professionals" job is `random < 14`. Every MOPS
+# job is rarer than that on its own (`random < 10`, the far-perimeter ones
+# `random < 8`), and each is only offered from spaceports near its own border:
+# most job boards can roll one or two of them, a few border hubs (Zaurak, between
+# Sumar, Polaris and Durax) up to four, and only for the most senior contractors.
+#
+# Difficulty. Tiers are gated by combat rank (rank = floor(ln "combat rating"):
+# rank 6 >= 404, rank 7 >= 1097, rank 8 >= 2981) and, for the heavier ones, by
+# "mops: operations" (completed MOPS jobs). A job is never offered while the
+# player is not hostile with that government (e.g. after making peace with the
+# Unfettered or the Korath through their storylines).
+#
+#   job                                  rank  ops  pay        targets
+#   Unfettered Incursion                  5+    -   1,500,000  Unfettered Raid + Large Unfettered (Hai border)
+#   Unfettered War Band                   7+    3   3,500,000  two waves across the Ultima Thule wormhole and Sumar
+#   Korath Raiders (Polaris)              6+    -   2,400,000  Korath Large Raid + Korath Raid near Polaris
+#   Korath Strip-Mining (Durax)           7+    3   4,000,000  Korath Miners + 2 Large Raids at Durax, a second wing nearby
+#   Alpha Cell (South)                    7+    3   3,000,000  Alpha warships in the southern rim; after the FW campaign
+#   Drone War Spillover (Korath sector)   8+    5   5,500,000  Kor Sestor and Kor Mereti fleets; once visited
+#   Graveyard Sweep (Ka'het)              8+    5   6,000,000  three Ka'het war groups; once visited
+
+
+# --- Unfettered Hai: the Hai/human border (Sumar, Cardax and the Ultima Thule wormhole) ---
+
+mission "MOPS Job: Unfettered Incursion"
+	name "Perimeter maintenance: Hai border"
+	description `MOPS reports an Unfettered Hai raiding party, led by the <npc>, operating in human space along the Hai border (Sumar, Cardax, Rajak, Hassaleh, Danoa or Ultima Thule). Destroy all of them by <date> and return to <destination>. Payment: <payment>. MOPS reminds contractors that it does not exist.`
+	job
+	repeat
+	deadline 20
+	to offer
+		has "mops: contractor"
+		"combat rating" >= 149
+		"reputation: Hai (Unfettered)" < 0
+		random < 10
+	source
+		near "Sumar" 0 5
+		government "Republic" "Free Worlds" "Syndicate" "Neutral" "Independent"
+		attributes "spaceport"
+	npc kill
+		government "Hai (Unfettered)"
+		personality heroic staying vindictive marked target tracked
+		system
+			system "Sumar" "Cardax" "Rajak" "Hassaleh" "Danoa" "Ultima Thule"
+		fleet "Unfettered Raid"
+		fleet "Large Unfettered"
+		dialog `The last Unfettered ship is gone. Your comm chimes with an automated MOPS message: "Containment confirmed. Return to <destination> for settlement. This message will be deleted from our records shortly and from yours, if you'd be so kind."`
+	on visit
+		dialog `You've returned to <planet>, but the Unfettered raiding party is still out there. MOPS does not pay for partial suppression. MOPS barely pays for complete suppression, legally speaking.`
+	on fail
+		dialog `The Unfettered raiders were still at large when your MOPS contract lapsed. The Office has reassigned the operation to "a backup contractor," and notes that the backup contractor is also you, next time.`
+	on complete
+		payment 1500000
+		"mops: operations" ++
+		dialog phrase "mops: settlement"
+
+
+mission "MOPS Job: Unfettered War Band"
+	name "Perimeter maintenance: Unfettered war band"
+	description `An Unfettered Hai war band has jumped across the border in two waves: one near the Ultima Thule wormhole (Rajak or Ultima Thule) and one deeper in, around Sumar, Cardax, Hassaleh or Danoa. Destroy both waves by <date> and return to <destination>. Payment: <payment>. MOPS rates this operation "attritional."`
+	job
+	repeat
+	deadline 25
+	to offer
+		has "mops: contractor"
+		"mops: operations" >= 3
+		"combat rating" >= 1097
+		"reputation: Hai (Unfettered)" < 0
+		random < 10
+	source
+		near "Sumar" 0 5
+		government "Republic" "Free Worlds" "Syndicate" "Neutral" "Independent"
+		attributes "spaceport"
+	npc kill
+		government "Hai (Unfettered)"
+		personality heroic staying vindictive marked target tracked
+		system
+			system "Rajak" "Ultima Thule"
+		fleet "Unfettered Raid" 2
+		fleet "Large Unfettered"
+	npc kill
+		government "Hai (Unfettered)"
+		personality heroic staying vindictive marked target tracked
+		system
+			system "Sumar" "Cardax" "Hassaleh" "Danoa"
+		fleet "Large Unfettered" 2
+		fleet "Large Plundering Unfettered"
+		dialog `Both waves of the Unfettered war band are gone. MOPS sends a one-word acknowledgement ("Noted.") followed, a minute later, by a correction: "Noted, with appreciation (non-binding)."`
+	on visit
+		dialog `You're back at <planet>, but part of the Unfettered war band is still in human space. MOPS's position is that a war band which is half destroyed is also half not destroyed.`
+	on fail
+		dialog `The Unfettered war band outlasted your MOPS contract. The Office has updated its press guidance from "routine perimeter maintenance" to "unrelated navigational hazard."`
+	on complete
+		payment 3500000
+		"mops: operations" ++
+		dialog phrase "mops: settlement"
+
+
+# --- Korath raiders: around Polaris (vanilla "Korath Large Raid" systems in Syndicate space) ---
+
+mission "MOPS Job: Korath Raiders (Polaris)"
+	name "Pest control: Korath near Polaris"
+	description `A Korath raiding force, led by the <npc>, is preying on shipping around Polaris (Polaris, Achernar, Alpha Hydri or Sheratan). Destroy it by <date> and return to <destination>. Payment: <payment>. The Syndicate would like it known that this is not happening, and is grateful.`
+	job
+	repeat
+	deadline 20
+	to offer
+		has "mops: contractor"
+		"combat rating" >= 404
+		"reputation: Korath" < 0
+		random < 10
+	source
+		near "Polaris" 0 5
+		government "Republic" "Free Worlds" "Syndicate" "Neutral" "Independent"
+		attributes "spaceport"
+	npc kill
+		government "Korath"
+		personality heroic staying vindictive marked target tracked
+		system
+			system "Polaris" "Achernar" "Alpha Hydri" "Sheratan"
+		fleet "Korath Large Raid"
+		fleet "Korath Raid"
+		dialog `The Korath raiders are destroyed. Somewhere in a Syndicate office, a line item reading "PEST CONTROL (EXTERIOR)" is quietly marked as paid.`
+	on visit
+		dialog `You've landed at <planet>, but the Korath raiders are still out there. MOPS settlement procedures require the aliens to be in fewer pieces than this.`
+	on fail
+		dialog `Your MOPS contract against the Korath raiders near Polaris has expired. The Office reminds you that the Korath, unlike MOPS, do not offer a grace period.`
+	on complete
+		payment 2400000
+		"mops: operations" ++
+		dialog phrase "mops: settlement"
+
+
+# --- Korath at Durax: the pirate systems past Alcyone, where vanilla puts Korath raids and miners ---
+
+mission "MOPS Job: Korath Strip-Mining (Durax)"
+	name "Pest control: Korath at Durax"
+	description `The Korath are strip-mining Durax under heavy guard, and a second raiding wing is working the nearby pirate systems (Misam, Atik, Alcyone or Almach). Destroy the mining operation, its escorts and the second wing by <date>, then return to <destination>. Payment: <payment>. Note: the pirates in Durax are not your friends either. MOPS does not insure against pirates. MOPS does not insure.`
+	job
+	repeat
+	deadline 25
+	to offer
+		has "mops: contractor"
+		"mops: operations" >= 3
+		"combat rating" >= 1097
+		"reputation: Korath" < 0
+		random < 10
+	source
+		near "Durax" 0 5
+		government "Republic" "Free Worlds" "Syndicate" "Neutral" "Independent"
+		attributes "spaceport"
+	npc kill
+		government "Korath"
+		personality heroic staying vindictive marked target tracked
+		system "Durax"
+		fleet "Korath Miners"
+		fleet "Korath Large Raid" 2
+	npc kill
+		government "Korath"
+		personality heroic staying vindictive marked target tracked
+		system
+			system "Misam" "Atik" "Alcyone" "Almach"
+		fleet "Korath Raid" 2
+		dialog `The Korath presence around Durax has been, in MOPS terminology, "reduced to zero, plus or minus wreckage." Return to <destination> to be paid.`
+	on visit
+		dialog `You've returned to <planet>, but there are still Korath ships around Durax. MOPS would describe the operation as "in progress" if MOPS described anything.`
+	on fail
+		dialog `Your MOPS contract at Durax has lapsed with the Korath still digging. The Office has filed it under "geology."`
+	on complete
+		payment 4000000
+		"mops: operations" ++
+		dialog phrase "mops: settlement"
+
+
+# --- Alpha remnants: the southern rim, only once the Free Worlds campaign is over ---
+
+mission "MOPS Job: Alpha Cell (South)"
+	name "Non-baseline containment: <npc>"
+	description `An Alpha cell, crewing the warship <npc> and its escorts, is hiding in a southern system within a few jumps of here. MOPS classifies Alphas as "non-baseline hostiles" for budgetary reasons. Destroy the cell by <date> and return to <destination>. Payment: <payment>.`
+	job
+	repeat
+	deadline 20
+	to offer
+		has "mops: contractor"
+		has "free worlds plot completed"
+		"mops: operations" >= 3
+		"combat rating" >= 1097
+		"reputation: Alpha" < 0
+		random < 10
+	source
+		system "Albaldah" "Albireo" "Aldhibain" "Alniyat" "Atria" "Beta Lupi" "Dschubba" "Girtab" "Graffias" "Han" "Kappa Centauri" "Kornephoros" "Lesath" "Lurata" "Pherkad" "Rastaban" "Sadr" "Sargas" "Tarazed" "Umbral" "Yed Prior"
+		government "Republic" "Free Worlds" "Syndicate" "Neutral" "Independent"
+		attributes "spaceport"
+	npc kill
+		government "Alpha"
+		personality heroic staying vindictive marked target tracked
+		system
+			distance 2 5
+			attributes "south"
+		fleet
+			names "pirate"
+			variant
+				"Leviathan (Heavy)" 2
+				"Firebird (Plasma)" 2
+				"Firebird (Missile)"
+				"Falcon (Plasma)"
+		dialog `The Alpha cell is destroyed. A MOPS message arrives with suspicious speed: "Non-baseline hostiles contained. Remember: these were never people, legally, which is why we were allowed to send you."`
+	on visit
+		dialog `You've landed on <planet>, but the Alpha cell is still out there. Alphas do not surrender, and MOPS does not pay by the percentage.`
+	on fail
+		dialog `Your contract against the Alpha cell has expired. MOPS has updated the cell's file from "contain" to "monitor," and your file from "promising" to "also monitor."`
+	on complete
+		payment 3000000
+		"mops: operations" ++
+		dialog phrase "mops: settlement"
+
+
+# --- Far perimeter: offered from spaceports within five jumps of Terminus (the way
+# into the Ember Waste), and only to contractors who have already been out there. ---
+
+mission "MOPS Job: Drone War Spillover"
+	name "Far-perimeter suppression: drone war"
+	description `The Kor Sestor and Kor Mereti drone fleets are fighting over the uninhabited systems of the Korath sector (Mesuket, Farbutero, Fornarep, Kaliptari, Feroteri or Korsmanath), and MOPS would like the winner to be nobody. Destroy both forces by <date> and return to <destination>. Payment: <payment>. Contractors are reminded that the drones are also fighting each other, and that this is not a reason to relax.`
+	job
+	repeat
+	deadline 60
+	to offer
+		has "mops: contractor"
+		"mops: operations" >= 5
+		"combat rating" >= 2981
+		"reputation: Kor Sestor" < 0
+		"reputation: Kor Mereti" < 0
+		or
+			has "visited system: Mesuket"
+			has "visited system: Farbutero"
+			has "visited system: Fornarep"
+			has "visited system: Kaliptari"
+			has "visited system: Feroteri"
+			has "visited system: Korsmanath"
+		random < 8
+	source
+		near "Terminus" 0 5
+		government "Republic" "Free Worlds" "Syndicate" "Neutral" "Independent"
+		attributes "spaceport"
+	npc kill
+		government "Kor Sestor"
+		personality heroic staying vindictive marked target tracked
+		system
+			system "Mesuket" "Farbutero" "Fornarep" "Kaliptari" "Feroteri" "Korsmanath"
+		fleet "Large Kor Sestor" 2
+	npc kill
+		government "Kor Mereti"
+		personality heroic staying vindictive marked target tracked
+		system
+			system "Mesuket" "Farbutero" "Fornarep" "Kaliptari" "Feroteri" "Korsmanath"
+		fleet "Large Kor Mereti" 2
+		dialog `Both drone forces are scrap. MOPS's acknowledgement reads, in full: "Excellent. We had a pool going on whether you'd come back. The Office has lost money. Congratulations."`
+	on visit
+		dialog `You're back at <planet>, but the drone war is still going without you. MOPS does not pay for wars that are merely smaller.`
+	on fail
+		dialog `Your MOPS contract in the Korath sector has expired with drones still fighting. The Office notes that this is "their natural state" and has closed the file.`
+	on complete
+		payment 5500000
+		"mops: operations" ++
+		dialog phrase "mops: settlement"
+
+
+mission "MOPS Job: Graveyard Sweep"
+	name "Far-perimeter suppression: the Graveyard"
+	description `Three Ka'het war groups, led by the <npc>, have become active in the Graveyard (Polerius, Paeli, Esix, Relifer, Feraticus or Dixere). MOPS would like them to become inactive. Destroy them all by <date> and return to <destination>. Payment: <payment>. This is the highest rate MOPS pays. MOPS would like you to think about why.`
+	job
+	repeat
+	deadline 60
+	to offer
+		has "mops: contractor"
+		"mops: operations" >= 5
+		"combat rating" >= 2981
+		"reputation: Ka'het" < 0
+		or
+			has "visited system: Polerius"
+			has "visited system: Paeli"
+			has "visited system: Esix"
+			has "visited system: Relifer"
+			has "visited system: Feraticus"
+			has "visited system: Dixere"
+		random < 8
+	source
+		near "Terminus" 0 5
+		government "Republic" "Free Worlds" "Syndicate" "Neutral" "Independent"
+		attributes "spaceport"
+	npc kill
+		government "Ka'het"
+		personality heroic staying vindictive marked target tracked
+		system
+			system "Polerius" "Paeli" "Esix" "Relifer" "Feraticus" "Dixere"
+		fleet "Ka'het Aggressive" 3
+		dialog `The last Ka'het hull goes dark. Your comm stays silent for a long moment before MOPS's message arrives: "Graveyard sweep confirmed. Your pre-written letter of condolence has been returned to storage. Please return to <destination>."`
+	on visit
+		dialog `You're back at <planet>, but there are still Ka'het war groups in the Graveyard. They will not stop being there on their own. That is rather the point.`
+	on fail
+		dialog `Your MOPS contract in the Graveyard has expired. The Office notes that the Ka'het have outlasted many things, and you are now one of them.`
+	on complete
+		payment 6000000
+		"mops: operations" ++
+		dialog phrase "mops: settlement"
+
+
+# The settlement message every MOPS job ends with.
+phrase "mops: settlement"
+	word
+		`You land and find <payment> already in your account, wired from `
+	word
+		"a municipal drainage authority"
+		"a company that manufactures commemorative plates"
+		"the pension fund of a retired admiral who does not exist"
+		"a charity for distressed spacedock cats"
+		"a sanitation contractor whose only listed employee is you"
+		"an account labelled PERIMETER (MISC.)"
+	word
+		`. `
+	word
+		`Attached is a form acknowledging receipt, which you are asked to sign and then destroy.`
+		`Attached is a satisfaction survey. Question one asks whether you are still alive. There is no space to answer "no."`
+		`Attached is a note from Registrar Vosk: "Your next of kin have been informed that you are, for now, fine. They seemed surprised."`
+		`Attached is a message from Prell: "Splendid work. Officially, of course, there was no work."`
+		`Attached is a reminder that MOPS contractors are not covered by any treaty, convention, or health plan.`
+		`Attached is a commendation, which is also a non-disclosure agreement, which is also a receipt.`
+		`Attached is a brief notice that your file has been moved from "expendable" to "expendable (preferred)."`

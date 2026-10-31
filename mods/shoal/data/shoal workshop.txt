@@ -1,0 +1,77 @@
+# The Shoal: the workshop at Breaker's Rest.
+#
+# Since v0.3 (DESIGN.md section 15) the workshop builds only the Warden Steward
+# crew line (DESIGN.md sections 12 and 14). The twelve exotic lines are no
+# longer crafted: Mk I and Mk II come only from drowned wrecks and salvage
+# leads, and Mk III only by upgrading at the Breakers' Yard (the mod's code).
+# Every recipe takes refined materials only (Refined Shoal Glass, Refined
+# Warden Core) plus Deep Lattice, never raw glass or cores; raw materials are
+# refined at Breaker's Rest first (see "shoal refinery.txt").
+# Accepting the job is the purchase: "on accept" takes the inputs, charges the credits,
+# hands over the outfit and then fails the job so it leaves no entry in the
+# mission list. Engine behaviour this relies on (checked in source):
+#	- Mission::CanAccept() runs MissionAction::CanBeDone() on "on accept",
+#	  which refuses when credits < -payment, or when an outfit with a negative
+#	  count is not available in that number installed on the flagship plus in
+#	  the (pooled, when landed) cargo. The job then shows as unavailable.
+#	- GameAction::Do() removes negative outfits (cargo first, then the
+#	  flagship) before giving positive ones, so a Mk I installed on the
+#	  flagship frees its slot for the Mk II.
+#	- "fail" with no value in "on accept" fails this mission;
+#	  PlayerInfo::AcceptJob() then removes it at once (no "on fail" here, so
+#	  nothing else happens).
+#	- "outfit (all): <name>" is provided in PlayerInfo.cpp (all ships, cargo
+#	  and planetary storage).
+
+mission "Shoal: Workshop Warden Steward Mk I"
+	name "Workshop: Warden Steward Mk I"
+	job
+	repeat
+	source "Breaker's Rest"
+	destination "Breaker's Rest"
+	description "The Breakers will build you a Warden Steward Mk I from drowned-fleet salvage. Price: 2 Refined Shoal Glass and 1 Refined Warden Core (in your hold, in storage here, or installed on your flagship), and 100,000 credits. The outfit is handed over as soon as you accept."
+	on accept
+		outfit "Refined Shoal Glass" -2
+		outfit "Refined Warden Core" -1
+		payment -100000
+		outfit "Warden Steward Mk I" 1
+		dialog `The Breakers set a Warden Core in a cradle of glass and wire it into a ship's control boards. After a long silence, the reactor readout steadies and the engine trim lights blink green, all on their own. Nobody is quite comfortable being in the room with it.`
+		"shoal: crafted" ++
+		fail
+
+mission "Shoal: Workshop Warden Steward Mk II"
+	name "Workshop: Warden Steward Mk II"
+	job
+	repeat
+	source "Breaker's Rest"
+	destination "Breaker's Rest"
+	description "The Breakers will rebuild your Warden Steward Mk I into a Warden Steward Mk II. Price: the Warden Steward Mk I and 2 Refined Warden Cores (in your hold, in storage here, or installed on your flagship), and 500,000 credits. The outfit is handed over as soon as you accept."
+	to offer
+		"outfit (all): Warden Steward Mk I" > 0
+	on accept
+		outfit "Warden Steward Mk I" -1
+		outfit "Refined Warden Core" -2
+		payment -500000
+		outfit "Warden Steward Mk II" 1
+		dialog `The new Steward is threaded through a test hull from bridge to engine room. Doors open as the Breakers approach them, and the damage-control boards light up before anyone reports a fault. One of them mutters that it is very polite, for a thing that used to try to kill them.`
+		"shoal: crafted" ++
+		fail
+
+mission "Shoal: Workshop Warden Steward Mk III"
+	name "Workshop: Warden Steward Mk III"
+	job
+	repeat
+	source "Breaker's Rest"
+	destination "Breaker's Rest"
+	description "The Breakers will rebuild your Warden Steward Mk II into a Warden Steward Mk III. Price: the Warden Steward Mk II, 3 Refined Warden Cores and 1 Deep Lattice (in your hold, in storage here, or installed on your flagship), and 2,000,000 credits. The outfit is handed over as soon as you accept."
+	to offer
+		"outfit (all): Warden Steward Mk II" > 0
+	on accept
+		outfit "Warden Steward Mk II" -1
+		outfit "Refined Warden Core" -3
+		outfit "Deep Lattice" -1
+		payment -2000000
+		outfit "Warden Steward Mk III" 1
+		dialog `When the Deep Lattice goes in, every system in the test hull wakes at once. The Steward runs the whole ship for a day without a single human hand on the controls. The Breakers hand it over carefully, and remind you that it still cannot fight off a boarding party.`
+		"shoal: crafted" ++
+		fail

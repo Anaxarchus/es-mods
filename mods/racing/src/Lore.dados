@@ -1,0 +1,577 @@
+class Lore
+
+// The lore of the staff, pilots above all: a history of notable performances,
+// fame, and permanent traits earned by beating expectations. None of it draws
+// the world's dice: everything here follows from what happened in the races,
+// so it changes nothing else (only what it is meant to: a trait's small edge,
+// fame's price and sponsors' interest).
+//
+// Expectations are the race's own: a pilot is measured against the car's
+// pace rank (Result.ranks, 1 the fastest design of the field; a team's two
+// cars share it, so on a grid of twenty the car is expected about 2 x rank -
+// 1) and the grid slot. Each pilot is read from their own car; the crew from
+// the team's race (both cars). Titles: the drivers' champion's is the
+// pilot's (driver_title); the teams' champion's is its crew's, and its
+// pilots keep it in their history (title). Teammates who beat each other
+// over a season (MATE_SHARE of their races, on the grid or at the flag) get
+// a line of it (teammates).
+//
+// History (Person.notes): entries "season:round:league:circuit:code:a:b:team"
+// (round -1 for the season's end), told as lines when read. At most HISTORY
+// entries besides titles (titles are always kept), and at most SAME of one
+// kind (a fourth plain win replaces the oldest), so a history keeps its
+// variety; past HISTORY the least notable (score) goes, the oldest first on a
+// tie. At most one race entry a race per person (the most notable), plus
+// milestones and traits.
+//
+// Fame (Person.fame, 0 .. 100): each notable thing adds its points x the
+// league's FAME_LEAGUE x (1 - fame / 100), so it never passes 100; a new
+// season keeps FAME_KEEP of it. Crew members gain from their team's wins and
+// titles and their own feats, less than a pilot. Fame raises the ask
+// (Staff.ask_now: FAME_ASK), a team's marketability (Value.fame, bounded),
+// and what sponsors pay a team for its pilot's name (Sponsors.make: FAME_PAY).
+//
+// Traits (Person.traits, at most MAX_TRAITS, never lost): earned when a
+// person's count of a feat (Person.progress) reaches the trait's need. Each
+// maps onto one real input of the simulation, by a small amount, and the same
+// trait never counts twice.
+
+int HISTORY = 10
+int SAME = 3
+int MAX_TRAITS = 3
+float FAME_KEEP = 0.8
+[]float FAME_LEAGUE = [1.0, 1.5, 2.0]
+float CREW_FAME = 0.35
+
+// The trait list: name, the role that can earn it, how many feats it takes,
+// and its tag in tables.
+int GIANT = 0
+int COMEBACK = 1
+int HAZARD = 2
+int ROCKS = 3
+int NERVES = 4
+int METRONOME = 5
+int WIZARD = 6
+int STRATEGIST = 7
+int LIGHTNING = 8
+int STEADY = 9
+int BREAKTHROUGH = 10
+int RAINMAKER = 11
+int NT = 12
+[]string trait_names = ["Giant Killer", "Comeback King", "Hazard Master", "Rock Dancer", "Iron Nerves", "Metronome", "Setup Wizard", "Strategist", "Lightning Stops", "Steady Crew", "Breakthrough Mind", "Rainmaker"]
+[]string trait_tags = ["GK", "CK", "HM", "RD", "IN", "Me", "SW", "St", "LS", "SC", "BM", "Rm"]
+[]int trait_role = [0, 0, 0, 0, 0, 0, 1, 1, 3, 3, 2, 4]
+[]int trait_need = [3, 3, 3, 3, 3, 2, 3, 4, 5, 15, 6, 6]
+[]string trait_how = ["won three times in a car no better than the 4th fastest", "came through the field (8+ places from the grid, into the top 6) three times", "beat the car's pace by 6+ places at a hazard run three times", "beat the car's pace by 6+ places on an asteroid course three times", "won from pole in a car no better than the 3rd fastest, three times", "set the fastest lap in a car no better than the 4th fastest, twice", "found a setup worth 0.9% a lap or more three times", "gained 3+ places on both the grid and the car's pace four times", "made a stop of 2.6 s or less five times", "made fifteen clean stops running, none slower than 3.0 s", "had a week of R&D yield of 130% or more six times", "brought in a deal at 120% or better of a sponsor's going rate six times"]
+[]string trait_effect = ["0.1% a lap quicker everywhere", "+0.06 on every passing move", "0.25% a lap quicker at hazard runs, crashes there 10% less", "0.25% a lap quicker on asteroid courses", "rivals' passing moves -0.06", "lap times 15% steadier", "+0.08% a lap of setup", "always pits within a lap of the best one", "stops 0.15 s quicker", "botches stops 40% less often", "+5% R&D yield", "+5% on the deals signed"]
+
+// The effects.
+float GIANT_PACE = 0.001
+float PASS = 0.06
+float KIND_PACE = 0.0025
+float KIND_RISK = 0.9
+float DEFEND = 0.06
+float STEADY_NOISE = 0.85
+float SETUP = 0.0008
+float STOP = 0.15
+float BOTCH = 0.6
+float YIELD = 0.05
+
+// The feats' thresholds (places on a grid of twenty).
+int KIND_FEAT = 6
+int CHARGE_FEAT = 8
+int FROM_BACK_GRID = 7
+float SETUP_FEAT = 0.009
+float STOP_FEAT = 2.6
+float CLEAN_STOP = 3.0
+float RD_FEAT = 1.3
+float DEAL_FEAT = 1.2
+
+// History codes.
+int TITLE = 0
+int FIRST_WIN = 1
+int UPSET = 2
+int FROM_BACK = 3
+int WIN = 4
+int PODIUM_UP = 5
+int CHARGE = 6
+int DEBUT = 7
+int CRASH_FRONT = 8
+int RACES = 9
+int WINS = 10
+int PROMOTED = 11
+int TRAIT = 12
+int TEAM_UPSET = 13
+int FAST_STOP = 14
+int BEST_SETUP = 15
+int BOTCHED = 16
+// Against the teammate over a season (a: times ahead, b: races together;
+// the entry's circuit field holds the teammate's id).
+int MATE_QUALI = 17
+int MATE_RACE = 18
+// A title's kind (a TITLE entry's a): 0 a title from before two cars (the
+// team's and the pilot's at once), 1 the drivers', 2 the teams'.
+int DRIVERS = 1
+int TEAMS_TITLE = 2
+// The head-to-head: at least MATE_MIN races together, ahead in MATE_SHARE of them.
+int MATE_MIN = 5
+float MATE_SHARE = 0.8
+[]int race_marks = [50, 100, 150, 200]
+[]int win_marks = [10, 25, 50, 100]
+
+Names names = Names()
+
+// ---- Traits ----
+
+bool has(Person p, int trait):
+    return p.traits.contains(trait)
+
+string tags(Person p):
+    if p.traits.len() == 0:
+        return ""
+    []string out = []
+    for k in p.traits:
+        out.append(trait_tags[k])
+    return " [" + out.join(" ") + "]"
+
+void ensure_progress(Person p):
+    for p.progress.len() < NT:
+        p.progress.append(0)
+
+// One more of a trait's feats; the trait when the count reaches its need.
+void feat(World w, Person p, int trait, int season, int round, int league, int circuit, int team):
+    if p.id == 0 || trait_role[trait] != p.role:
+        return
+    ensure_progress(p)
+    p.progress[trait] = p.progress[trait] + 1
+    earn(w, p, trait, season, round, league, circuit, team)
+
+void earn(World w, Person p, int trait, int season, int round, int league, int circuit, int team):
+    if has(p, trait) || p.traits.len() >= MAX_TRAITS || p.progress[trait] < trait_need[trait]:
+        return
+    p.traits.append(trait)
+    add(p, season, round, league, circuit, TRAIT, trait, 0, team)
+    fame(w, p, 3.0 if p.role == 0 else 2.0, league)
+
+// A streak's feat (Steady Crew): the count goes back to 0 when broken.
+void streak(World w, Person p, int trait, bool ok, int season, int round, int league, int circuit, int team):
+    if p.id == 0 || trait_role[trait] != p.role:
+        return
+    ensure_progress(p)
+    if !ok:
+        if !has(p, trait):
+            p.progress[trait] = 0
+        return
+    p.progress[trait] = p.progress[trait] + 1
+    earn(w, p, trait, season, round, league, circuit, team)
+
+// What a pilot's traits take off the lap factor at a circuit of this kind.
+float pace(Person p, int kind):
+    float v = 0.0
+    if has(p, GIANT):
+        v += GIANT_PACE
+    if kind == 2 && has(p, HAZARD):
+        v += KIND_PACE
+    if kind == 1 && has(p, ROCKS):
+        v += KIND_PACE
+    return v
+
+// ---- Fame ----
+
+void fame(World w, Person p, float points, int league):
+    if p.id == 0 || points == 0.0:
+        return
+    float g = points * FAME_LEAGUE[league]
+    if g > 0.0:
+        p.fame += g * (1.0 - p.fame / 100.0)
+    else:
+        p.fame += g
+    p.fame = 0.0 if p.fame < 0.0 else (100.0 if p.fame > 100.0 else p.fame)
+    w.staff.forget()
+
+void new_season(World w):
+    for p in w.people:
+        p.fame = p.fame * FAME_KEEP
+    new_mates(w)
+
+string fame_label(Person p):
+    float f = p.fame
+    if f < 5.0:
+        return "a paddock unknown"
+    if f < 15.0:
+        return "known in the paddock"
+    if f < 30.0:
+        return "a name to watch"
+    if f < 50.0:
+        return "a fan favourite"
+    if f < 75.0:
+        return "a star"
+    return "a household name"
+
+// ---- History ----
+
+int score(int code, int a, int b, int league):
+    int s = 0
+    if code == TITLE:
+        return 1000 + league
+    if code == TRAIT:
+        s = 90
+    else if code == FIRST_WIN:
+        s = 60
+    else if code == UPSET:
+        s = 55 + 3 * a
+    else if code == FROM_BACK:
+        s = 50 + 2 * a
+    else if code == PROMOTED:
+        s = 45
+    else if code == TEAM_UPSET:
+        s = 40 + a
+    else if code == PODIUM_UP:
+        s = 35 + 2 * b
+    else if code == DEBUT:
+        s = 30
+    else if code == WINS:
+        s = 30 + a / 5
+    else if code == CHARGE:
+        s = 25 + 2 * (a - b)
+    else if code == FAST_STOP || code == BEST_SETUP:
+        s = 25
+    else if code == CRASH_FRONT:
+        s = 22
+    else if code == RACES:
+        s = 20 + a / 10
+    else if code == WIN:
+        s = 20
+    else if code == MATE_RACE:
+        s = 28
+    else if code == MATE_QUALI:
+        s = 24
+    else:
+        s = 15
+    return s + 10 * league
+
+int entry_score(string e):
+    []string f = e.split(":")
+    if f.len() < 8:
+        return 0
+    return score(f[4].to_int(), f[5].to_int(), f[6].to_int(), f[2].to_int())
+
+int code_of(string e):
+    []string f = e.split(":")
+    return f[4].to_int() if f.len() >= 8 else -1
+
+bool is_title(string e):
+    []string f = e.split(":")
+    return f.len() >= 8 && f[4].to_int() == TITLE
+
+void add(Person p, int season, int round, int league, int circuit, int code, int a, int b, int team):
+    if p.id == 0:
+        return
+    string entry = [string(season), string(round), string(league), string(circuit), string(code), string(a), string(b), string(team)].join(":")
+    if code != TITLE:
+        int same = 0
+        int first = -1
+        for k in 0..<p.notes.len():
+            if code_of(p.notes[k]) == code:
+                same += 1
+                if first < 0:
+                    first = k
+        if same >= SAME:
+            p.notes.remove_at(first)
+    p.notes.append(entry)
+    int n = 0
+    for e in p.notes:
+        if !is_title(e):
+            n += 1
+    if n <= HISTORY:
+        return
+    int worst = -1
+    int ws = 1000000
+    for k in 0..<p.notes.len():
+        string e = p.notes[k]
+        if is_title(e):
+            continue
+        int s = entry_score(e)
+        if s < ws:
+            ws = s
+            worst = k
+    if worst >= 0:
+        p.notes.remove_at(worst)
+
+string nth(int n):
+    return string(n) + names.ordinal_suffix(n)
+
+// One entry as a line of the person's history.
+string line(World w, Person p, string e):
+    []string f = e.split(":")
+    if f.len() < 8:
+        return ""
+    int season = f[0].to_int()
+    int round = f[1].to_int()
+    int league = f[2].to_int()
+    int circuit = f[3].to_int()
+    int code = f[4].to_int()
+    int a = f[5].to_int()
+    int b = f[6].to_int()
+    // The team as it was called then (World.team_name_at: its name history).
+    string tn = w.team_name_at(f[7].to_int(), season, round)
+    string with = " with " + tn if tn != "" else ""
+    string lg = names.league_names[league] if league >= 0 && league < 3 else ""
+    string when = "Season " + string(season)
+    if round >= 0 && circuit >= 0 && circuit < names.circuit_titles.len():
+        when = when + ", round " + string(round + 1) + ", the " + names.circuit_titles[circuit] + " (" + lg + ")"
+    string what = ""
+    if code == TITLE:
+        what = ("drivers' champion of the " if a == DRIVERS else ("teams' champion of the " if a == TEAMS_TITLE else "champion of the ")) + lg + with
+    else if code == MATE_QUALI || code == MATE_RACE:
+        Person m = w.person(circuit)
+        string mate = "teammate " + m.name if m.id != 0 else "their teammate"
+        string verb = "outqualified " if code == MATE_QUALI else "out-raced "
+        what = verb + mate + (" all season" if a == b else " " + string(a) + " times in " + string(b)) + with
+    else if code == FIRST_WIN:
+        what = "a first career win, from P" + string(a) + " on the grid" + with
+    else if code == UPSET:
+        what = "won in only the " + nth(a) + "-fastest car, from P" + string(b) + with
+    else if code == FROM_BACK:
+        what = "won from P" + string(a) + " on the grid" + with
+    else if code == WIN:
+        what = "won from P" + string(a) + with
+    else if code == PODIUM_UP:
+        what = "P" + string(a) + " in the " + nth(b) + "-fastest car"
+    else if code == CHARGE:
+        what = "came through from P" + string(a) + " to P" + string(b)
+    else if code == DEBUT:
+        what = "P" + string(a) + " and points on debut" + with
+    else if code == CRASH_FRONT:
+        what = "crashed out from P" + string(a) + " on the grid"
+    else if code == RACES:
+        what = "a " + nth(a) + " race"
+    else if code == WINS:
+        what = "a " + nth(a) + " career win"
+    else if code == PROMOTED:
+        what = "promoted to the " + lg + with
+    else if code == TRAIT:
+        what = "earned the name '" + trait_names[a] + "' (" + trait_how[a] + ")"
+    else if code == TEAM_UPSET:
+        what = "part of a win in only the " + nth(a) + "-fastest car" + with
+    else if code == FAST_STOP:
+        what = "a " + string(a / 10) + "." + string(a % 10) + " s pit stop" + with
+    else if code == BEST_SETUP:
+        what = "a setup worth " + string(a / 10) + "." + string(a % 10) + "% a lap" + with
+    else if code == BOTCHED:
+        what = "a botched stop, " + string(a / 10) + "." + string(a % 10) + " s stationary"
+    return when + ": " + what + "."
+
+// The history, newest first.
+[]string lines(World w, Person p):
+    []string out = []
+    for k in 0..<p.notes.len():
+        string l = line(w, p, p.notes[p.notes.len() - 1 - k])
+        if l != "":
+            out.append(l)
+    return out
+
+// ---- What happens ----
+
+// Where a car of pace rank `rank` (among the teams) is expected: the better
+// of its team's two slots on a grid of twenty.
+int expected_place(int rank):
+    return 2 * rank - 1
+
+// A race of team t, its cars at the places ks of the classification (best
+// first), after the records (Staff.race_record): each pilot's notable
+// performance, fame and feats, from their own car; the crew's from the team's
+// race (a win by either car, their own best work on either).
+void race(World w, Team t, Result r, []int ks):
+    if ks.len() == 0 || ks[0] >= r.ranks.len():
+        return
+    for k in ks:
+        pilot_race(w, t, r, k)
+    int k0 = ks[0]
+    int rank = r.ranks[k0]
+    bool won = r.status[k0] == 0 && k0 == 0
+    bool upset = won && rank >= 4
+    int l = r.league
+    int s = r.season
+    int c = r.circuit
+    int rd = r.round
+    // The crew's best of the two cars: the setup, the stop; a strategy that
+    // worked on either.
+    float best_setup = -1.0
+    float best_stop = 1000.0
+    float worst_stop = 0.0
+    bool strategy = false
+    for k in ks:
+        best_setup = r.setup_obs[k] if r.setup_obs[k] > best_setup else best_setup
+        best_stop = r.stop_obs[k] if r.stop_obs[k] < best_stop else best_stop
+        worst_stop = r.stop_obs[k] if r.stop_obs[k] > worst_stop else worst_stop
+        int pos = k + 1
+        if r.status[k] == 0 && r.grid[k] - pos >= 3 && expected_place(r.ranks[k]) - pos >= 3:
+            strategy = true
+    for role in 1..<5:
+        Person p = w.seat(t, role)
+        if p.id == 0:
+            continue
+        float g = 0.0
+        bool told = false
+        if won:
+            g = 0.8
+            if upset:
+                add(p, s, rd, l, c, TEAM_UPSET, rank, 0, t.id)
+                told = true
+                g += 1.5
+        if role == 1:
+            if best_setup >= SETUP_FEAT:
+                feat(w, p, WIZARD, s, rd, l, c, t.id)
+                if !told:
+                    int th = globalThis.Math.round(best_setup * 1000.0)
+                    add(p, s, rd, l, c, BEST_SETUP, th, 0, t.id)
+                    g += 0.8
+            if strategy:
+                feat(w, p, STRATEGIST, s, rd, l, c, t.id)
+        if role == 3:
+            int tenths = globalThis.Math.round(best_stop * 10.0)
+            if best_stop <= STOP_FEAT:
+                feat(w, p, LIGHTNING, s, rd, l, c, t.id)
+                if !told && best_stop <= 2.3:
+                    add(p, s, rd, l, c, FAST_STOP, tenths, 0, t.id)
+                    g += 0.8
+            // Steady Crew: both cars' stops clean.
+            streak(w, p, STEADY, worst_stop <= CLEAN_STOP, s, rd, l, c, t.id)
+            if worst_stop > 6.0 && !told:
+                add(p, s, rd, l, c, BOTCHED, globalThis.Math.round(worst_stop * 10.0), 0, t.id)
+        if race_marks.contains(p.races) && p.races >= 100:
+            add(p, s, rd, l, c, RACES, p.races, 0, t.id)
+        fame(w, p, g, l)
+
+// One car's race, for its pilot.
+void pilot_race(World w, Team t, Result r, int k):
+    Person pilot = w.person(r.pilot_at(k))
+    if pilot.id == 0:
+        return
+    int rank = r.ranks[k]
+    int grid = r.grid[k]
+    int pos = k + 1
+    bool fin = r.status[k] == 0
+    bool won = fin && k == 0
+    int kind = names.circuit_kinds[r.circuit]
+    int l = r.league
+    int s = r.season
+    int c = r.circuit
+    int rd = r.round
+    bool upset = won && rank >= 4
+    int beat = expected_place(rank) - pos
+    bool charge = fin && grid - pos >= CHARGE_FEAT && pos <= 6
+    int code = -1
+    int a = 0
+    int b = 0
+    float g = 0.0
+    if won:
+        g = 3.0
+        if pilot.wins == 1:
+            code = FIRST_WIN
+            a = grid
+            g += 2.0
+        else if upset:
+            code = UPSET
+            a = rank
+            b = grid
+            g += 3.0
+        else if grid >= FROM_BACK_GRID:
+            code = FROM_BACK
+            a = grid
+            g += 2.0
+        else:
+            code = WIN
+            a = grid
+    else if fin && k < 3:
+        g = 1.0
+        if rank >= 6:
+            code = PODIUM_UP
+            a = pos
+            b = rank
+            g += 2.0
+    if code < 0 && charge:
+        code = CHARGE
+        a = grid
+        b = pos
+        g += 2.0
+    if code < 0 && fin && pilot.races == 1 && r.points[k] > 0:
+        code = DEBUT
+        a = pos
+        g += 1.5
+    if code < 0 && r.status[k] == 2 && grid <= 2:
+        code = CRASH_FRONT
+        a = grid
+        g -= 1.0
+    if code >= 0:
+        add(pilot, s, rd, l, c, code, a, b, t.id)
+    fame(w, pilot, g, l)
+    if race_marks.contains(pilot.races):
+        add(pilot, s, rd, l, c, RACES, pilot.races, 0, t.id)
+    if won && win_marks.contains(pilot.wins):
+        add(pilot, s, rd, l, c, WINS, pilot.wins, 0, t.id)
+    // The feats.
+    if upset:
+        feat(w, pilot, GIANT, s, rd, l, c, t.id)
+    if charge:
+        feat(w, pilot, COMEBACK, s, rd, l, c, t.id)
+    if fin && beat >= KIND_FEAT && kind == 2:
+        feat(w, pilot, HAZARD, s, rd, l, c, t.id)
+    if fin && beat >= KIND_FEAT && kind == 1:
+        feat(w, pilot, ROCKS, s, rd, l, c, t.id)
+    if won && grid == 1 && rank >= 3:
+        feat(w, pilot, NERVES, s, rd, l, c, t.id)
+    if r.fastest_pilot == pilot.id && r.fastest_team == t.id && rank >= 4:
+        feat(w, pilot, METRONOME, s, rd, l, c, t.id)
+
+// A week's R&D (World.rd_day): the research officer's yield.
+void research(World w, Team t, Person p, float eff):
+    if eff >= RD_FEAT:
+        feat(w, p, BREAKTHROUGH, w.season, -1, t.league, -1, t.id)
+
+// A deal made (Sponsors.make): the commercial director's yield.
+void deal(World w, Team t, Person p, float eff):
+    if eff >= DEAL_FEAT:
+        feat(w, p, RAINMAKER, w.season, -1, t.league, -1, t.id)
+
+// The teams' champions (World.end_season): the crew's title; the pilots
+// keep it in their history, with a little fame (their own title is the
+// drivers').
+void title(World w, Team t, Person p, int league):
+    add(p, w.season, -1, league, -1, TITLE, TEAMS_TITLE, 0, t.id)
+    fame(w, p, 5.0 if p.role == 0 else 6.0, league)
+
+// The drivers' champion (World.end_season).
+void driver_title(World w, Team t, Person p, int league):
+    add(p, w.season, -1, league, -1, TITLE, DRIVERS, 0, t.id)
+    fame(w, p, 15.0, league)
+
+// Teammates' season against each other (World.end_season): MATE_SHARE or
+// more of MATE_MIN or more races together, on the grid or at the flag, is a
+// line in the history and a little fame. The tally starts again next season.
+void teammates(World w, Team t, Person a, Person b):
+    if a.id == 0 || b.id == 0:
+        return
+    for p in [a, b]:
+        Person m = b if p.id == a.id else a
+        if p.h_mate == m.id && p.h_n >= MATE_MIN:
+            if float(p.h_race) >= MATE_SHARE * float(p.h_n):
+                add(p, w.season, -1, t.league, m.id, MATE_RACE, p.h_race, p.h_n, t.id)
+                fame(w, p, 1.5, t.league)
+            if float(p.h_quali) >= MATE_SHARE * float(p.h_n):
+                add(p, w.season, -1, t.league, m.id, MATE_QUALI, p.h_quali, p.h_n, t.id)
+                fame(w, p, 1.0, t.league)
+
+// A new season: the head-to-head starts again.
+void new_mates(World w):
+    for p in w.people:
+        p.h_mate = 0
+        p.h_n = 0
+        p.h_quali = 0
+        p.h_race = 0
+
+// Promoted (World.move) at the end of `season`.
+void promoted(World w, Team t, Person p, int league, int season):
+    add(p, season, -1, league, -1, PROMOTED, 0, 0, t.id)
+    fame(w, p, 3.0 if p.role == 0 else 1.0, league)

@@ -24,6 +24,8 @@ class Flotilla
 //              2 relieve its goal (an own system under siege), 3 hunt `target`,
 //              4 hold at its goal
 //   supply     its effectiveness from supply today, in percent (Simulation: not saved)
+//   rest       days it stays where it is before its next jump (Tuning.linger after
+//              each jump, so a player can catch it)
 
 int id = 0
 int side = 0
@@ -47,6 +49,7 @@ int alerted = 0
 int squadron = 0
 int order = 0
 int supply = 100
+int rest = 0
 
 bool alive():
     return strength > 0
@@ -64,7 +67,7 @@ string tag():
     return "diplomacy:" + string(side) + ":f" + string(id) + ":"
 
 []int encode():
-    return [id, side, war, strength, size, kind, admiral, full, at, goal, home, target, siege, launched, stops[0], stops[1], stops[2], leg, dwell, plan, alerted, squadron, order]
+    return [id, side, war, strength, size, kind, admiral, full, at, goal, home, target, siege, launched, stops[0], stops[1], stops[2], leg, dwell, plan, alerted, squadron, order, rest]
 
 void decode([]int v):
     if v.len() < 21:
@@ -90,3 +93,4 @@ void decode([]int v):
     alerted = v[20]
     squadron = v[21] if v.len() > 21 else 0
     order = v[22] if v.len() > 22 else 0
+    rest = v[23] if v.len() > 23 else 0

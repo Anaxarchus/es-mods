@@ -1,0 +1,102 @@
+class Step
+
+// One step of a treasure trail (DESIGN.md, "Steps"). Which fields matter
+// depends on the kind:
+//   CIPHER    system (and planet, when the answer is a world); text the scrambled name
+//   RIDDLE    system; region (the system to search around) and radius; text the riddle
+//   SCAN      system; x, y the spot the scanner leads to
+//   QUESTION  system, planet (the informant); text the question, answer its number
+//   LOCK      system, planet (the lock); start, dials (now), target, effect (n x n)
+//   COURIER   system (where the courier waits)
+//   FINALE    system (where the cache lies)
+// Every kind keeps `text` and `hint` for the panel and the map.
+
+Json json = Json()
+
+int kind = 0
+string system = ""
+string planet = ""
+string text = ""
+string hint = ""
+string region = ""
+int radius = 0
+int answer = 0
+int tries = 0
+int x = 0
+int y = 0
+[]int start = []
+[]int dials = []
+[]int target = []
+[]int effect = []
+// A riddle's facts, "<fact>=<value>" (Gen.FACT_*), for checking that only its system fits.
+[]string facts = []
+
+string encode():
+    []string f = []
+    f.append("\"kind\":" + string(kind))
+    f.append("\"system\":" + json.str(system))
+    f.append("\"planet\":" + json.str(planet))
+    f.append("\"text\":" + json.str(text))
+    f.append("\"hint\":" + json.str(hint))
+    f.append("\"region\":" + json.str(region))
+    f.append("\"radius\":" + string(radius))
+    f.append("\"answer\":" + string(answer))
+    f.append("\"tries\":" + string(tries))
+    f.append("\"x\":" + string(x))
+    f.append("\"y\":" + string(y))
+    f.append("\"start\":" + json.ints(start))
+    f.append("\"dials\":" + json.ints(dials))
+    f.append("\"target\":" + json.ints(target))
+    f.append("\"effect\":" + json.ints(effect))
+    f.append("\"facts\":" + json.strs(facts))
+    return "{" + f.join(",") + "}"
+
+void decode(any o):
+    kind = json.num(o, "kind", 0)
+    system = json.text(o, "system", "")
+    planet = json.text(o, "planet", "")
+    text = json.text(o, "text", "")
+    hint = json.text(o, "hint", "")
+    region = json.text(o, "region", "")
+    radius = json.num(o, "radius", 0)
+    answer = json.num(o, "answer", 0)
+    tries = json.num(o, "tries", 0)
+    x = json.num(o, "x", 0)
+    y = json.num(o, "y", 0)
+    start = json.int_list(o, "start")
+    dials = json.int_list(o, "dials")
+    target = json.int_list(o, "target")
+    effect = json.int_list(o, "effect")
+    facts = json.str_list(o, "facts")
+    // A lock whose parts do not fit together is unusable: it reads as broken (kind 0) and is regenerated.
+    if kind == 5:
+        int n = target.len()
+        if n == 0 || start.len() != n || dials.len() != n || effect.len() != n * n:
+            kind = 0
+
+// ---- The lock ----
+
+// Turn dial i one notch: every dial moves by its share of dial i's effect.
+void turn(int i):
+    int n = dials.len()
+    if i < 0 || i >= n || effect.len() != n * n:
+        return
+    for j in 0..<n:
+        dials[j] = (dials[j] + effect[i * n + j]) % 10
+
+bool solved():
+    if dials.len() != target.len() || dials.len() == 0:
+        return false
+    for v, i in dials:
+        if v != target[i]:
+            return false
+    return true
+
+void reset_lock():
+    dials = start.copy()
+
+string digits([]int v):
+    []string parts = []
+    for d in v:
+        parts.append(string(d))
+    return parts.join(" - ")

@@ -147,8 +147,10 @@ void begin_kind(es.Game game, Galaxy galaxy, Market m, Company c, int d, int kin
     started += 1
     // The company's loss, and its shares.
     string what = ""
+    // (0.4) A chief with nerve handles it better (Executives.crisis_factor).
+    float handled = m.execs.crisis_factor(m, c)
     if x.kind == x.STRIKE:
-        float cost = m.upkeep(c) * 15.0
+        float cost = m.upkeep(c) * 15.0 * handled
         c.cash -= cost
         c.costs += cost
         what = "Workers strike at " + c.name
@@ -158,8 +160,8 @@ void begin_kind(es.Game game, Galaxy galaxy, Market m, Company c, int d, int kin
         c.reliability = m.clamp(c.reliability - 0.05, 0.0, 0.99)
         what = "An accident shuts part of " + c.name + "'s works"
     else:
-        c.reliability = m.clamp(c.reliability - 0.1, 0.0, 0.99)
-        float cost = m.upkeep(c) * 10.0
+        c.reliability = m.clamp(c.reliability - 0.1 * handled, 0.0, 0.99)
+        float cost = m.upkeep(c) * 10.0 * handled
         c.cash -= cost
         c.costs += cost
         what = c.name + " recalls a product line"

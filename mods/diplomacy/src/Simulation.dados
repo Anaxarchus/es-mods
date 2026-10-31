@@ -148,6 +148,8 @@ Flotilla commission(int side, int war, int kind, int size, int strength, int at,
     x.home = at
     x.goal = at
     x.launched = day
+    // It musters where it formed: today and Tuning.linger days more.
+    x.rest = tune.linger
     x.admiral = admirals.pick(side, busy(side))
     world.fleets.append(x)
     return x
@@ -531,23 +533,37 @@ void move(es.Game game, int day):
     for x in world.fleets:
         if !x.alive():
             continue
-        if x.squadron == 1:
-            move_squadron(game, x)
+        // After a jump a flotilla stays a while (Tuning.linger), so a captain
+        // who hears of it can catch it there.
+        // Formed today: it stays (its rest counts from tomorrow).
+        if x.launched >= day:
             continue
-        // A cautious commander, badly hurt, turns for home.
-        if x.side != factions.pirates() && x.kind != 3 && admirals.personality(x.side, x.admiral) == 2 && x.strength * 100 < x.full * tune.cautious_retreat:
-            if besieging(x):
-                politics_siege_broken(game, x, day)
-            go_home(x)
-            world.stat("retreats", 1)
-        if x.kind == 0:
-            move_war(game, x)
-        else if x.kind == 1:
-            move_relief(day, x)
-        else if x.kind == 2:
-            move_raid(x)
-        else:
-            step_toward(x, x.home)
+        if x.rest > 0:
+            x.rest -= 1
+            continue
+        int was = x.at
+        move_one(game, x, day)
+        if x.alive() && x.at != was:
+            x.rest = tune.linger
+
+void move_one(es.Game game, Flotilla x, int day):
+    if x.squadron == 1:
+        move_squadron(game, x)
+        return
+    // A cautious commander, badly hurt, turns for home.
+    if x.side != factions.pirates() && x.kind != 3 && admirals.personality(x.side, x.admiral) == 2 && x.strength * 100 < x.full * tune.cautious_retreat:
+        if besieging(x):
+            politics_siege_broken(game, x, day)
+        go_home(x)
+        world.stat("retreats", 1)
+    if x.kind == 0:
+        move_war(game, x)
+    else if x.kind == 1:
+        move_relief(day, x)
+    else if x.kind == 2:
+        move_raid(x)
+    else:
+        step_toward(x, x.home)
 
 // A squadron follows the player's order; one carried out (the system taken,
 // the siege lifted, the quarry gone) leaves it holding where it is.

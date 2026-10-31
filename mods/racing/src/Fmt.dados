@@ -1,0 +1,79 @@
+class Fmt
+
+// Numbers as the player reads them.
+
+// "1,234,567": whole credits with thousands separators.
+string credits(float value):
+    int n = globalThis.Math.round(value)
+    bool negative = n < 0
+    string digits = string(-n if negative else n)
+    string out = ""
+    int i = digits.len()
+    for i > 3:
+        out = "," + digits[i - 3..<i] + out
+        i -= 3
+    out = digits[0..<i] + out
+    return ("-" if negative else "") + out
+
+// "12.34": a share price, to the hundredth.
+string price(float value):
+    int cents = globalThis.Math.round(value * 100.0)
+    int whole = cents / 100
+    int part = cents % 100
+    return credits(float(whole)) + "." + ("0" if part < 10 else "") + string(part)
+
+// "+3.4%" or "-12.0%".
+string percent(float share):
+    int tenths = globalThis.Math.round(share * 1000.0)
+    bool negative = tenths < 0
+    int t = -tenths if negative else tenths
+    return ("-" if negative else "+") + string(t / 10) + "." + string(t % 10) + "%"
+
+// "34%": a share, whole.
+string whole_percent(float share):
+    int n = globalThis.Math.round(share * 100.0)
+    return string(n) + "%"
+
+// "1.2M" or "850k": a large sum, short.
+string short_credits(float value):
+    float a = value if value >= 0.0 else -value
+    string sign = "" if value >= 0.0 else "-"
+    if a >= 1000000000.0:
+        return sign + one_decimal(a / 1000000000.0) + "B"
+    if a >= 1000000.0:
+        return sign + one_decimal(a / 1000000.0) + "M"
+    if a >= 1000.0:
+        int k = globalThis.Math.round(a / 1000.0)
+        return sign + string(k) + "k"
+    int n = globalThis.Math.round(a)
+    return sign + string(n)
+
+string one_decimal(float value):
+    int tenths = globalThis.Math.round(value * 10.0)
+    return string(tenths / 10) + "." + string(tenths % 10)
+
+// "14 Mar 3015": a day as the game counts them (days since its epoch, where
+// day 1 is 1 January of year 1, in the Gregorian calendar).
+[]string month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+string date(int n):
+    int d = n - 1
+    int year = 1 + 400 * (d / 146097)
+    d = d % 146097
+    int c = d / 36524
+    c = 3 if c > 3 else c
+    year += 100 * c
+    d -= 36524 * c
+    year += 4 * (d / 1461)
+    d = d % 1461
+    int y = d / 365
+    y = 3 if y > 3 else y
+    year += y
+    d -= 365 * y
+    bool leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+    []int lengths = [31, 29 if leap else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    int m = 0
+    for m < 11 && d >= lengths[m]:
+        d -= lengths[m]
+        m += 1
+    return string(d + 1) + " " + month_names[m] + " " + string(year)

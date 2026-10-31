@@ -1,0 +1,5 @@
+name "The Shoal e2e test"
+version "1"
+authors
+	"Anaxarchus"
+about "The Shoal's end-to-end test of the Breakers' Yard: the integration test \"Shoal Yard E2E\", run with The Shoal and the Dado loader by mods/shoal/test/ingame/e2e/run.sh."

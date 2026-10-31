@@ -1,0 +1,88 @@
+# The Shoal: fallback refinery jobs at Breaker's Rest (DESIGN.md section 14).
+#
+# The real refinery is a button on Breaker's Rest, added by the mod's code: it
+# refines everything in the hold and in storage there at once. That needs the
+# mod API 11 call outfit_take. On a game without it, the code sets
+# "shoal: refinery jobs" to 1 and these job-board jobs are offered instead.
+# Without the mod loader nothing sets the condition, so they stay hidden.
+#
+# Same accept-and-fail pattern as the workshop ("shoal workshop.txt"):
+# accepting takes the raw materials, gives the refined ones, shows a short
+# dialog and fails the job so it leaves no entry in the mission list. The
+# ratios keep sale value unchanged (10 x 4,000 = 40,000; 3 x 60,000 =
+# 180,000), and there is no fee.
+
+mission "Shoal: Refine 10 Shoal Glass"
+	name "Refinery: 10 Shoal Glass"
+	job
+	repeat
+	source "Breaker's Rest"
+	destination "Breaker's Rest"
+	description "The Breakers will refine 10 Shoal Glass into 1 Refined Shoal Glass, free of charge. The Shoal Glass can be in your hold or in storage here. The refined material is handed over as soon as you accept."
+	to offer
+		"shoal: refinery jobs" == 1
+	on accept
+		outfit "Shoal Glass" -10
+		outfit "Refined Shoal Glass" 1
+		dialog `The Breakers tip your glass into the crucible and skim the grit off the top as it melts. What they pour back out is clear and pale, and hums faintly in its moulds.`
+		fail
+
+mission "Shoal: Refine 50 Shoal Glass"
+	name "Refinery: 50 Shoal Glass"
+	job
+	repeat
+	source "Breaker's Rest"
+	destination "Breaker's Rest"
+	description "The Breakers will refine 50 Shoal Glass into 5 Refined Shoal Glass, free of charge. The Shoal Glass can be in your hold or in storage here. The refined material is handed over as soon as you accept."
+	to offer
+		"shoal: refinery jobs" == 1
+	on accept
+		outfit "Shoal Glass" -50
+		outfit "Refined Shoal Glass" 5
+		dialog `The Breakers tip your glass into the crucible and skim the grit off the top as it melts. What they pour back out is clear and pale, and hums faintly in its moulds.`
+		fail
+
+mission "Shoal: Refine 100 Shoal Glass"
+	name "Refinery: 100 Shoal Glass"
+	job
+	repeat
+	source "Breaker's Rest"
+	destination "Breaker's Rest"
+	description "The Breakers will refine 100 Shoal Glass into 10 Refined Shoal Glass, free of charge. The Shoal Glass can be in your hold or in storage here. The refined material is handed over as soon as you accept."
+	to offer
+		"shoal: refinery jobs" == 1
+	on accept
+		outfit "Shoal Glass" -100
+		outfit "Refined Shoal Glass" 10
+		dialog `The Breakers tip your glass into the crucible and skim the grit off the top as it melts. What they pour back out is clear and pale, and hums faintly in its moulds.`
+		fail
+
+mission "Shoal: Refine 3 Warden Cores"
+	name "Refinery: 3 Warden Cores"
+	job
+	repeat
+	source "Breaker's Rest"
+	destination "Breaker's Rest"
+	description "The Breakers will refine 3 Warden Cores into 1 Refined Warden Core, free of charge. The Warden Cores can be in your hold or in storage here. The refined material is handed over as soon as you accept."
+	to offer
+		"shoal: refinery jobs" == 1
+	on accept
+		outfit "Warden Core" -3
+		outfit "Refined Warden Core" 1
+		dialog `The cores go down into the shielded pit at the far end of the station. Nobody stands near it while it runs. When the hatch opens again, what they hand you is smaller, cooler and very quiet.`
+		fail
+
+mission "Shoal: Refine 15 Warden Cores"
+	name "Refinery: 15 Warden Cores"
+	job
+	repeat
+	source "Breaker's Rest"
+	destination "Breaker's Rest"
+	description "The Breakers will refine 15 Warden Cores into 5 Refined Warden Cores, free of charge. The Warden Cores can be in your hold or in storage here. The refined material is handed over as soon as you accept."
+	to offer
+		"shoal: refinery jobs" == 1
+	on accept
+		outfit "Warden Core" -15
+		outfit "Refined Warden Core" 5
+		dialog `The cores go down into the shielded pit at the far end of the station. Nobody stands near it while it runs. When the hatch opens again, what they hand you is smaller, cooler and very quiet.`
+		fail

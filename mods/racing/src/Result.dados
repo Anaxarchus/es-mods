@@ -1,0 +1,122 @@
+class Result
+
+// A race's result (Race.run): the classification, each car's status, grid
+// slot and gap, the story lap by lap (the player's league only), and what the
+// staff did (for their records). Kept for each league's last race, saved as
+// one "r|" line and its story as "y|" lines.
+
+int FINISHED = 0
+int FAILED = 1
+int CRASHED = 2
+[]string status_names = ["", "mechanical failure", "crashed out"]
+
+int league = 0
+int season = 0
+int round = 0
+int circuit = 0
+int day = 0
+// Each car's team id in finishing order (retired cars last; a team has two
+// cars), and by the same index:
+[]int order = []
+// The pilot (person id; 0 a stand-in) and the car (0 the #1's, 1 the #2's).
+[]int pilots = []
+[]int cars = []
+[]int status = []
+[]int grid = []
+// Seconds behind the winner (finishers), or the lap they stopped on.
+[]float gaps = []
+[]int laps_done = []
+[]int points = []
+[]float prizes = []
+// Staff observations (Staff.metric): the pilot's places gained against the
+// car's pace rank, the engineer's setup (fraction of lap time), the pit stop.
+[]float pilot_obs = []
+[]float setup_obs = []
+[]float stop_obs = []
+// Each car's pace rank (1 the fastest car of the field): what the result is
+// read against (Lore). Not saved: used on the day of the race.
+[]int ranks = []
+// Fastest lap: its team, pilot and time.
+int fastest_team = 0
+int fastest_pilot = 0
+float fastest = 0.0
+// "lap\ttext" lines.
+[]string story = []
+
+// A team's best car's place (0 none).
+int position_of(int team):
+    return order.index_of(team) + 1 if order.contains(team) else 0
+
+// The places (indices into order) of a team's cars, best first.
+[]int indices_of(int team):
+    []int out = []
+    for k in 0..<order.len():
+        if order[k] == team:
+            out.append(k)
+    return out
+
+// A car's pilot (0 a stand-in, or a result from before two cars).
+int pilot_at(int k):
+    return pilots[k] if k >= 0 && k < pilots.len() else 0
+
+// A team's place in the race among the teams (1 .. teams), by its best car.
+int team_place(int team):
+    []int seen = []
+    for k in 0..<order.len():
+        if order[k] == team:
+            return seen.len() + 1
+        if !seen.contains(order[k]):
+            seen.append(order[k])
+    return 0
+
+string floats([]float v, float scale):
+    []string s = []
+    for x in v:
+        int k = globalThis.Math.round(x * scale)
+        s.append(string(k))
+    return s.join(",")
+
+[]float read_floats(string s, float scale):
+    []float out = []
+    if s != "":
+        for part in s.split(","):
+            out.append(float(part.to_int()) / scale)
+    return out
+
+string ints([]int v):
+    []string s = []
+    for x in v:
+        s.append(string(x))
+    return s.join(",")
+
+[]int read_ints(string s):
+    []int out = []
+    if s != "":
+        for part in s.split(","):
+            out.append(part.to_int())
+    return out
+
+string encode():
+    int fl = globalThis.Math.round(fastest * 1000.0)
+    return [string(league), string(season), string(round), string(circuit), string(day), ints(order), ints(status), ints(grid), floats(gaps, 1000.0), ints(laps_done), ints(points), floats(prizes, 1.0), string(fastest_team), string(fl), ints(pilots), ints(cars), string(fastest_pilot)].join("|")
+
+void decode(string line):
+    []string f = line.split("|")
+    league = f[0].to_int()
+    season = f[1].to_int()
+    round = f[2].to_int()
+    circuit = f[3].to_int()
+    day = f[4].to_int()
+    order = read_ints(f[5])
+    status = read_ints(f[6])
+    grid = read_ints(f[7])
+    gaps = read_floats(f[8], 1000.0)
+    laps_done = read_ints(f[9])
+    points = read_ints(f[10])
+    prizes = read_floats(f[11], 1.0)
+    fastest_team = f[12].to_int()
+    fastest = float(f[13].to_int()) / 1000.0
+    // A result from before two cars has one car a team and no pilots.
+    pilots = read_ints(f[14]) if f.len() > 16 else []
+    cars = read_ints(f[15]) if f.len() > 16 else []
+    fastest_pilot = f[16].to_int() if f.len() > 16 else 0

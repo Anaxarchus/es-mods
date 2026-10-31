@@ -1,0 +1,847 @@
+class Shoal extends es.Mod
+
+// The Shoal: the run. Since 0.5.0 (DESIGN.md section 22) the belt where the
+// player first arrives, Breakers' Rest, is the way in: a few derelicts and
+// many restless wrecks lie there, and wardens seldom come. The run itself is
+// in the Deep, past the black hole at its centre: it starts on entering the
+// Deep, heat builds with time and with what the player carries in every deep
+// system, the belt's guardians come at thresholds (more and stronger the
+// deeper the player is), wrecks lie in every system (richer the deeper), and
+// at the top the Undertow wakes. Coming back up to Breakers' Rest ends the run
+// and counts the haul. See DESIGN.md, sections 9 and 22. The parts:
+//   Tuning    every number and name
+//   Deep      the Deep's map and what each depth tier holds (generated)
+//   Currents  the weekly current and what it changes
+//   Run       the run, Breakers' Rest's wrecks and the records, saved as JSON
+//   Json      reading and writing that JSON
+//   Yard      the Breakers' Yard: the refinery and the upgrades (v0.3)
+//   Catalog   the yard's fallback shortlist of stock outfits, for games
+//             before mod API 12 (generated)
+
+import "imports:sdk/es"
+
+Tuning tune = Tuning()
+Deep deep = Deep()
+Currents currents = Currents()
+Run run = Run()
+Yard yard = Yard()
+
+void init():
+    currents.wire(tune)
+    yard.wire(tune)
+
+string name():
+    return "the shoal"
+
+// Mod API 9, whatever SDK it is built with (as Diplomacy does): loader 0.1.0
+// checks only api_version, an API 10 loader checks min_api. API 10 calls are
+// used only where Game.has says the game has them.
+int api_version():
+    return 9
+
+int min_api():
+    return 9
+
+// ---- The pilot's state ----
+
+// Whether `run` holds the loaded pilot's state.
+bool loaded = false
+// The text last read or written under "state", and the revision last read or
+// written under "rev". A revision is "<n>.<session>", n counting up in this
+// session and the session a random number, so no two saves share one (as
+// Diplomacy does). With on_save the state is written only when the game
+// saves, so the first change after a read or a save writes a new revision at
+// once: a save loaded later (an earlier one of this pilot, even with no
+// on_pilot_loaded) then never looks like what is in memory, and is read again.
+string last_text = ""
+string loaded_rev = "?"
+int rev_high = 0
+string session = ""
+// Memory has changed since the state was last read or written (with on_save).
+bool dirty = false
+// Set when a state is read, until the first on_enter or step has looked at where the player is.
+bool fresh = false
+// The Undertow was seen afloat in this system (not saved: ships leave when the player lands).
+bool boss_seen = false
+// The guards were spawned again this step: they are in the system from the next.
+bool recalled = false
+
+// ---- Mod API 10, guarded ----
+
+bool checked_api = false
+bool save_hook = false
+bool timing = false
+// (Mod API 11) The game can take and give outfits: the refinery is a button,
+// not job-board jobs.
+bool refinery_api = false
+// (Mod API 11) Restless wrecks: the game can wake a derelict and tell how far
+// a ship is. Without these none are spawned.
+bool restless_api = false
+
+bool host_has(es.Game game, string call):
+    bool exists = globalThis.Reflect.has(game, call)
+    return exists
+
+void check_api(es.Game game):
+    if checked_api:
+        return
+    checked_api = true
+    refinery_api = false
+    restless_api = false
+    yard.can_refine = false
+    yard.can_upgrade = false
+    yard.can_list = false
+    if !host_has(game, "has"):
+        return
+    any g = game
+    bool hook = g.has("on_save")
+    save_hook = hook
+    bool sections = g.has("timing_section")
+    timing = sections
+    bool transfer = g.has("call:outfit_take")
+    refinery_api = transfer
+    bool give = g.has("call:outfit_give")
+    yard.can_refine = transfer && give
+    bool variants = g.has("call:define_outfit_variant")
+    bool replace = g.has("call:ship_replace_outfit")
+    bool defined = g.has("call:defined")
+    yard.can_upgrade = transfer && give && variants && replace && defined
+    // (Mod API 12) The yard sees every ship's loadout, where each ship is, and
+    // weapon stats: it works on any outfit, not only Catalog's.
+    bool kinds = g.has("call:ship_outfit_kinds")
+    bool at = g.has("call:ship_outfit_at")
+    bool weapon = g.has("call:outfit_weapon_attribute")
+    bool where = g.has("call:fleet_ship_planet")
+    yard.can_list = kinds && at && weapon && where
+    bool wake = g.has("call:ship_reactivate")
+    bool distance = g.has("call:ship_distance")
+    restless_api = wake && distance
+
+void section(es.Game game, string label):
+    if !timing:
+        return
+    any g = game
+    g.timing_section(label)
+
+// Read the pilot's state if what is in memory is not the loaded save's (API 9
+// has no on_pilot_loaded, and a save of the same pilot may be loaded without
+// it): this runs at the top of every hook.
+void ensure(es.Game game):
+    check_api(game)
+    if !loaded || game.data("rev") != loaded_rev || game.data("state") != last_text:
+        load(game)
+
+void load(es.Game game):
+    loaded = true
+    boss_seen = false
+    recalled = false
+    dirty = false
+    last_text = game.data("state")
+    loaded_rev = game.data("rev")
+    run.decode(last_text)
+    // A run dropped from a state before 0.5.0: the heat it had is remembered from today.
+    if run.residual_day < 0:
+        run.residual_day = game.day()
+    // A loaded save has none of the ships the run spawned: the guards come back.
+    if run.active && run.guard_tags.len() > 0:
+        run.recall = true
+    fresh = run.active
+    settle(game)
+    publish(game)
+
+// A state just read with a run going: a save loaded outside the Deep ends the
+// run quietly, with no haul.
+void settle(es.Game game):
+    if !fresh:
+        return
+    string here = game.here()
+    if here == "":
+        return
+    fresh = false
+    if run.active && !deep.is_deep(here):
+        remember_heat(game)
+        drain(game)
+        run.clear_run()
+        write(game)
+
+// A revision no save history of this pilot has used.
+string next_rev():
+    if session == "":
+        float r = globalThis.Math.random()
+        int token = int(r * 2000000000.0)
+        session = string(token)
+    rev_high += 1
+    return string(rev_high) + "." + session
+
+void write(es.Game game):
+    dirty = false
+    last_text = run.encode()
+    game.set_data("state", last_text)
+    loaded_rev = next_rev()
+    game.set_data("rev", loaded_rev)
+
+// After a change: written now on API 9; with on_save, when the game saves
+// (and a new revision marks memory as changed).
+void changed(es.Game game):
+    if !save_hook:
+        write(game)
+    else if !dirty:
+        dirty = true
+        loaded_rev = next_rev()
+        game.set_data("rev", loaded_rev)
+
+void on_load(es.Game game):
+    check_api(game)
+
+void on_pilot_loaded(es.Game game):
+    run.reset()
+    loaded = false
+    checked_api = false
+    ensure(game)
+
+void on_save(es.Game game):
+    ensure(game)
+    write(game)
+
+// ---- Conditions for missions ----
+
+void put(es.Game game, string key, int value):
+    string full = "shoal: " + key
+    if game.condition(full) != value:
+        game.set_condition(full, value)
+
+void publish(es.Game game):
+    put(game, "runs", run.runs)
+    put(game, "deepest heat", run.deepest)
+    put(game, "deepest depth", run.deepest_depth)
+    put(game, "undertows", run.undertows)
+    put(game, "current", currents.of(game.day()) + 1)
+    put(game, "heat", whole(run.heat) if run.active else 0)
+    put(game, "in run", 1 if run.active else 0)
+    put(game, "depth", run.depth if run.active else 0)
+    // The job-board refinery is for games without outfit_take (mod API 11).
+    put(game, "refinery jobs", 0 if refinery_api else 1)
+
+// ---- Hooks ----
+
+void on_day(es.Game game, int day):
+    ensure(game)
+    put(game, "current", currents.of(day) + 1)
+    draw_map(game)
+
+// Runs on arrival, on landing, on taking off, and once on load.
+void on_enter(es.Game game, string system):
+    ensure(game)
+    settle(game)
+    yard_button(game)
+    put(game, "refinery jobs", 0 if refinery_api else 1)
+    fresh = false
+    // Ships the player left behind are gone after a landing or a jump.
+    boss_seen = false
+    recalled = false
+    if deep.is_deep(system):
+        run.rest_away = true
+        if !run.active:
+            start(game, system)
+        else if game.planet() != "":
+            docked(game)
+        else if system != run.system:
+            moved(game, system)
+        else:
+            resumed(game)
+    else:
+        if run.active:
+            finish(game)
+        if system == tune.system:
+            rest_enter(game)
+        else:
+            run.rest_away = true
+    publish(game)
+    draw_map(game)
+
+void on_step(es.Game game, int step):
+    if step % 60 != 0 && !run.seed_due && !run.recall && !run.rest_due:
+        return
+    ensure(game)
+    if game.planet() != "":
+        return
+    string here = game.here()
+    if run.active:
+        if !deep.is_deep(here):
+            return
+        if run.seed_due || run.recall:
+            arrive(game)
+        if step % 60 != 0:
+            return
+        section(game, "heat")
+        tick(game)
+        section(game, "")
+    else if here == tune.system:
+        if run.rest_due:
+            rest_arrive(game)
+        if step % 60 != 0:
+            return
+        rest_tick(game)
+
+// ---- The run ----
+
+// Materials the player carries (cargo only: nothing in the Deep has storage).
+[]int carried(es.Game game):
+    []int now = []
+    []string names = [tune.glass, tune.cores, tune.lattice]
+    for k in 0..<3:
+        now.append(nonneg(game.condition("outfit (cargo): " + names[k])))
+    return now
+
+int nonneg(int n):
+    return n if n > 0 else 0
+
+// Forget guardian kills not yet read, so none count in another run.
+void drain(es.Game game):
+    for p in tune.kill_prefixes:
+        _ = game.player_kills(p)
+    _ = game.player_kills(tune.wreck_tag)
+    _ = game.player_kills(tune.restless_tag)
+    _ = game.player_kills(tune.visit_tag)
+
+// The heat the Shoal keeps when a run ends.
+void remember_heat(es.Game game):
+    run.residual = run.heat
+    run.residual_day = game.day()
+
+// Entering the Deep: a run begins.
+void start(es.Game game, string system):
+    run.clear_run()
+    run.clear_visit()
+    run.active = true
+    run.entry = carried(game)
+    drain(game)
+    int c = currents.of(game.day())
+    int days = game.day() - run.residual_day
+    float heat = run.residual - tune.decay_per_day * float(days if days > 0 else 0)
+    run.heat = heat if heat > 0.0 else 0.0
+    run.peak = run.heat
+    run.residual = 0.0
+    run.system = system
+    run.depth = deep.depth(system)
+    run.run_depth = run.depth
+    run.tier_seen = deep.tier(system)
+    record_depth()
+    run.seed_due = game.planet() == ""
+    remembered(c)
+    put(game, "current", c + 1)
+    game.message(currents.text(c))
+    write(game)
+
+// A run that starts hot: the thresholds it starts past have fired, and the
+// highest guardian wave among them is waiting on arrival (as the system's
+// tier sends it). The Undertow never waits in the hub: past its heat, it wakes
+// in the first system out of it.
+void remembered(int c):
+    int t = deep.tier(run.system)
+    int highest = -1
+    for k in 0..<tune.wave_heat.len():
+        int h = tune.wave_heat[k]
+        if reached(float(h)):
+            run.fired.append(h)
+            if k < tune.wave_guards.len() && tune.wave_guards[k].len() > 0:
+                highest = k
+    if t > 0 && reached(float(currents.boss_heat(c))):
+        run.undertow = true
+        run.guard(deep.fleet(tune.boss_fleet, t), tune.boss_tag)
+    else if highest >= 0:
+        string tag = tune.wave_tag + string(tune.wave_heat[highest])
+        []string fleets = wave_fleets(tune.wave_guards[highest], t)
+        for f in fleets:
+            run.guard(f, tag)
+        if c == 2 && fleets.len() > 0:
+            run.guard(deep.fleet(tune.riptide_fleet, t), tag)
+    if run.guard_tags.len() > 0:
+        run.recall = true
+        run.greet = true
+
+// The fleets a wave of these kinds sends in a system of this tier: the hub
+// sends one tier-1 picket fleet, whatever the wave.
+[]string wave_fleets([]string kinds, int tier):
+    []string out = []
+    if kinds.len() == 0:
+        return out
+    if tier <= 0:
+        out.append(tune.riptide_fleet)
+        return out
+    for k in kinds:
+        out.append(deep.fleet(k, tier))
+    return out
+
+void record_depth():
+    if run.depth > run.run_depth:
+        run.run_depth = run.depth
+    if run.run_depth > run.deepest_depth:
+        run.deepest_depth = run.run_depth
+
+// Landed in the Deep (at Breakers' Haven): the guards afloat lose the player.
+void docked(es.Game game):
+    run.clear_visit()
+    if run.guard_tags.len() > 0:
+        run.guard_fleets = []
+        run.guard_tags = []
+        run.recall = false
+        game.message(tune.haven_text)
+    changed(game)
+
+// Arrived in another deep system: its wrecks (if this run has not placed them
+// yet) and its wardens are due, and the guards afloat follow.
+void moved(es.Game game, string system):
+    run.clear_visit()
+    run.system = system
+    run.depth = deep.depth(system)
+    record_depth()
+    int t = deep.tier(system)
+    if t > run.tier_seen:
+        run.tier_seen = t
+        if t < deep.tier_text.len() && deep.tier_text[t] != "":
+            game.message(deep.tier_text[t])
+    run.seed_due = true
+    if run.guard_tags.len() > 0:
+        run.recall = true
+        run.follow = true
+    changed(game)
+
+// In flight again in the same deep system (taking off, or a save loaded in
+// flight): the wardens that keep it are back; the wrecks are not.
+void resumed(es.Game game):
+    run.clear_visit()
+    run.seed_due = true
+    if run.guard_tags.len() > 0:
+        run.recall = true
+    changed(game)
+
+// The first second in flight in a deep system: its wrecks and wardens, and the
+// guards waiting or following.
+void arrive(es.Game game):
+    if run.seed_due:
+        run.seed_due = false
+        seed(game)
+    if run.recall:
+        run.recall = false
+        if run.guard_tags.len() > 0:
+            string text = tune.recall_text
+            if run.greet:
+                text = tune.greet_text
+            else if run.follow:
+                text = tune.follow_text
+            game.message(text)
+            bool boss = false
+            for k in 0..<run.guard_tags.len():
+                spawn(game, run.guard_fleets[k], run.guard_tags[k], true)
+                if run.guard_tags[k] == tune.boss_tag:
+                    boss = true
+            if boss && run.greet:
+                game.message(tune.boss_text)
+            recalled = true
+        run.greet = false
+        run.follow = false
+    changed(game)
+
+// A whole number from 0 below 100 (a method, so tests can fix it).
+int percent():
+    float r = roll()
+    return int(r * 100.0)
+
+// A deep system's wrecks (once a run) and the wardens that keep it.
+void seed(es.Game game):
+    string here = run.system
+    int t = deep.tier(here)
+    if t < 0 || t >= deep.seed_wrecks.len():
+        return
+    if !run.seeded.contains(here):
+        run.seeded.append(here)
+        int n = run.seeded.len()
+        for f in deep.seed_wrecks[t]:
+            spawn(game, f, tune.seed_tag + string(n) + ".", false)
+        if percent() < deep.seed_deep[t]:
+            spawn(game, tune.deep_fleet, tune.seed_tag + string(n) + ".", false)
+        if restless_api:
+            for _ in 0..<deep.seed_restless[t]:
+                spawn_restless(game)
+    for k in 0..<deep.residents[t].len():
+        if percent() < deep.resident_chance[t][k]:
+            run.residents += 1
+            spawn(game, deep.residents[t][k], tune.resident_tag + string(run.residents) + ".", false)
+
+// Back up at Breakers' Rest: count what the player gained, keep the records,
+// and clear the run.
+void finish(es.Game game):
+    []int now = carried(game)
+    []int gained = []
+    for k in 0..<3:
+        int d = now[k] - run.entry[k]
+        gained.append(d if d > 0 else 0)
+        run.hauls[k] = run.hauls[k] + gained[k]
+    run.runs += 1
+    record_peak()
+    record_depth()
+    game.message(summary(gained, run.peak))
+    remember_heat(game)
+    drain(game)
+    run.clear_run()
+    run.clear_visit()
+    write(game)
+
+void record_peak():
+    if run.heat > run.peak:
+        run.peak = run.heat
+    int deepest = whole(run.peak)
+    if deepest > run.deepest:
+        run.deepest = deepest
+
+// Heat as a whole number (allowing for the float sum's rounding).
+int whole(float heat):
+    return int(heat + 0.000001)
+
+string summary([]int gained, float peak):
+    []string parts = []
+    for k in 0..<gained.len():
+        if gained[k] > 0 && k < tune.material_one.len():
+            parts.append(string(gained[k]) + " " + (tune.material_one[k] if gained[k] == 1 else tune.material_many[k]))
+    string tail = " The Shoal below you is " + tune.heat_word(peak) + "."
+    if parts.len() == 0:
+        return "You come back up out of the Shoal empty-handed." + tail
+    string what = parts[0]
+    if parts.len() == 2:
+        what = parts[0] + " and " + parts[1]
+    else if parts.len() == 3:
+        what = parts[0] + ", " + parts[1] + " and " + parts[2]
+    return "You come back up out of the Shoal with " + what + "." + tail
+
+// One second in the Deep, in flight.
+void tick(es.Game game):
+    int c = currents.of(game.day())
+    int t = deep.tier(game.here())
+    run.seconds += 1
+    []int now = carried(game)
+    float greed = float(now[0] + tune.core_weight * now[1] + tune.lattice_weight * now[2])
+    float extra = greed * tune.greed_rate
+    if extra > tune.greed_cap:
+        extra = tune.greed_cap
+    float mult = deep.heat_mult[t] if t >= 0 && t < deep.heat_mult.len() else 1.0
+    run.heat += currents.mult(c) * mult * (tune.base_rate + extra)
+    int kills = 0
+    for p in tune.kill_prefixes:
+        kills += game.player_kills(p)
+    // Wrecks shot to pieces raise nothing; reading them keeps the game's count short.
+    _ = game.player_kills(tune.wreck_tag)
+    kills += restless_kills(game)
+    run.heat += float(kills) * tune.kill_heat
+    record_peak()
+    // The map's word for the Shoal follows the heat in flight, not only on arrival.
+    if tune.heat_word(run.heat) != drawn_word:
+        draw_map(game)
+    watch_boss(game)
+    // Guards spawned again this step are in the system from the next.
+    if !recalled:
+        keep_afloat(game)
+    recalled = false
+    waves(game, c, t)
+    if restless_api:
+        restless_due(game)
+        wake(game, true)
+    publish(game)
+    changed(game)
+
+// Keep only the guardian spawns that still have ships able to fight. Once the
+// Undertow is beaten, what is left of its spawn is its escort.
+void keep_afloat(es.Game game):
+    []string fleets = []
+    []string tags = []
+    for k in 0..<run.guard_tags.len():
+        string f = run.guard_fleets[k]
+        string t = run.guard_tags[k]
+        if t == tune.boss_tag && run.sunk:
+            f = escort_of(f)
+        if game.tag_strength(t) > 0.0:
+            fleets.append(f)
+            tags.append(t)
+    run.guard_fleets = fleets
+    run.guard_tags = tags
+
+// The escort of an Undertow fleet of any tier: the pickets of that tier.
+string escort_of(string fleet):
+    for t in 0..<deep.fleet_suffix.len():
+        if fleet == deep.fleet(tune.boss_fleet, t):
+            return deep.fleet(tune.escort_fleet, t)
+    return fleet
+
+// Whether heat has reached a threshold (allowing for the float sum's rounding).
+bool reached(float threshold):
+    return run.heat + 0.000001 >= threshold
+
+// At most one threshold fires a second, the lowest first. In the hub (tier 0)
+// the Undertow and the endless waves wait for the player to go deeper.
+void waves(es.Game game, int c, int t):
+    for k in 0..<tune.wave_heat.len():
+        int h = tune.wave_heat[k]
+        if reached(float(h)) && !run.has_fired(h):
+            run.fired.append(h)
+            fire_wave(game, k, c, t)
+            return
+    if t <= 0:
+        return
+    if !run.undertow && reached(float(currents.boss_heat(c))):
+        run.undertow = true
+        game.message(tune.boss_text)
+        guard(game, deep.fleet(tune.boss_fleet, t), tune.boss_tag)
+        return
+    if reached(float(tune.endless_heat)):
+        run.after += 1
+        if run.after % tune.endless_period == 0:
+            int n = run.after / tune.endless_period
+            string kind = tune.endless_fleets[(n - 1) % tune.endless_fleets.len()]
+            string tag = tune.endless_tag + string(n)
+            if n == 1:
+                game.message(tune.endless_text)
+            guard(game, deep.fleet(kind, t), tag)
+            if c == 2:
+                guard(game, deep.fleet(tune.riptide_fleet, t), tag)
+
+void fire_wave(es.Game game, int k, int c, int t):
+    int h = tune.wave_heat[k]
+    if k < tune.wave_text.len() && tune.wave_text[k] != "":
+        game.message(tune.wave_text[k])
+    string tag = tune.wave_tag + string(h)
+    []string kinds = tune.wave_guards[k] if k < tune.wave_guards.len() else []
+    []string fleets = wave_fleets(kinds, t)
+    for f in fleets:
+        guard(game, f, tag)
+    if fleets.len() > 0 && c == 2:
+        guard(game, deep.fleet(tune.riptide_fleet, t), tag)
+    []string wrecks = tune.wave_wrecks[k] if k < tune.wave_wrecks.len() else []
+    for f in wrecks:
+        if f == tune.deep_fleet:
+            if run.deep:
+                continue
+            run.deep = true
+        spawn(game, f, tune.wreck_tag + string(h), false)
+    if c == 1 && h == tune.spring_heat:
+        spawn(game, tune.spring_fleet, tune.wreck_tag + string(h), false)
+
+// Only in flight, in the Deep during a run or at Breakers' Rest outside one.
+void spawn(es.Game game, string fleet, string tag, bool arrive):
+    if game.planet() != "":
+        return
+    string here = game.here()
+    if run.active && !deep.is_deep(here):
+        return
+    if !run.active && here != tune.system:
+        return
+    _ = game.spawn(fleet, "", tag, arrive)
+
+// A guardian spawn: it jumps in, and is remembered while it has ships afloat.
+void guard(es.Game game, string fleet, string tag):
+    if game.planet() != "" || !deep.is_deep(game.here()):
+        return
+    spawn(game, fleet, tag, true)
+    run.guard(fleet, tag)
+
+// The Undertow is down once it was seen afloat and no longer is (only in
+// flight: a landing takes it away, and it comes back on take-off).
+void watch_boss(es.Game game):
+    if !run.undertow || run.sunk:
+        return
+    bool afloat = false
+    for i in 0..<game.ship_count():
+        if game.ship_tag(i) == tune.boss_tag && game.ship_model(i) == tune.boss_model && !game.is_disabled(i):
+            afloat = true
+    if afloat:
+        boss_seen = true
+    else if boss_seen:
+        boss_seen = false
+        run.sunk = true
+        run.undertows += 1
+        game.message(tune.sunk_text)
+
+// ---- Breakers' Rest, outside a run ----
+
+// Arriving, landing or taking off at Breakers' Rest. Coming from elsewhere,
+// its wreck stocks refill for the days the player was away, and a warden
+// picket may come by; in flight, what is in stock is placed on the first
+// second.
+void rest_enter(es.Game game):
+    if run.rest_away:
+        run.rest_away = false
+        int days = game.day() - run.rest_day
+        float away = float(days if days > 0 else 0)
+        run.rest_wrecks = capped(run.rest_wrecks + away * tune.rest_wreck_regen, tune.rest_wreck_max)
+        run.rest_restless = capped(run.rest_restless + away * tune.rest_restless_regen, tune.rest_restless_max)
+        run.rest_seconds = 0
+        run.visit_at = -1
+        if roll() < tune.visit_chance:
+            run.visit_at = tune.visit_after + int(roll() * float(tune.visit_spread))
+    run.rest_day = game.day()
+    run.clear_visit()
+    run.rest_due = game.planet() == ""
+    changed(game)
+
+float capped(float x, float most):
+    return most if x > most else x
+
+// The first second in flight at Breakers' Rest: what is in stock is placed.
+void rest_arrive(es.Game game):
+    run.rest_due = false
+    drain(game)
+    int wrecks = int(run.rest_wrecks + 0.000001)
+    for k in 0..<wrecks:
+        spawn(game, tune.rest_wreck_fleet, tune.rest_tag + string(k + 1) + ".", false)
+    run.rest_wrecks -= float(wrecks)
+    if restless_api:
+        int restless = int(run.rest_restless + 0.000001)
+        for _ in 0..<restless:
+            run.restless += 1
+            spawn(game, tune.rest_restless_fleet, restless_tag(run.restless), false)
+        run.rest_restless -= float(restless)
+    changed(game)
+
+// One second at Breakers' Rest, in flight, outside a run: the picket's visit,
+// and the restless wrecks. Kills here raise no heat.
+void rest_tick(es.Game game):
+    run.rest_seconds += 1
+    run.rest_day = game.day()
+    if run.visit_at >= 0 && run.rest_seconds >= run.visit_at:
+        run.visit_at = -1
+        run.visits += 1
+        game.message(tune.visit_text)
+        spawn(game, tune.visit_fleet, tune.visit_tag + string(run.visits) + ".", true)
+    if restless_api:
+        wake(game, false)
+    _ = restless_kills(game)
+    _ = game.player_kills(tune.visit_tag)
+    _ = game.player_kills(tune.wreck_tag)
+    if run.rest_seconds % 30 == 0:
+        changed(game)
+
+// ---- Map ----
+
+// The heat word the map shows now ("" for none), so it is redrawn when it changes.
+string drawn_word = ""
+
+void draw_map(es.Game game):
+    drawn_word = tune.heat_word(run.heat) if run.active else ""
+    game.map_clear()
+    if game.condition("shoal: charted") == 0:
+        return
+    int c = currents.of(game.day())
+    string text = "This week's current: " + currents.name(c) + "."
+    if run.active:
+        text = text + "\nThe Shoal is " + tune.heat_word(run.heat) + "."
+        text = text + "\nYou are in " + deep.tier_names[deep.tier(run.system)] + "."
+    text = text + "\nRuns: " + string(run.runs)
+    if run.runs > 0:
+        text = text + "\nDeepest: " + tune.heat_word(float(run.deepest))
+    if run.deepest_depth > 0:
+        int deepest = run.deepest_depth
+        int td = deep.tier_of_depth[deepest] if deepest < deep.tier_of_depth.len() else deep.tier_of_depth[deep.tier_of_depth.len() - 1]
+        text = text + "\nDeepest reach: " + deep.tier_names[td]
+    text = text + "\nUndertows sunk: " + string(run.undertows)
+    game.map_detail(tune.system, tune.system_name, text, tune.r, tune.g, tune.b)
+    if game.condition("visited system: " + deep.hub) != 0 || run.active:
+        game.map_detail(deep.hub, deep.hub_name, text, tune.r, tune.g, tune.b)
+
+// ---- Restless wrecks (mod API 11) ----
+
+string restless_tag(int n):
+    return tune.restless_tag + string(n) + "."
+
+// Spawn the run's restless wrecks that are due by heat: one more as heat
+// first reaches each of Tuning.restless_heat, in the system the player is in.
+void restless_due(es.Game game):
+    if !restless_api:
+        return
+    int due = 0
+    for h in tune.restless_heat:
+        if reached(float(h)):
+            due += 1
+    for _ in 0..<due - run.restless_scheduled:
+        run.restless_scheduled += 1
+        spawn_restless(game)
+
+// One more restless wreck in the system the player is in, under the next tag.
+void spawn_restless(es.Game game):
+    if !restless_api:
+        return
+    run.restless += 1
+    spawn(game, tune.restless_fleet, restless_tag(run.restless), false)
+
+// A number from 0 up to 1 (a method, so tests can fix it).
+float roll():
+    float r = globalThis.Math.random()
+    return r
+
+// Each second in flight: every restless spawn with a disabled ship near the
+// flagship is rolled for, once; on a hit all its disabled ships wake. In a
+// run, it is likelier when the Shoal is hot, and waking adds heat.
+void wake(es.Game game, bool in_run):
+    []string near = []
+    int n = game.ship_count()
+    for i in 0..<n:
+        string tag = game.ship_tag(i)
+        if !tag.starts_with(tune.restless_tag) || run.rolled.contains(tag) || near.contains(tag):
+            continue
+        if game.is_player(i) || !game.is_disabled(i):
+            continue
+        float d = game.ship_distance(i)
+        if d >= 0.0 && d <= tune.restless_range:
+            near.append(tag)
+    for tag in near:
+        run.rolled.append(tag)
+        float chance = tune.restless_chance + (tune.restless_hot_bonus if in_run && run.heat > tune.restless_hot else 0.0)
+        if roll() >= chance:
+            continue
+        bool woke = false
+        for i in 0..<n:
+            if game.ship_tag(i) == tag && !game.is_player(i) && game.is_disabled(i):
+                if game.ship_reactivate(i, tune.restless_government, tune.restless_personality):
+                    woke = true
+        if woke:
+            run.woken.append(tag)
+            if in_run:
+                run.heat += tune.restless_heat_gain
+            game.message(tune.restless_text)
+
+// Kills of restless wrecks since the last second: those of woken spawns
+// count as guardians' (the rest are read and dropped).
+int restless_kills(es.Game game):
+    int kills = 0
+    for n in 1..<run.restless + 1:
+        string tag = restless_tag(n)
+        int k = game.player_kills(tag)
+        if run.woken.contains(tag):
+            kills += k
+    return kills
+
+// ---- The Breakers' Yard ----
+
+// The planet button, on the yard's planets once the player is welcomed.
+void yard_button(es.Game game):
+    string p = game.planet()
+    bool open = p != "" && tune.yard_planets.contains(p) && game.condition(tune.welcomed) != 0
+    game.planet_button(tune.yard_label if open else "")
+
+void on_planet_button(es.Game game):
+    ensure(game)
+    yard.open(game)
+
+void on_panel(es.Game game, int button):
+    ensure(game)
+    yard.press(game, button)
+
+void on_panel_row(es.Game game, int row):
+    ensure(game)
+    yard.choose(game, row)
+
+void on_number(es.Game game, int token, int value):
+    ensure(game)
+    yard.numbered(game, token, value)
+
+void on_confirm(es.Game game, int token):
+    ensure(game)
+    yard.confirmed(game, token)

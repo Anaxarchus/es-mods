@@ -122,6 +122,22 @@ bool prepare(es.Game game):
             dirty = false
             saved_day = market.day
             forget_losses()
+            // (M4) A market from before M4: a new exchange (Market.migrate).
+            if market.version < 2:
+                market.api_trade = has_trade
+                market.api_park = has_park
+                market.api_remove = has_remove
+                market.api_outfits = has_outfits
+                market.notify = has_notify
+                market.timing = has_timing
+                market = market.migrate(game, galaxy)
+                loaded = market.world
+                for line in market.player_events:
+                    game.message(line)
+                market.player_events = []
+                if market.shelves.len() == 0:
+                    market.seed_stock(game, galaxy)
+                save(game)
             // A save from before shipyard stock: seed the shelves now.
             if market.shelves.len() == 0:
                 market.seed_stock(game, galaxy)
@@ -191,6 +207,10 @@ void check_api(es.Game game):
     has_timing = sections
     if has_notify:
         g.listen("diplomacy.*")
+        // (0.5) Other mods ask for the roster, and book income or costs to a
+        // company (its own corporations.* names: it knows no other mod).
+        g.listen("corporations.roster_wanted")
+        g.listen("corporations.book")
 
 void on_load(es.Game game):
     check_api(game)
@@ -205,10 +225,42 @@ void on_save(es.Game game):
 // and systems (Market.diplomacy_event). With the bus, read_wars leaves these
 // events to it and reads only which wars run.
 void on_notification(es.Game game, string name, string payload, string sender):
+    if name == "corporations.roster_wanted":
+        if prepare(game) && has_notify:
+            game.notify("corporations.roster", roster())
+        return
+    if name == "corporations.book":
+        if prepare(game) && market.book_external(payload):
+            mark_dirty(game)
+        return
     if !name.starts_with("diplomacy.") || !prepare(game):
         return
     market.diplomacy_event(name[10..<name.len()], payload, game.day())
     mark_dirty(game)
+
+// (0.5) "corporations.roster": the listed companies, largest first (at most
+// 40, and the player's own company always): {"day", "companies": [{"id",
+// "name", "sector", "value", "cash", "change", "player", "private"}]}, value
+// and cash in credits, change the share price's move over 30 days (a
+// fraction), player true for the player's own company (Charter), private
+// while it has not been offered to the market.
+string roster():
+    []Company listed = market.companies.filter(bool(Company c): return c.listed())
+    listed.sort(bool(Company a, Company b): return a.market_value() > b.market_value())
+    []string out = []
+    int k = 0
+    for c in listed:
+        k += 1
+        if k > 40 && c.owner != 1:
+            continue
+        int n = c.history.len()
+        float then = float(c.history[n - 30]) / 100.0 if n >= 30 else c.price
+        float change = c.price / then - 1.0 if then > 0.0 else 0.0
+        int value = globalThis.Math.round(c.market_value())
+        int cash = globalThis.Math.round(c.cash)
+        int ch = globalThis.Math.round(change * 10000.0)
+        out.append("{\"id\":" + string(c.id) + ",\"name\":" + market.json(c.name) + ",\"sector\":" + market.json(market.names.sectors[c.sector]) + ",\"value\":" + string(value) + ",\"cash\":" + string(cash) + ",\"change\":" + string(float(ch) / 10000.0) + ",\"player\":" + ("true" if c.owner == 1 else "false") + ",\"private\":" + ("true" if c.private() else "false") + "}")
+    return "{\"day\":" + string(market.day) + ",\"companies\":[" + out.join(",") + "]}"
 
 void forget_losses():
     lost_systems = []
@@ -278,6 +330,8 @@ void on_enter(es.Game game, string system):
         press.tell(game, galaxy, market)
         market.offer_jobs(game, galaxy)
         market.convoys.offer(game, galaxy, market)
+        // (M4) A strike on pirates nearby: fight beside the flotilla.
+        market.fleets.offer(game, galaxy, market)
         market.crisis_desk.offer(game, galaxy, market)
         if market.covert.offer(game, galaxy, market):
             changed = true

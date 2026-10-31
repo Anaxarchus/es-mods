@@ -23,6 +23,11 @@ Regions regions = Regions()
 // The game's own colours of the majors' governments (data/governments.txt), put
 // back when a member leaves (Service.mark_worlds).
 []string government_colors = ["", "governments: Republic", "governments: Free", "governments: Syndicate", "governments: Pirate"]
+// The majors' ship colours (their governments' swizzles in the game's data),
+// which a member's own ships take (Service.mark_ships), and the player's
+// ships' own: the game's "Escort" government, swizzle 5.
+[]int swizzles = [5, 0, 2, 4]
+int PLAYER_SWIZZLE = 5
 // Pirates use their home system's own pirate fleets; these are the fallback.
 []string small_fleets = ["", "Small Republic", "Small Free Worlds", "Small Syndicate", "Small Core Pirates"]
 []string large_fleets = ["", "Large Republic", "Large Free Worlds", "Large Syndicate", "Large Core Pirates"]

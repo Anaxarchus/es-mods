@@ -17,7 +17,8 @@ import "imports:sdk/es"
 // catches CAUGHT of those who did and fines FINE of the value traded (at
 // least FINE_MIN; Market.charge), with standing -10 with the company and
 // SCRUTINY of attention. Tips are saved as "t|n|company|kind|until|revealed|traded|planet|day"
-// (kind 0 earnings, 1 crisis, 2 tender; for a tender, company is the tender's id).
+// (kind 0 earnings, 1 crisis, 2 tender, (M4) 3 a breakthrough; for a tender,
+// company is the tender's id).
 
 float SURPRISE_CHANCE = 25.0
 int SURPRISE_DAYS = 10
@@ -149,6 +150,15 @@ void offer(es.Game game, Galaxy galaxy, Market m):
             left = p.split("|")[0].to_int() - m.day
             text = "A " + m.crisis_desk.kind_names[p.split("|")[2].to_int()] + " will hit " + o.name + " around " + m.fmt.date(p.split("|")[0].to_int()) + "; " + o.ceo + " knows and is saying nothing."
             break
+        // (M4) Its labs are about to deliver.
+        int due = breakthrough_due(m, o)
+        if due >= 4 && due <= BREAKTHROUGH_DAYS:
+            c = o
+            kind = 3
+            about = o.id
+            left = due
+            text = breakthrough_text(m, o, m.day + due)
+            break
     if kind < 0:
         // An open tender closing in a few days: the winner is arranged now.
         for k in m.contracts:
@@ -206,7 +216,13 @@ bool repost(es.Game game, Galaxy galaxy, Market m, string planet, string here):
         int about = f[1].to_int()
         string name = ""
         string text = ""
-        if kind == 0 || kind == 1:
+        if kind == 3:
+            Company o = m.by_id.get(about, Company())
+            if o.id == 0:
+                continue
+            name = o.name
+            text = breakthrough_text(m, o, f[3].to_int())
+        else if kind == 0 || kind == 1:
             Company o = m.by_id.get(about, Company())
             if o.id == 0:
                 continue
@@ -230,6 +246,22 @@ bool repost(es.Game game, Galaxy galaxy, Market m, string planet, string here):
             text = w.name + " will win the " + k.client + " tender for " + string(k.units) + " " + m.model_label(k.model, k.units) + " when bids close on " + m.fmt.date(k.closes) + "."
         return post(game, galaxy, m, planet, here, f[0].to_int(), name, text, f[3].to_int() - m.day)
     return false
+
+// (M4) A breakthrough this close (days) can be tipped.
+int BREAKTHROUGH_DAYS = 25
+
+// Days until a company's labs reach their next level at today's budget
+// (the draw included: insiders know it), or -1.
+int breakthrough_due(Market m, Company c):
+    float daily = m.research.daily_cost(m, c)
+    if daily <= 0.0 || c.status != c.LISTED:
+        return -1
+    float need = m.research.cost(m, c, c.focus) * c.luck - c.progress
+    int days = int(need / daily) + 1
+    return days if days > 0 else 1
+
+string breakthrough_text(Market m, Company c, int when):
+    return c.name + "'s engineers will announce a breakthrough in " + m.research.focus_words[c.focus] + " around " + m.fmt.date(when) + ". " + c.ceo + " is keeping it quiet until then."
 
 int hash(string s, int d):
     int h = d % 1000003

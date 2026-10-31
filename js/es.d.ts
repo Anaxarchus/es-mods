@@ -9,7 +9,7 @@
 export type int = number;
 
 /** The mod API version this SDK targets. */
-export declare const MOD_API: 10;
+export declare const MOD_API: 12;
 
 /**
  * The game, as a mod sees it. A mod is handed one `Game` in every hook and
@@ -538,6 +538,154 @@ export interface Game {
 	 * ship with no fuel tank).
 	 */
 	fuel_fraction(i: int): number;
+	/**
+	 * (Mod API 11.) Define outfits and ship models while the game runs. `text` is
+	 * one or more top-level nodes in data-file syntax, each `outfit "<name>"`,
+	 * `ship "<name>"` (a whole model) or `ship "<base>" "<name>"` (the game's
+	 * ship-variant syntax). Outfits are defined before ships, so a ship may install
+	 * an outfit the same text defines; a ship may install only defined outfits.
+	 * What a mod defines is saved with the pilot, before its ships, and defined
+	 * again when the pilot loads, so a save never depends on the mod having run. A
+	 * definition cannot change once made for the pilot: give a new version a new
+	 * name. A node is refused (and logged) when the game data or a plugin defines
+	 * its name, another mod defined it for this pilot, it does not parse, or this
+	 * mod defined it already with other text; the same text again is a no-op that
+	 * counts. An open outfitter or shipyard lists what is new when it is opened
+	 * again. In any hook. Answers how many it defined (0 on an older game).
+	 */
+	define(text: string): int;
+	/**
+	 * (Mod API 11.) Define the outfit `name` as a copy of the outfit `base` (from
+	 * the game data, a plugin, or defined at runtime) with `changes` applied: the
+	 * lines an outfit node holds, e.g. "\"shield generation\" 2.4\ncost 300000\n",
+	 * `"display name" "..."` (which gives it its own plural unless `plural` is
+	 * changed too), `description "..."` (which replaces the base's), and a `weapon`
+	 * block whose keys override the base weapon's (its lists, such as effects, add
+	 * to the base's). Without a display name it shows the base's. Saved as name,
+	 * base and changes, so it is derived from the base again when the pilot loads.
+	 * Refused as define(). In any hook. Answers true when it is defined (false on
+	 * an older game).
+	 */
+	define_outfit_variant(name: string, base: string, changes: string): boolean;
+	/**
+	 * (Mod API 11.) Define the ship model `name` as a variant of the model `base`,
+	 * loaded as the game loads `ship "<base>" "<name>"` with `changes` as its
+	 * children: what the changes leave out comes from the base, and what they give
+	 * replaces the base's (an `outfits` block replaces all its outfits; use `add
+	 * attributes` to add to its attributes). Saved and refused as
+	 * define_outfit_variant(). In any hook. Answers true when it is defined (false
+	 * on an older game).
+	 */
+	define_ship_variant(name: string, base: string, changes: string): boolean;
+	/**
+	 * (Mod API 11.) Whether an outfit (`kind` "outfit") or a ship model ("ship") is
+	 * defined, by true name: 0 unknown (also for a name defined at runtime for
+	 * another pilot, and on an older game), 1 by the game data or a plugin, 2 at
+	 * runtime for this pilot (by any mod).
+	 */
+	defined(kind: string, name: string): int;
+	/**
+	 * (Mod API 11.) On one of the player's ships (UUID, as fleet_ship), landed at
+	 * the planet where the player is: replace up to `count` of the installed outfit
+	 * `from` with `to`, one at a time, each only if the ship can take it as the
+	 * outfitter checks (outfit, weapon, engine and cargo space, a gun port or
+	 * turret mount for a weapon, and every attribute with a minimum, with the old
+	 * one out and the new one in). Integrated outfits are not removable, and maps
+	 * and licenses cannot be installed. Nothing is paid or sold. Only while landed,
+	 * from a hook the player started (on_planet_button, on_panel, on_panel_row,
+	 * on_panel_header, on_confirm, on_number; not the outfitter's). Answers how
+	 * many were replaced (0 on an older game).
+	 */
+	ship_replace_outfit(ship: string, from: string, to: string, count: int): int;
+	/**
+	 * (Mod API 11.) Remove up to `count` of an outfit (by true name) from the
+	 * player's `from`: "cargo" (the pooled cargo while landed; in flight, the holds
+	 * of their ships in the system that are not parked), "storage" (the planetary
+	 * storage where the player is landed; landed only), or "any" (cargo, then
+	 * storage). Never takes installed outfits. In any hook with a world (also
+	 * on_enter while landing, and on_step), not in on_save. Answers how many were
+	 * removed (0 on an older game).
+	 */
+	outfit_take(outfit: string, count: int, from: string): int;
+	/**
+	 * (Mod API 11.) Add `count` of an outfit (by true name) to the player's `to`:
+	 * "cargo" (the pooled cargo while landed, else the flagship's hold, whatever
+	 * its free space, as missions' gifts do) or "storage" (the planetary storage
+	 * where the player is landed; landed only). Maps and licenses cannot be given.
+	 * Where outfit_take works. Answers how many were added (0 for an unknown
+	 * outfit, and on an older game).
+	 */
+	outfit_give(outfit: string, count: int, to: string): int;
+	/**
+	 * (Mod API 11.) Ship i's distance from the player's flagship, in world units,
+	 * in this step's snapshot; -1 when the flagship is not in the system, i is out
+	 * of range, and on an older game.
+	 */
+	ship_distance(i: int): number;
+	/**
+	 * (Mod API 11.) Ship i's x position in the system, in world units (0 for an
+	 * unknown index, and on an older game).
+	 */
+	ship_x(i: int): number;
+	/**
+	 * (Mod API 11.) Ship i's y position in the system, in world units (0 for an
+	 * unknown index, and on an older game).
+	 */
+	ship_y(i: int): number;
+	/**
+	 * (Mod API 11.) Bring disabled ship i, not the player's, back to life: crew up
+	 * to what it needs (at least 1), hull up to 10% of its maximum above the level
+	 * at which it is disabled (never above the maximum), shields as they are, and
+	 * no longer disabled, so it moves and fires again. `government` ("" keeps its
+	 * own) takes it and its carried ships over; `personality` ("" keeps its own) is
+	 * the tokens of a personality node, e.g. "heroic staying", and replaces its
+	 * personality. A ship that wakes up is never a derelict again: the AI flies it
+	 * as any other ship. Its tag stays. In flight, in any hook with ships. Answers
+	 * true when it woke; false for an unknown index or government, a personality
+	 * that does not parse, the player's ship, a ship that is not disabled or is
+	 * destroyed, and on an older game.
+	 */
+	ship_reactivate(i: int, government: string, personality: string): boolean;
+	/**
+	 * (Mod API 12.) How many distinct outfits one of the player's ships (UUID, as
+	 * fleet_ship) has installed, each counted once whatever its count (integrated
+	 * ones too): stock, plugin and runtime outfits alike. 0 for an unknown ship,
+	 * and on an older game.
+	 */
+	ship_outfit_kinds(ship: string): int;
+	/**
+	 * (Mod API 12.) The true name of the k-th of a ship's installed outfits,
+	 * 0 ..< ship_outfit_kinds(ship), sorted by true name; "" out of range. With
+	 * ship_outfit_count and ship_integrated_count this is the whole loadout.
+	 */
+	ship_outfit_at(ship: string, k: int): string;
+	/**
+	 * (Mod API 12.) A stat of an outfit's weapon, by its key in data: "shield
+	 * damage", "hull damage" and every other "<type> damage", "hit force",
+	 * "piercing", "reload", "burst count", "burst reload", "velocity",
+	 * "lifetime", "range", "firing energy", "firing heat", "firing fuel",
+	 * "firing hull" and the other "firing <x>", "inaccuracy", "turret turn",
+	 * "anti-missile", "tractor beam", "missile strength", "blast radius", flags
+	 * such as "homing" (1 when set), and so on: the game's es_api.h and README.md
+	 * list them all. Values are the engine's: damage is per shot including
+	 * submunitions', "range" is the computed range, "disabled damage" defaults
+	 * to "hull damage". 0 when the outfit has no weapon, the key is unknown or
+	 * not set, and on an older game.
+	 */
+	outfit_weapon_attribute(outfit: string, key: string): number;
+	/**
+	 * (Mod API 12.) The true name of the planet one of the player's ships (UUID)
+	 * is landed on: "" when it is in space, for an unknown ship, and on an older
+	 * game. While the player is landed, the ships landed with them answer the
+	 * player's planet; a parked ship answers where it is parked.
+	 */
+	fleet_ship_planet(ship: string): string;
+	/**
+	 * (Mod API 12.) The true name of the system one of the player's ships (UUID)
+	 * is in ("" for an unknown ship, and on an older game; a carried ship is in
+	 * its carrier's). A parked ship answers where it is parked.
+	 */
+	fleet_ship_system(ship: string): string;
 }
 
 /**

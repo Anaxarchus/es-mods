@@ -1,0 +1,195 @@
+class Racing extends es.Mod
+
+// The Racing League: own a racing team in three simulated leagues (B, A, S),
+// hire its staff from a shared pool, fund the departments that develop its
+// car, sign sponsors, and climb by promotion. The player never races: the
+// races are simulated each week (World, Race) and told as results, a story
+// lap by lap, and news. See DESIGN.md.
+//
+// State: the whole world is one text with the pilot (Game.data "state",
+// World.encode), written in on_save (mod API 10), so every pilot file holds
+// the world as it was; on_pilot_loaded reads it (or makes a new world).
+// Days are played in on_day (World.advance), a small piece of work each.
+//
+// Built against the released mod API 11 and running on API 10 (min_api 10):
+// it uses on_save, on_pilot_loaded, the notification bus and Game.has (all
+// API 10), and nothing newer. Sponsors from other mods come over the bus, by
+// this mod's own racing.* notifications (Sponsors; it knows no other mod by
+// name); without any, built-in ones.
+
+import "imports:sdk/es"
+
+World world = World()
+Office office = Office()
+bool loaded = false
+// The world changed since on_save last wrote it (the game may save several
+// times without a day passing: each landing, the load screen).
+bool dirty = true
+bool has_bus = false
+bool checked = false
+
+string name():
+    return "racing"
+
+int api_version():
+    return 11
+
+int min_api():
+    return 10
+
+void check_api(es.Game game):
+    if checked:
+        return
+    checked = true
+    has_bus = game.has("notify")
+    if has_bus:
+        game.listen("racing.sponsors")
+        game.listen("racing.sponsor_gone")
+        game.listen("racing.sponsor_offer")
+
+void on_load(es.Game game):
+    check_api(game)
+
+// Another pilot (or this one, loaded again): read its world.
+void on_pilot_loaded(es.Game game):
+    check_api(game)
+    loaded = false
+    office = Office()
+    if prepare(game):
+        ask_roster(game)
+
+void ask_roster(es.Game game):
+    if has_bus:
+        game.notify("racing.sponsors_wanted", world.sponsoring.wanted(world))
+
+// Read the pilot's world, or make one; false while no pilot is loaded.
+bool prepare(es.Game game):
+    if game.here() == "":
+        return false
+    check_api(game)
+    if loaded:
+        return true
+    string text = game.data("state")
+    World w = World()
+    bool ok = false
+    if text != "":
+        try ok = w.decode(text) else e:
+            ok = false
+            log(game, "could not read the saved league (" + e.message + "); starting a new one")
+        if !ok:
+            game.set_data("state broken", text)
+    if !ok:
+        w = World()
+        w.setup(game.day(), string(game.day()))
+    world = w
+    loaded = true
+    dirty = true
+    return true
+
+void on_save(es.Game game):
+    if loaded && game.here() != "" && (dirty || game.data("state") == ""):
+        game.set_data("state", world.encode())
+        dirty = false
+
+void on_day(es.Game game, int day):
+    if !prepare(game):
+        return
+    world.advance(day)
+    dirty = true
+    flush(game)
+
+// What the world has for the player and the other mods.
+void flush(es.Game game):
+    // The intro mission line's finale (data/intro.txt) hands the team over, once.
+    if game.condition("racing: intro done") == 1:
+        game.set_condition("racing: intro done", world.intro_line.handover(world, game.planet()))
+    for line in world.player_events:
+        game.message(line)
+    world.player_events = []
+    if world.pending_payout != 0.0:
+        int have = game.condition("credits")
+        int amount = globalThis.Math.round(world.pending_payout)
+        int next = have + amount
+        game.set_condition("credits", next if next > 0 else 0)
+        world.pending_payout = 0.0
+    for line in world.outbox:
+        if has_bus:
+            int tab = line.index_of("\t")
+            game.notify(line[0..<tab], line[tab + 1..<line.len()])
+    world.outbox = []
+    news_conditions(game)
+    // For missions and the in-game test: the season, and the league the player's team is in (0 none).
+    game.set_condition("racing: season", world.season)
+    game.set_condition("racing: league", world.mine().league + 1 if world.has_team() else 0)
+    // For the intro mission line (data/intro.txt): it is offered only to a
+    // player who owns no team while the reserved place is free.
+    game.set_condition("racing: owns team", 1 if world.has_team() else 0)
+    game.set_condition("racing: slot free", 1 if world.reserved_free() else 0)
+
+// The spaceport news (data/racing.txt) near the next circuit of the player's
+// league, or the S League's: shown while "racing: news <system>" is at
+// least the day.
+void news_conditions(es.Game game):
+    int league = world.mine().league if world.has_team() else 2
+    int round = world.round_now()
+    if round < 0:
+        return
+    int ci = world.circuit_of(league, round)
+    game.set_condition("racing: news " + world.names.circuit_systems[ci], world.round_day(league, round) + 3)
+
+void on_enter(es.Game game, string system):
+    if !prepare(game):
+        game.planet_button("")
+        return
+    string planet = game.planet()
+    game.planet_button("Racing League" if planet != "" && game.planet_service(planet, "bank") else "")
+    flush(game)
+    // Landed with events waiting: answer them now (the planet screen shows the panel).
+    if planet != "" && world.incidents.len() > 0:
+        office.open_incident(game, world)
+
+void on_planet_button(es.Game game):
+    if !prepare(game):
+        return
+    if world.incidents.len() > 0:
+        office.open_incident(game, world)
+        return
+    office.open(game, world)
+
+void on_panel(es.Game game, int button):
+    if prepare(game):
+        office.press(game, world, button)
+        dirty = true
+        flush(game)
+
+void on_panel_row(es.Game game, int row):
+    if prepare(game):
+        office.row(game, world, row)
+
+void on_panel_header(es.Game game, int column):
+    if prepare(game):
+        office.header(game, world, column)
+
+void on_number(es.Game game, int token, int value):
+    if prepare(game):
+        office.number(game, world, token, value)
+        dirty = true
+        flush(game)
+
+void on_confirm(es.Game game, int token):
+    if prepare(game):
+        office.confirmed(game, world, token)
+        dirty = true
+        flush(game)
+
+void on_notification(es.Game game, string name, string payload, string sender):
+    if !prepare(game):
+        return
+    dirty = true
+    if name == "racing.sponsors":
+        world.sponsoring.roster(world, payload)
+    else if name == "racing.sponsor_gone":
+        world.sponsoring.bankrupt(world, payload)
+    else if name == "racing.sponsor_offer":
+        world.sponsoring.direct(world, payload)
+        flush(game)

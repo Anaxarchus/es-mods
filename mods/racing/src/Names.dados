@@ -1,0 +1,68 @@
+class Names
+
+// The words the league is named from: teams, people, built-in sponsors, and
+// the circuits (real systems of the game's map, each with a character).
+
+[]string league_names = ["B League", "A League", "S League"]
+[]string league_short = ["B", "A", "S"]
+[]string role_names = ["Pilot", "Race engineer", "Research officer", "Pit crew chief", "Commercial director"]
+[]string role_short = ["Pilot", "Engineer", "Research", "Pit crew", "Commercial"]
+[]string dept_names = ["Propulsion", "Handling", "Reliability", "Armour", "Simulation"]
+[]string approach_names = ["Conservative", "Balanced", "Aggressive"]
+
+[]string team_first = ["Kestrel", "Vanta", "Corona", "Meridian", "Halcyon", "Lodestar", "Perihelion", "Ion", "Redshift", "Quasar", "Starling", "Nova", "Parallax", "Zenith", "Aphelion", "Cobalt", "Vortex", "Tachyon", "Solstice", "Comet", "Ember", "Albedo", "Apex", "Driftline", "Faraday", "Gravitas", "Helix", "Kepler", "Lumen", "Magnetar", "Nadir", "Orbital", "Pulsar", "Radiant", "Sirocco", "Torque", "Umbra", "Vector", "Wildfire", "Equinox"]
+[]string team_second = ["Racing", "Motorsport", "Speedworks", "Racing Team", "Velocity", "Grand Prix", "Competition", "Racing Club", "Works Team", "Dynamics"]
+
+[]string first_names = ["Aria", "Bastien", "Cass", "Dario", "Elin", "Faye", "Gus", "Hana", "Ivo", "Jessa", "Kai", "Lena", "Marek", "Nia", "Otto", "Priya", "Quint", "Rhea", "Soren", "Talia", "Udo", "Vera", "Wim", "Xan", "Yara", "Zev", "Ansel", "Brin", "Cyra", "Dex", "Esko", "Flora", "Gale", "Holt", "Isla", "Joss", "Kira", "Luc", "Maeve", "Nils", "Odessa", "Pim", "Ravi", "Sela", "Tobin", "Una", "Viggo", "Wren"]
+[]string last_names = ["Ardent", "Brask", "Caldera", "Dumont", "Ekberg", "Falk", "Garza", "Holm", "Ishida", "Jansen", "Kovac", "Laurent", "Moreau", "Nakamura", "Okafor", "Petrov", "Quist", "Rossi", "Sato", "Tamm", "Ulloa", "Varga", "Weiss", "Xu", "Yilmaz", "Zola", "Abara", "Berg", "Castro", "Duval", "Engel", "Ferro", "Grau", "Hale", "Ivers", "Jaeger", "Kahn", "Lind", "Marsh", "Novak", "Orsini", "Pike", "Rook", "Strand", "Thorne", "Vance", "Wolde", "Yoon"]
+
+// Built-in sponsors, when Corporations is not installed (or has not answered
+// yet): name, sector, and weekly budget for racing (credits).
+[]string sponsor_names = ["Spindrift Energy Drinks", "Halo Insurance Mutual", "Bluewater Couriers", "Orrin Optics", "Quillfeather Stationers", "Tidal Hydroponics", "Ironvale Fasteners", "Lark & Fennel Teas", "Crescent Ferry Lines", "Starwake Holovids", "Brannock Tools", "Gilded Comet Casino", "Pellam Medical", "Northlight Beacons", "Saffron Galley Foods", "Vexel Data Services", "Mariner Paint Co.", "Hollis Freight Brokers", "Cinder Brewing", "Aurum Savings Bank"]
+[]string sponsor_sectors = ["Consumer goods", "Finance", "Freight", "Electronics", "Consumer goods", "Consumer goods", "Outfits and systems", "Consumer goods", "Freight", "Electronics", "Outfits and systems", "Consumer goods", "Consumer goods", "Electronics", "Consumer goods", "Electronics", "Consumer goods", "Freight", "Consumer goods", "Finance"]
+[]float sponsor_budgets = [900000.0, 1500000.0, 400000.0, 250000.0, 60000.0, 120000.0, 90000.0, 70000.0, 300000.0, 2500000.0, 150000.0, 6000000.0, 200000.0, 110000.0, 80000.0, 3500000.0, 50000.0, 180000.0, 40000.0, 9000000.0]
+
+// The circuits: a real system each, its character, laps and base lap (seconds).
+// Characters: 0 sprint lanes (propulsion), 1 asteroid course (handling),
+// 2 hazard run (armour and reliability, crashes), 3 mixed.
+[]string circuit_systems = ["Sol", "Alpha Centauri", "Vega", "Sirius", "Rigel", "Deneb", "Altair", "Arcturus", "Capella", "Aldebaran", "Antares", "Betelgeuse", "Polaris", "Procyon", "Castor", "Pollux", "Menkar", "Kraz", "Tarazed", "Algol", "Hassaleh", "Cebalrai", "Alnilam", "Fomalhaut", "Achernar", "Canopus", "Spica", "Regulus", "Bellatrix", "Hadar", "Shaula", "Kochab"]
+[]string circuit_titles = ["Sol Grand Prix", "Centauri Classic", "Vega Sprint", "Sirius Lanes", "Rigel Ice Run", "Deneb Drift", "Altair Dash", "Arcturus Gauntlet", "Capella Loop", "Aldebaran Rocks", "Antares Inferno", "Betelgeuse Yard Run", "Polaris Circuit", "Procyon Sprint", "Castor Twin Rings", "Pollux Chicanes", "Menkar Belt", "Kraz Foundry Run", "Tarazed Mile", "Algol Eclipse", "Hassaleh Scramble", "Cebalrai Lanes", "Alnilam Belt Race", "Fomalhaut Ring", "Achernar Plunge", "Canopus Long Run", "Spica Slalom", "Regulus Crown", "Bellatrix Breakneck", "Hadar Wrecks", "Shaula Stinger", "Kochab Polar Run"]
+[]int circuit_kinds = [3, 3, 0, 0, 2, 1, 0, 2, 3, 1, 2, 3, 3, 0, 1, 1, 1, 2, 0, 3, 2, 0, 1, 3, 2, 0, 1, 3, 2, 2, 1, 0]
+[]string kind_names = ["sprint lanes", "asteroid course", "hazard run", "mixed"]
+// Weights of propulsion, handling and armour in a car's pace, by character.
+[][]float kind_weights = [[0.65, 0.25, 0.1], [0.2, 0.65, 0.15], [0.25, 0.3, 0.45], [0.4, 0.4, 0.2]]
+// Chance of a crash in a race for an average car and pilot, by character.
+[]float kind_hazard = [0.03, 0.06, 0.11, 0.045]
+[]int kind_laps = [24, 18, 16, 20]
+[]float kind_lap = [62.0, 84.0, 96.0, 78.0]
+
+string person(Rng rng):
+    return first_names[rng.range(0, first_names.len() - 1)] + " " + last_names[rng.range(0, last_names.len() - 1)]
+
+string team(Rng rng, []string used):
+    for attempt in 0..<80:
+        string n = team_first[rng.range(0, team_first.len() - 1)] + " " + team_second[rng.range(0, team_second.len() - 1)]
+        if !used.contains(n):
+            return n
+    int k = 2
+    string base = team_first[rng.range(0, team_first.len() - 1)] + " Racing"
+    for used.contains(base + " " + string(k)):
+        k += 1
+    return base + " " + string(k)
+
+string ordinal_suffix(int n):
+    int t = n % 100
+    if t >= 11 && t <= 13:
+        return "th"
+    int u = n % 10
+    if u == 1:
+        return "st"
+    if u == 2:
+        return "nd"
+    if u == 3:
+        return "rd"
+    return "th"
+
+// Text safe in a saved line: no field or record separators.
+string clean(string s):
+    return s.replace_all("|", "/").replace_all("\n", " ").replace_all("\t", " ").replace_all("~", "-").replace_all(";", ",").replace_all("^", " ")

@@ -1,0 +1,10 @@
+name "The Shoal"
+version "0.5.0"
+authors
+	"Anaxarchus"
+tags
+	"gameplay"
+	"endgame"
+	"scripting"
+about "An endgame grind for seasoned captains. Somewhere past the edge of the charts lies a belt where a drowned fleet sleeps among the rocks, and below it, deeper water. The salvagers who work it say you can take whatever you can carry out. They also say not to stay too long."
+about "It needs the Dado mod loader (mod API 9 or newer; the Breakers' Yard and the restless wrecks need API 11, and the Yard upgrades outfits from any plugin on API 12) in the game's modloaders folder. Without it only its data loads: the belt is there, but nothing stirs in it."

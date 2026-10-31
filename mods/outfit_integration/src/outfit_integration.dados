@@ -2,8 +2,8 @@ class OutfitIntegration extends es.Mod
 
 // Outfit integration: in the outfitter, a shipyard's engineers can integrate an
 // outfit installed on your ship into its hull, for a fee. An integrated outfit
-// is 25% lighter and takes up 25% less outfit space (its weapon or engine
-// capacity, and any hardpoint, stay as they are), and it is there for good: it cannot
+// is 25% lighter and takes up 25% less outfit space, and 25% less weapon or
+// engine capacity (any hardpoint stays as it is), and it is there for good: it cannot
 // be uninstalled, sold, moved to cargo or storage, or plundered. Weapons keep
 // their gun port or turret mount.
 // Ammunition cannot be integrated, since it is used up in flight.
@@ -63,7 +63,7 @@ void on_outfitter(es.Game game, string outfit):
     pending_outfit = outfit
     pending_fee = cost
     string text = "Integrate one " + what + " into the " + where + "?\n\n"
-    text = text + "The shipyard's engineers will build it into the hull. It will be " + percent(1.0 - scale) + " lighter and take up " + percent(1.0 - scale) + " less outfit space"
+    text = text + "The shipyard's engineers will build it into the hull. It will be " + percent(1.0 - scale) + " lighter and take up " + percent(1.0 - scale) + " less space"
     string saved = savings(game, outfit)
     if saved != "":
         text = text + " (" + saved + ")"
@@ -89,7 +89,7 @@ void on_confirm(es.Game game, int token):
     count(game, "integrated", 1)
     count(game, "fees paid", cost)
 
-// What integrating one outfit saves: "3 tons, 3 outfit space".
+// What integrating one outfit saves: "3 tons, 3 outfit space, 3 weapon capacity".
 // The game saves whole numbers, rounding a half up, as this does.
 string savings(es.Game game, string outfit):
     []string parts = []
@@ -100,6 +100,11 @@ string savings(es.Game game, string outfit):
     int space = whole(-used * (1.0 - scale)) if used < 0.0 else 0
     if space > 0:
         parts.append(string(space) + " outfit space")
+    for kind in ["weapon capacity", "engine capacity"]:
+        float need = game.outfit_attribute(outfit, kind)
+        int freed = whole(-need * (1.0 - scale)) if need < 0.0 else 0
+        if freed > 0:
+            parts.append(string(freed) + " " + kind)
     string out = ""
     for i in 0..<parts.len():
         out = out + (", " if i > 0 else "") + parts[i]

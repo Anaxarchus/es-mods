@@ -1,0 +1,10 @@
+name "MOPS"
+version "0.1.0"
+authors
+	"Anaxarchus"
+tags
+	"gameplay"
+	"missions"
+about "The Multilateral Office for Perimeter Suppression does not exist. It has no budget, no ships and no flag, and the human governments that quietly fund it will deny every one of its contractors, living or otherwise. It pays better than anyone in human space."
+about "Reach combat rank 5 and fly north: sooner or later a desperate MOPS officer with no ship will storm into your spaceport bar. Fly them, survive the debriefing, sign the paperwork, and MOPS operations start turning up on job boards near humanity's hostile borders: Unfettered Hai at Sumar and the Ultima Thule wormhole, Korath raiders around Polaris and Durax, Alpha cells in the south, and worse further out. They are rare, brutal and paid in the millions. Your next of kin have been pre-notified."
+about "Data only: it needs no mod loader."

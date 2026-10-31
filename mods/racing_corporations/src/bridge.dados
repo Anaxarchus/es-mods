@@ -1,0 +1,479 @@
+class RacingCorporations extends es.Mod
+
+// The Racing League and Corporations, joined. Neither of the two knows the
+// other: each has its own notifications on the bus (their READMEs), and this
+// mod, which needs both, carries what one says to the other. With either
+// missing it hears nothing and does nothing; it keeps nothing with the pilot.
+//
+//   racing.sponsors_wanted (the teams)  -> corporations.roster_wanted
+//   corporations.roster (the companies) -> racing.sponsors (budgets, fortunes)
+//   corporations.bankrupt               -> racing.sponsor_gone
+//   racing.sponsor_paid                 -> corporations.book (a cost)
+//   racing.sponsor_result               -> corporations.book (the return)
+//   the Sponsorship screen              -> racing.sponsor_offer
+//   racing.sponsor_answer               -> a message to the player
+//   racing.team_renamed                 -> the teams it knows, and offers waiting, renamed
+//
+// Budgets: a company spends at most BUDGET_SHARE of its market value a week
+// on racing (BUDGET_MIN .. BUDGET_MAX), and no more than CASH_SHARE of its
+// cash; its fortune is FORTUNE_K x its share price's 30-day move.
+//
+// The return: a deal's season (or its early end) earns the company brand
+// exposure, booked as revenue. On the deal's `basis` (what it paid this
+// season, never more than what the deal is worth by the team's standing, so
+// overpaying earns nothing): a met target returns RETURN_HIT, plus
+// RETURN_PLACE for each place better than the target (up to PLACES_MAX); a
+// missed one RETURN_MISS, and the penalty the team pays back.
+//
+// The player's own company (the one Corporations marks "player") does not
+// sponsor on its own: the player offers its deals from the Sponsorship
+// screen, at any bank. Its board holds every offer to the racing budget the
+// company would have, to cash it can spare, to no more than OVERPAY of what a
+// team's standing is worth, and, for the player's own team, to no more than
+// that worth (SELF_PAY): a company's money is not a channel into its owner's
+// team.
+
+import "imports:sdk/es"
+
+float BUDGET_SHARE = 0.001
+float BUDGET_MIN = 30000.0
+float BUDGET_MAX = 12000000.0
+float CASH_SHARE = 0.1
+float FORTUNE_K = 3.0
+float RETURN_HIT = 1.35
+float RETURN_PLACE = 0.1
+int PLACES_MAX = 3
+float RETURN_MISS = 0.25
+float OVERPAY = 1.5
+float SELF_PAY = 1.0
+// An offer needs this many weeks of its pay in the company's cash.
+float CASH_WEEKS = 8.0
+// Racing's teams older than this many days are not offered to.
+int FRESH = 21
+
+int OFFER_ASK = 1
+
+// The teams, as racing last told them (racing.sponsors_wanted).
+int teams_day = -1
+int season = 0
+[]string t_name = []
+[]string t_league = []
+[]int t_pos = []
+[]int t_expected = []
+[]float t_fair = []
+[]int t_free = []
+[]bool t_player = []
+// Each team's deals: "team index\tsponsor\tweekly\ttarget".
+[]string t_deals = []
+// The companies, as Corporations last told them (corporations.roster).
+int roster_day = -1
+[]string c_name = []
+[]string c_sector = []
+[]float c_value = []
+[]float c_cash = []
+[]float c_change = []
+[]bool c_player = []
+[]bool c_private = []
+// Offers sent and not yet answered: their ids, and "company\tteam\tweekly".
+int next_offer = 1
+[]string pending_ids = []
+[]string pending = []
+// The screen: the chosen team (its index), each row's team, the buttons, a note.
+int chosen = -1
+[]int rows = []
+[]string actions = []
+string note = ""
+bool has_bus = false
+bool checked = false
+
+Fmt fmt = Fmt()
+
+string name():
+    return "racing corporations"
+
+int api_version():
+    return 11
+
+int min_api():
+    return 10
+
+void check_api(es.Game game):
+    if checked:
+        return
+    checked = true
+    has_bus = game.has("notify")
+    if has_bus:
+        game.listen("racing.sponsors_wanted")
+        game.listen("racing.sponsor_paid")
+        game.listen("racing.sponsor_result")
+        game.listen("racing.sponsor_answer")
+        game.listen("racing.team_renamed")
+        game.listen("corporations.roster")
+        game.listen("corporations.bankrupt")
+
+void on_load(es.Game game):
+    check_api(game)
+
+void on_pilot_loaded(es.Game game):
+    check_api(game)
+    // Another pilot: what was heard is another world's.
+    teams_day = -1
+    roster_day = -1
+    t_name = []
+    c_name = []
+    pending_ids = []
+    pending = []
+    chosen = -1
+
+// ---- The bus ----
+
+string json(string s):
+    string q = globalThis.JSON.stringify(s)
+    return q
+
+void post(es.Game game, string name, string payload):
+    if has_bus:
+        game.notify(name, payload)
+
+void on_notification(es.Game game, string name, string payload, string sender):
+    check_api(game)
+    if name == "racing.sponsors_wanted":
+        read_teams(payload, game.day())
+        post(game, "corporations.roster_wanted", "{\"day\":" + string(game.day()) + "}")
+    else if name == "corporations.roster":
+        read_roster(payload, game.day())
+        post(game, "racing.sponsors", sponsors())
+        button(game)
+    else if name == "corporations.bankrupt":
+        string company = field(payload, "company")
+        if company != "":
+            post(game, "racing.sponsor_gone", "{\"sponsor\":" + json(company) + "}")
+    else if name == "racing.sponsor_paid":
+        paid(game, payload)
+    else if name == "racing.sponsor_result":
+        result(game, payload)
+    else if name == "racing.sponsor_answer":
+        answer(game, payload)
+    else if name == "racing.team_renamed":
+        renamed(field(payload, "from"), field(payload, "to"))
+
+// A team renamed (racing.team_renamed {"from", "to", "league", "player"}):
+// the listing and the offers waiting for an answer follow the new name
+// (Racing also sends a fresh racing.sponsors_wanted).
+void renamed(string from, string to):
+    if from == "" || to == "":
+        return
+    for k in 0..<t_name.len():
+        if t_name[k] == from:
+            t_name[k] = to
+    for k in 0..<pending.len():
+        []string f = pending[k].split("\t")
+        if f.len() >= 3 && f[1] == from:
+            pending[k] = f[0] + "\t" + to + "\t" + f[2]
+
+// One text field of a JSON object ("" when it is not there).
+string field(string payload, string key):
+    any get = globalThis.Function("s", "k", "try { const o = JSON.parse(s); const v = o ? o[k] : undefined; return v === undefined || v === null ? '' : String(v); } catch (e) { return ''; }")
+    string v = get(payload, key)
+    return v
+
+void read_teams(string payload, int day):
+    any parse = globalThis.Function("s", "try { const o = JSON.parse(s); if (!o || !Array.isArray(o.teams)) return ''; const out = ['S\\t' + (Number(o.season) || 0)]; o.teams.forEach((t, i) => { if (!t || typeof t.name !== 'string') return; out.push(['T', t.name, String(t.league || ''), Number(t.position) || 0, Number(t.expected) || 0, Number(t.fair) || 0, Number(t.free) || 0, t.player ? 1 : 0].join('\\t')); (Array.isArray(t.deals) ? t.deals : []).forEach((d) => { if (d && typeof d.sponsor === 'string') out.push(['D', d.sponsor, Number(d.weekly) || 0, Number(d.target) || 0].join('\\t')); }); }); return out.join('\\n'); } catch (e) { return ''; }")
+    string flat = parse(payload)
+    if flat == "":
+        return
+    t_name = []
+    t_league = []
+    t_pos = []
+    t_expected = []
+    t_fair = []
+    t_free = []
+    t_player = []
+    t_deals = []
+    for line in flat.split("\n"):
+        []string f = line.split("\t")
+        if f[0] == "S":
+            season = f[1].to_int()
+        else if f[0] == "T" && f.len() >= 8:
+            t_name.append(f[1])
+            t_league.append(f[2])
+            t_pos.append(f[3].to_int())
+            t_expected.append(f[4].to_int())
+            t_fair.append(f[5].to_float())
+            t_free.append(f[6].to_int())
+            t_player.append(f[7] == "1")
+        else if f[0] == "D" && f.len() >= 4 && t_name.len() > 0:
+            t_deals.append(string(t_name.len() - 1) + "\t" + f[1] + "\t" + f[2] + "\t" + f[3])
+    teams_day = day
+
+void read_roster(string payload, int day):
+    any parse = globalThis.Function("s", "try { const o = JSON.parse(s); const c = (o && Array.isArray(o.companies)) ? o.companies : []; return c.filter((x) => x && typeof x.name === 'string' && x.name !== '').map((x) => [x.name, String(x.sector || ''), Number(x.value) || 0, Number(x.cash) || 0, Number(x.change) || 0, x.player ? 1 : 0, x.private ? 1 : 0].join('\\t')).join('\\n'); } catch (e) { return ''; }")
+    string flat = parse(payload)
+    c_name = []
+    c_sector = []
+    c_value = []
+    c_cash = []
+    c_change = []
+    c_player = []
+    c_private = []
+    if flat != "":
+        for line in flat.split("\n"):
+            []string f = line.split("\t")
+            if f.len() < 7:
+                continue
+            c_name.append(f[0])
+            c_sector.append(f[1])
+            c_value.append(f[2].to_float())
+            c_cash.append(f[3].to_float())
+            c_change.append(f[4].to_float())
+            c_player.append(f[5] == "1")
+            c_private.append(f[6] == "1")
+    roster_day = day
+
+float clamp(float x, float lo, float hi):
+    return lo if x < lo else (hi if x > hi else x)
+
+// What a company may spend on racing a week: a share of its value, within
+// the bounds, and no more than a share of its cash.
+float budget(int k):
+    float b = clamp(BUDGET_SHARE * c_value[k], BUDGET_MIN, BUDGET_MAX)
+    float cash = CASH_SHARE * c_cash[k]
+    cash = cash if cash > 0.0 else 0.0
+    return b if b < cash else cash
+
+// "racing.sponsors": every company but the player's own (which sponsors only
+// as the player says).
+string sponsors():
+    []string out = []
+    for k in 0..<c_name.len():
+        if c_player[k]:
+            continue
+        int b = globalThis.Math.round(budget(k))
+        float fortune = clamp(FORTUNE_K * c_change[k], -1.0, 1.0)
+        out.append("{\"name\":" + json(c_name[k]) + ",\"sector\":" + json(c_sector[k]) + ",\"budget\":" + string(b) + ",\"fortune\":" + string(fortune) + "}")
+    return "{\"day\":" + string(roster_day) + ",\"sponsors\":[" + out.join(",") + "]}"
+
+// What the sponsors paid: each one's company books it as a cost (a name that
+// is not a company's, Corporations ignores).
+void paid(es.Game game, string payload):
+    any parse = globalThis.Function("s", "try { const o = JSON.parse(s); const p = (o && Array.isArray(o.payments)) ? o.payments : []; return p.filter((x) => x && typeof x.sponsor === 'string').map((x) => x.sponsor + '\\t' + (Number(x.amount) || 0)).join('\\n'); } catch (e) { return ''; }")
+    string flat = parse(payload)
+    if flat == "":
+        return
+    for line in flat.split("\n"):
+        []string f = line.split("\t")
+        float a = f[1].to_float() if f.len() > 1 else 0.0
+        if a > 0.0:
+            post(game, "corporations.book", "{\"company\":" + json(f[0]) + ",\"amount\":" + string(-a) + ",\"note\":\"\"}")
+
+// The return on a deal's season: brand exposure, as the formula above.
+float return_of(float basis, bool hit, int target, int position):
+    if basis <= 0.0:
+        return 0.0
+    if hit:
+        int better = target - position
+        better = 0 if better < 0 else (PLACES_MAX if better > PLACES_MAX else better)
+        return basis * (RETURN_HIT + RETURN_PLACE * float(better))
+    return basis * RETURN_MISS
+
+void result(es.Game game, string payload):
+    any parse = globalThis.Function("s", "try { const o = JSON.parse(s); if (!o || typeof o.sponsor !== 'string') return ''; return [o.sponsor, String(o.team || ''), o.hit ? 1 : 0, Number(o.target) || 0, Number(o.position) || 0, Number(o.paid) || 0, Number(o.basis) || 0, Number(o.penalty) || 0].join('\\t'); } catch (e) { return ''; }")
+    string flat = parse(payload)
+    if flat == "":
+        return
+    []string f = flat.split("\t")
+    if f.len() < 8:
+        return
+    string company = f[0]
+    bool hit = f[2] == "1"
+    int target = f[3].to_int()
+    int position = f[4].to_int()
+    float basis = f[6].to_float()
+    float penalty = f[7].to_float()
+    float r = return_of(basis, hit, target, position)
+    float total = r + (penalty if !hit else 0.0)
+    if total > 0.0:
+        post(game, "corporations.book", "{\"company\":" + json(company) + ",\"amount\":" + string(total) + ",\"note\":" + json("on its racing sponsorship of " + f[1]) + "}")
+    int k = c_name.index_of(company) if c_name.contains(company) else -1
+    if k >= 0 && c_player[k]:
+        string place = string(position) + ordinal(position)
+        game.message("Your company " + company + "'s sponsorship of " + f[1] + ": the target was " + string(target) + ordinal(target) + ", and they stand " + place + ". " + ("Target met: the exposure is worth " if hit else "Target missed: the exposure is worth only ") + fmt.credits(r) + " credits to the company" + (", and the team pays back " + fmt.credits(penalty) if !hit && penalty > 0.0 else "") + " (it paid " + fmt.credits(f[5].to_float()) + " this season).")
+
+string ordinal(int n):
+    int t = n % 100
+    if t >= 11 && t <= 13:
+        return "th"
+    int u = n % 10
+    return "st" if u == 1 else ("nd" if u == 2 else ("rd" if u == 3 else "th"))
+
+void answer(es.Game game, string payload):
+    string id = field(payload, "id")
+    int k = pending_ids.index_of(id) if pending_ids.contains(id) else -1
+    if k < 0:
+        return
+    pending_ids.remove_at(k)
+    pending.remove_at(k)
+    string team = field(payload, "team")
+    string company = field(payload, "sponsor")
+    string reason = field(payload, "reason")
+    float weekly = field(payload, "weekly").to_float()
+    if field(payload, "accepted") == "true":
+        game.message(team + " accepts " + company + "'s sponsorship: " + fmt.credits(weekly) + " credits a week, with a target of " + field(payload, "target") + ordinal(field(payload, "target").to_int()) + " this season.")
+    else if field(payload, "offered") == "true":
+        game.message(company + "'s offer to your team, " + team + ", waits on the Racing League's Sponsors tab.")
+    else:
+        string why = "it has no slot free" if reason == "no room" else ("the money is too little for a team of its standing" if reason == "too little" else ("it already has a deal with " + company if reason == "already sponsored" else reason))
+        game.message(team + " turns down " + company + "'s sponsorship: " + why + ".")
+
+// ---- The player's company ----
+
+int mine():
+    for k in 0..<c_name.len():
+        if c_player[k]:
+            return k
+    return -1
+
+bool usable(es.Game game):
+    return mine() >= 0 && t_name.len() > 0 && game.day() - teams_day <= FRESH
+
+void button(es.Game game):
+    string planet = game.planet()
+    game.planet_button("Sponsorship" if planet != "" && game.planet_service(planet, "bank") && usable(game) else "")
+
+void on_enter(es.Game game, string system):
+    check_api(game)
+    button(game)
+    // Landed: ask for a fresh roster (the player's company may be new).
+    if game.planet() != "":
+        post(game, "corporations.roster_wanted", "{\"day\":" + string(game.day()) + "}")
+
+// What the company has committed to racing a week, by the teams' deals.
+float committed(string company):
+    float sum = 0.0
+    for line in t_deals:
+        []string f = line.split("\t")
+        if f[1] == company:
+            sum += f[2].to_float()
+    return sum
+
+float pending_for(string company):
+    float sum = 0.0
+    for p in pending:
+        []string f = p.split("\t")
+        if f[0] == company:
+            sum += f[2].to_float()
+    return sum
+
+float deal_with(int team, string company):
+    for line in t_deals:
+        []string f = line.split("\t")
+        if f[0].to_int() == team && f[1] == company:
+            return f[2].to_float()
+    return 0.0
+
+bool is_pending(string company, string team):
+    for p in pending:
+        []string f = p.split("\t")
+        if f[0] == company && f[1] == team:
+            return true
+    return false
+
+// The most the board will commit to one offer to team i (0 when nothing).
+float limit(int i):
+    int k = mine()
+    if k < 0:
+        return 0.0
+    string company = c_name[k]
+    float room = budget(k) - committed(company) - pending_for(company)
+    float cap = t_fair[i] * (SELF_PAY if t_player[i] else OVERPAY)
+    float cash = c_cash[k] / CASH_WEEKS
+    float most = room if room < cap else cap
+    most = most if most < cash else cash
+    return most if most > 0.0 else 0.0
+
+void on_planet_button(es.Game game):
+    check_api(game)
+    if usable(game):
+        show(game)
+
+void add(es.Game game, string label, string action):
+    game.panel_button(label)
+    actions.append(action)
+
+void show(es.Game game):
+    actions = []
+    rows = []
+    int k = mine()
+    string company = c_name[k]
+    game.screen_open("Racing sponsorship: " + company, sidebar(game))
+    game.panel_columns("Team\tLeague\tPlace\tExpected\tWorth a week\tSlots free\tYour deal")
+    []int order = []
+    for i in 0..<t_name.len():
+        order.append(i)
+    order.sort(bool(int a, int b): return rank(t_league[a]) > rank(t_league[b]) || (t_league[a] == t_league[b] && t_pos[a] < t_pos[b]))
+    for i in order:
+        float mine_pay = deal_with(i, company)
+        string yours = fmt.credits(mine_pay) if mine_pay > 0.0 else ("offered" if is_pending(company, t_name[i]) else "")
+        game.panel_row(t_name[i] + (" (yours)" if t_player[i] else "") + "\t" + t_league[i] + "\t" + string(t_pos[i]) + "\t" + string(t_expected[i]) + "\t" + fmt.credits(t_fair[i]) + "\t" + string(t_free[i]) + "\t" + yours)
+        rows.append(i)
+    game.panel_select(rows.index_of(chosen) if rows.contains(chosen) else -1)
+    if chosen >= 0 && chosen < t_name.len():
+        add(game, "Offer a deal", "offer")
+    add(game, "Leave", "close")
+    note = ""
+
+int rank(string league):
+    return 2 if league == "S" else (1 if league == "A" else 0)
+
+string sidebar(es.Game game):
+    int k = mine()
+    string company = c_name[k]
+    float spent = committed(company)
+    string t = (note + "\n\n" if note != "" else "")
+    t = t + company + (" (private)" if c_private[k] else "") + ": worth " + fmt.credits(c_value[k]) + ", " + fmt.credits(c_cash[k]) + " in cash.\nRacing: " + fmt.credits(spent) + " a week committed" + (" (" + fmt.credits(pending_for(company)) + " more offered)" if pending_for(company) > 0.0 else "") + "; the board allows " + fmt.credits(budget(k)) + " a week in all.\n\n"
+    t = t + "A deal pays the team every week and, at the season's end, earns the company brand exposure: " + fmt.whole_percent(RETURN_HIT) + " of the season's pay if the team meets its target (" + fmt.whole_percent(RETURN_PLACE) + " more for each place better, up to " + string(PLACES_MAX) + "), " + fmt.whole_percent(RETURN_MISS) + " if it misses (and the team pays back its penalty). Exposure follows what the team's standing is worth: paying more than that buys nothing.\n"
+    if chosen >= 0 && chosen < t_name.len():
+        int i = chosen
+        t = t + "\n" + t_name[i] + ", " + t_league[i] + " League, " + string(t_pos[i]) + ordinal(t_pos[i]) + " (expected " + string(t_expected[i]) + ordinal(t_expected[i]) + "). Its standing is worth about " + fmt.credits(t_fair[i]) + " a week; " + ("your own team: the board pays no more than that." if t_player[i] else "a team takes " + fmt.whole_percent(0.9) + " of it or more.") + " The board would offer up to " + fmt.credits(limit(i)) + " a week."
+    else:
+        t = t + "\nChoose a team."
+    return t
+
+void on_panel(es.Game game, int index):
+    string action = actions[index] if index >= 0 && index < actions.len() else "close"
+    if action == "close":
+        game.panel_close()
+        return
+    if action == "offer" && chosen >= 0:
+        int most = int(limit(chosen) / 1000.0)
+        if most < 1:
+            note = "The board will not commit more to racing now (its budget, its cash, or what " + t_name[chosen] + " is worth)."
+        else if is_pending(c_name[mine()], t_name[chosen]):
+            note = "An offer to " + t_name[chosen] + " is waiting for its answer."
+        else if deal_with(chosen, c_name[mine()]) > 0.0:
+            note = "Your company already sponsors " + t_name[chosen] + "."
+        else:
+            game.ask_number("Offer " + t_name[chosen] + " how many thousand credits a week? (Its standing is worth about " + fmt.credits(t_fair[chosen]) + "; the board allows up to " + fmt.credits(float(most) * 1000.0) + ".)", OFFER_ASK, most)
+            return
+    show(game)
+
+void on_panel_row(es.Game game, int row):
+    if row >= 0 && row < rows.len():
+        chosen = rows[row]
+    show(game)
+
+void on_number(es.Game game, int token, int value):
+    if token != OFFER_ASK || chosen < 0 || mine() < 0:
+        return
+    float weekly = float(value) * 1000.0
+    if weekly > limit(chosen) + 1.0:
+        note = "The board refuses: that is more than it will commit to " + t_name[chosen] + "."
+    else:
+        string id = string(next_offer)
+        next_offer += 1
+        string company = c_name[mine()]
+        pending_ids.append(id)
+        pending.append(company + "\t" + t_name[chosen] + "\t" + string(weekly))
+        post(game, "racing.sponsor_offer", "{\"id\":" + json(id) + ",\"sponsor\":" + json(company) + ",\"sector\":" + json(c_sector[mine()]) + ",\"team\":" + json(t_name[chosen]) + ",\"weekly\":" + string(int(weekly)) + "}")
+        note = "Offered " + t_name[chosen] + " " + fmt.credits(weekly) + " credits a week. The team will answer."
+    show(game)

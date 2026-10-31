@@ -46,12 +46,17 @@ int FINE_AT = 60
 float share(Market m, Company c):
     return float(m.holdings.get(c.id, 0)) / float(c.shares) if c.shares > 0 else 0.0
 
+// (M4 review) Not on a bid by the player's own company: they would be
+// voting, or selling, on both sides of the deal.
+bool own_bid(Market m, Company c):
+    return c.suitor > 0 && m.by_id.has(c.suitor) && m.by_id[c.suitor].owner == 1
+
 bool may_vote(Market m, Company c):
-    return c.suitor > 0 && share(m, c) >= VOTE
+    return c.suitor > 0 && share(m, c) >= VOTE && !own_bid(m, c)
 bool has_seat(Market m, Company c):
     return share(m, c) >= SEAT
 bool may_sell(Market m, Company c):
-    return c.suitor > 0 && share(m, c) >= CONTROL
+    return c.suitor > 0 && share(m, c) >= CONTROL && !own_bid(m, c)
 
 // Block a pending buyout: it fails now.
 void block(es.Game game, Market m, Company c, int d):
@@ -112,6 +117,8 @@ float sell(es.Game game, Market m, Company c, int d):
     int held = m.holdings.get(c.id, 0)
     Company b = m.by_id.get(c.suitor, Company())
     float paid = c.offer * (1.0 + PREMIUM) * float(held)
+    if b.cash + (m.debt_limit(b) - b.debt) < paid:
+        return 0.0
     b.cash -= paid
     // (M3 review) The suitor owns these shares now: the deal does not pay for them again.
     c.suitor_stake += held
@@ -122,6 +129,32 @@ float sell(es.Game game, Market m, Company c, int d):
     attention(game, m, SCRUTINY_SELL, d)
     m.say_tagged(d, b.name + " buys an independent shareholder's " + m.fmt.whole_percent(float(held) / float(c.shares)) + " of " + c.name + " at a premium.", "c" + string(c.id) + ",c" + string(b.id))
     return paid
+
+// (M4) Direct its research: a focus (0 process, 1 scale, 2 quality) and a
+// budget level (Research.rd_rates); kept while the player holds the seat.
+// Once a report, as the payout.
+// The day each company's research was last directed (not saved: at worst a
+// reload allows one more direction).
+{int: int} research_day = {}
+
+bool may_direct_research(Company c, int d):
+    return d - research_day.get(c.id, -1000000) >= 30
+
+void research(es.Game game, Market m, Company c, int focus, int level, int d):
+    if !has_seat(m, c) || focus < 0 || focus > 2 || level < 0 || level > 4 || c.owner != 0 || !may_direct_research(c, d):
+        return
+    research_day[c.id] = d
+    m.research.set_focus(m, c, focus)
+    c.rd = level
+    c.board_rd = 1
+    m.say_tagged(d, c.name + "'s board sets its research on " + m.research.focus_words[focus] + " (" + m.research.rd_names[level] + " budget) at an independent shareholder's urging.", "c" + string(c.id))
+
+// (M4) Allow (1) or forbid (-1) new share offerings, or leave them to the
+// chief (0).
+void capital(es.Game game, Market m, Company c, int policy, int d):
+    if !has_seat(m, c) || policy < -1 || policy > 1 || c.owner != 0:
+        return
+    c.capital_policy = policy
 
 // The regulator's attention in the player's name; at FINE_AT a fine.
 void attention(es.Game game, Market m, int n, int d):

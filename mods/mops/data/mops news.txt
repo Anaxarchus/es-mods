@@ -1,0 +1,53 @@
+# Copyright (c) 2026 by Anaxarchus
+#
+# Endless Sky is free software: you can redistribute it and/or modify it under the
+# terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later version.
+#
+# Endless Sky is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+# PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+# Spaceport news for MOPS contractors: overheard rumours and the odd message
+# from the Office, once the player has been inducted.
+
+news "mops: overheard"
+	location
+		government "Republic" "Free Worlds" "Syndicate" "Neutral" "Independent"
+	to show
+		has "mops: contractor"
+	name
+		word
+			"Dockworker"
+			"Spaceport clerk"
+			"Off-duty Navy pilot"
+			"Freight broker"
+			"Bartender"
+	message
+		word
+			`"`
+		word
+			"My cousin flew for a sanitation company out of the north. Paid like you wouldn't believe. We got a very nice letter, and a plate."
+			"The news said it was a mining accident near Sumar. There aren't any mines near Sumar."
+			"They say if you see a ship come back from past Polaris with Korath scorch on it and no markings, you don't ask, and you don't buy the pilot a drink. They'll have one already."
+			"Somebody keeps paying the docking fees for ships that, according to the registry, don't exist. I just stamp the forms."
+			"The Navy doesn't go past the border. The Navy doesn't have to. That's all I'm going to say."
+			"I applied to MOPS once. Or I tried to. The form said that if I'd heard of them, I wasn't eligible."
+		word
+			`"`
+
+news "mops: the office"
+	location
+		government "Republic" "Free Worlds" "Syndicate" "Neutral" "Independent"
+	to show
+		has "mops: contractor"
+	name
+		word
+			"Unlisted sender"
+	message
+		word
+			"A reminder that MOPS contractors are not permitted to describe themselves as MOPS contractors. Please describe yourself as a freelance pest controller with a gift for paperwork."
+			"Office notice: the condolence letter template has been updated. Your next of kin have been sent the new version, and asked to destroy the old one."
+			"Contractor satisfaction is up this quarter. Contractor numbers are down. The Office is confident these facts are unrelated."
+			"The Office has adopted a new motto, 'Deniable Since Founding.' Contractors are asked not to put it on their ships."
+			"Life insurance is not available to MOPS contractors. Death insurance is available to MOPS, and is going very well."

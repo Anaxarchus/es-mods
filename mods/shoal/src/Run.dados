@@ -1,0 +1,286 @@
+class Run
+
+// The Shoal's state for one pilot: the run in progress, Breakers' Rest's
+// wrecks, and the records. Kept with the pilot as one JSON text under "state"
+// (Game.set_data). Heat and the wreck stocks are floats in memory and saved
+// in thousandths, so they read back exactly.
+//
+// Since 0.5.0 (DESIGN.md section 22) a run happens in the Deep: it starts on
+// entering it through the Maw, lasts through every deep system and landings at
+// Breakers' Haven, and ends on coming back up to Breakers' Rest. A state saved
+// before 0.5.0 (VERSION 2) had its run in Breakers' Rest itself: that run is
+// dropped on reading (the records and the heat the belt remembers are kept).
+
+Json json = Json()
+
+int VERSION = 3
+
+// ---- The run ----
+bool active = false
+float heat = 0.0
+// The highest heat this run reached.
+float peak = 0.0
+// The wave thresholds that have fired this run.
+[]int fired = []
+bool undertow = false
+bool deep = false
+// Materials in cargo on entry: glass, cores, lattice.
+[]int entry = [0, 0, 0]
+int seconds = 0
+// Seconds since heat passed the endless threshold.
+int after = 0
+// The Undertow was beaten this run.
+bool sunk = false
+// The guardian spawns still afloat, as of the last second in flight: fleet and tag.
+[]string guard_fleets = []
+[]string guard_tags = []
+// The deep system the player is in, how deep it is, and the deepest depth and
+// tier this run has reached.
+string system = ""
+int depth = 0
+int run_depth = 0
+int tier_seen = 0
+// The deep systems whose wrecks were placed this run (once each).
+[]string seeded = []
+// Due on the first second in flight: this system's wrecks (if not placed yet)
+// and its resident wardens; the guards above, again (after a landing, a jump
+// to another deep system, or a loaded save); and how they come back: as the
+// Shoal remembering a run before (greet), following the player (follow), or
+// as guards that waited.
+bool seed_due = false
+bool recall = false
+bool greet = false
+bool follow = false
+// Resident warden spawns this run (for their tags).
+int residents = 0
+// Restless wrecks (mod API 11): how many were due this run by heat (one per
+// Tuning.restless_heat reached).
+int restless_scheduled = 0
+
+// ---- The ships of the system the player is in (any system, in a run or not) ----
+// Landing or leaving takes them away, so these start again on each arrival:
+// restless spawns placed (for their tags), the tags rolled for (each once),
+// and those that woke (their kills count as guardians').
+int restless = 0
+[]string rolled = []
+[]string woken = []
+
+// ---- Breakers' Rest, outside a run ----
+// The stock of derelict and restless wreck spawns waiting there (they refill
+// only while the player is away), the day the player was last there, whether
+// they have been away since, whether the wrecks are due on the next first
+// second in flight, the seconds flown there since arriving, and when (in those
+// seconds) a warden picket visits (-1: none).
+float rest_wrecks = 3.0
+float rest_restless = 4.0
+int rest_day = 0
+bool rest_away = true
+bool rest_due = false
+int rest_seconds = 0
+int visit_at = -1
+int visits = 0
+
+// ---- Records ----
+int runs = 0
+int deepest = 0
+// The deepest any run has reached, in jumps from the hub.
+int deepest_depth = 0
+int undertows = 0
+// Total glass, cores and lattice extracted.
+[]int hauls = [0, 0, 0]
+// The heat the last run ended at, and its day: the next run starts from it, less a decay a day.
+float residual = 0.0
+int residual_day = 0
+
+// Forget everything: another pilot.
+void reset():
+    clear_run()
+    clear_visit()
+    runs = 0
+    deepest = 0
+    deepest_depth = 0
+    undertows = 0
+    hauls = [0, 0, 0]
+    residual = 0.0
+    residual_day = 0
+    rest_wrecks = 3.0
+    rest_restless = 4.0
+    rest_day = 0
+    rest_away = true
+    rest_due = false
+    rest_seconds = 0
+    visit_at = -1
+    visits = 0
+
+void clear_run():
+    active = false
+    heat = 0.0
+    peak = 0.0
+    fired = []
+    undertow = false
+    deep = false
+    entry = [0, 0, 0]
+    seconds = 0
+    after = 0
+    sunk = false
+    guard_fleets = []
+    guard_tags = []
+    system = ""
+    depth = 0
+    run_depth = 0
+    tier_seen = 0
+    seeded = []
+    seed_due = false
+    recall = false
+    greet = false
+    follow = false
+    residents = 0
+    restless_scheduled = 0
+
+// A new arrival in a system: none of the last one's ships are here.
+void clear_visit():
+    restless = 0
+    rolled = []
+    woken = []
+
+// A guardian spawn to remember.
+void guard(string fleet, string tag):
+    guard_fleets.append(fleet)
+    guard_tags.append(tag)
+
+bool has_fired(int threshold):
+    for t in fired:
+        if t == threshold:
+            return true
+    return false
+
+int milli(float x):
+    int m = globalThis.Math.round(x * 1000.0)
+    return m
+
+int flag(bool b):
+    return 1 if b else 0
+
+string encode():
+    []string f = []
+    f.append("\"v\":" + string(VERSION))
+    f.append("\"active\":" + string(flag(active)))
+    f.append("\"heat\":" + string(milli(heat)))
+    f.append("\"peak\":" + string(milli(peak)))
+    f.append("\"fired\":" + json.ints(fired))
+    f.append("\"undertow\":" + string(flag(undertow)))
+    f.append("\"deep\":" + string(flag(deep)))
+    f.append("\"entry\":" + json.ints(entry))
+    f.append("\"seconds\":" + string(seconds))
+    f.append("\"after\":" + string(after))
+    f.append("\"sunk\":" + string(flag(sunk)))
+    f.append("\"guard_fleets\":" + json.strs(guard_fleets))
+    f.append("\"guard_tags\":" + json.strs(guard_tags))
+    f.append("\"system\":" + json.strs([system]))
+    f.append("\"depth\":" + string(depth))
+    f.append("\"run_depth\":" + string(run_depth))
+    f.append("\"tier_seen\":" + string(tier_seen))
+    f.append("\"seeded\":" + json.strs(seeded))
+    f.append("\"seed_due\":" + string(flag(seed_due)))
+    f.append("\"recall\":" + string(flag(recall)))
+    f.append("\"greet\":" + string(flag(greet)))
+    f.append("\"follow\":" + string(flag(follow)))
+    f.append("\"residents\":" + string(residents))
+    f.append("\"restless_scheduled\":" + string(restless_scheduled))
+    f.append("\"restless\":" + string(restless))
+    f.append("\"rolled\":" + json.strs(rolled))
+    f.append("\"woken\":" + json.strs(woken))
+    f.append("\"rest_wrecks\":" + string(milli(rest_wrecks)))
+    f.append("\"rest_restless\":" + string(milli(rest_restless)))
+    f.append("\"rest_day\":" + string(rest_day))
+    f.append("\"rest_away\":" + string(flag(rest_away)))
+    f.append("\"rest_due\":" + string(flag(rest_due)))
+    f.append("\"rest_seconds\":" + string(rest_seconds))
+    f.append("\"visit_at\":" + string(visit_at))
+    f.append("\"visits\":" + string(visits))
+    f.append("\"runs\":" + string(runs))
+    f.append("\"deepest\":" + string(deepest))
+    f.append("\"deepest_depth\":" + string(deepest_depth))
+    f.append("\"undertows\":" + string(undertows))
+    f.append("\"hauls\":" + json.ints(hauls))
+    f.append("\"residual\":" + string(milli(residual)))
+    f.append("\"residual_day\":" + string(residual_day))
+    return "{" + f.join(",") + "}"
+
+// Read a saved state over a reset one; "" (a new pilot) leaves it reset.
+void decode(string text):
+    reset()
+    if text == "":
+        return
+    any o = json.parse_object(text)
+    int v = json.num(o, "v", 1)
+    active = json.num(o, "active", 0) != 0
+    heat = float(nonneg(json.num(o, "heat", 0))) / 1000.0
+    peak = float(nonneg(json.num(o, "peak", 0))) / 1000.0
+    if peak < heat:
+        peak = heat
+    fired = json.int_list(o, "fired")
+    undertow = json.num(o, "undertow", 0) != 0
+    deep = json.num(o, "deep", 0) != 0
+    entry = three(json.int_list(o, "entry"))
+    seconds = nonneg(json.num(o, "seconds", 0))
+    after = nonneg(json.num(o, "after", 0))
+    sunk = json.num(o, "sunk", 0) != 0
+    []string fleets = json.str_list(o, "guard_fleets")
+    []string tags = json.str_list(o, "guard_tags")
+    for k in 0..<fleets.len():
+        if k < tags.len() && fleets[k] != "" && tags[k] != "":
+            guard(fleets[k], tags[k])
+    []string where = json.str_list(o, "system")
+    system = where[0] if where.len() > 0 else ""
+    depth = nonneg(json.num(o, "depth", 0))
+    run_depth = nonneg(json.num(o, "run_depth", 0))
+    tier_seen = nonneg(json.num(o, "tier_seen", 0))
+    seeded = json.str_list(o, "seeded").filter(bool(string t): return t != "")
+    seed_due = json.num(o, "seed_due", 0) != 0
+    recall = json.num(o, "recall", 0) != 0
+    greet = json.num(o, "greet", 0) != 0
+    follow = json.num(o, "follow", 0) != 0
+    residents = nonneg(json.num(o, "residents", 0))
+    restless_scheduled = nonneg(json.num(o, "restless_scheduled", 0))
+    restless = nonneg(json.num(o, "restless", 0))
+    rolled = json.str_list(o, "rolled").filter(bool(string t): return t != "")
+    woken = json.str_list(o, "woken").filter(bool(string t): return t != "")
+    rest_wrecks = float(nonneg(json.num(o, "rest_wrecks", 3000))) / 1000.0
+    rest_restless = float(nonneg(json.num(o, "rest_restless", 4000))) / 1000.0
+    rest_day = nonneg(json.num(o, "rest_day", 0))
+    rest_away = json.num(o, "rest_away", 1) != 0
+    rest_due = json.num(o, "rest_due", 0) != 0
+    rest_seconds = nonneg(json.num(o, "rest_seconds", 0))
+    visit_at = json.num(o, "visit_at", -1)
+    if visit_at < -1:
+        visit_at = -1
+    visits = nonneg(json.num(o, "visits", 0))
+    runs = nonneg(json.num(o, "runs", 0))
+    deepest = nonneg(json.num(o, "deepest", 0))
+    deepest_depth = nonneg(json.num(o, "deepest_depth", 0))
+    undertows = nonneg(json.num(o, "undertows", 0))
+    hauls = three(json.int_list(o, "hauls"))
+    residual = float(nonneg(json.num(o, "residual", 0))) / 1000.0
+    residual_day = nonneg(json.num(o, "residual_day", 0))
+    // Before 0.5.0 a run was in Breakers' Rest itself, and its ships and tags
+    // meant something else: drop it, and keep its heat as the heat the Shoal
+    // remembers (as if it had ended on the day it was saved: unknown, so today
+    // is as good as any; Shoal.settle stamps the day).
+    if v < 3 && active:
+        residual = heat
+        residual_day = -1
+        clear_run()
+        clear_visit()
+    if !active:
+        clear_run()
+
+int nonneg(int x):
+    return x if x > 0 else 0
+
+// Exactly three non-negative counts.
+[]int three([]int v):
+    []int out = []
+    for k in 0..<3:
+        out.append(nonneg(v[k]) if k < v.len() else 0)
+    return out

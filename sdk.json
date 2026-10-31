@@ -1,10 +1,10 @@
 {
   "sdk": "endless-sky-mod-sdk",
   "sdk_version": "2.0.0",
-  "sdk_commit": "unknown (not a git checkout)",
-  "mod_api": 10,
-  "loader_commit": "1d215bc9e6e89fc64d29742f20fc859ee423f678",
-  "loader_sources_sha256": "710ffa3f183be5a370dacc90bffc754cebbba7d9b4d01081b17e7ccbfc4d3bfd",
+  "sdk_commit": "fc74f6a3448af71b9d18fb941ff890afc576af0a",
+  "mod_api": 12,
+  "loader_commit": "f537b9edd9f5ba17b73451cdb0cff855298c1045",
+  "loader_sources_sha256": "9c14228fa336dd9d6bf173126b92c09099f0211d7ae811c35e8c59eab4f906f2",
   "vendored_paths": [
     "imports/sdk/es",
     "js",
@@ -14,6 +14,6 @@
     ".vscode/settings.json",
     ".vscode/tasks.json"
   ],
-  "vendored_sha256": "e2b510697fdb9241d5f5c2b0fe5ced6eb30fbf6e887c327b4af0080ff32535b4",
-  "vendored": "2026-10-28"
+  "vendored_sha256": "ba86435be9ab032849a47364e8f2a3667431f536c134b93a34998ecbdcbf6086",
+  "vendored": "2026-10-29"
 }

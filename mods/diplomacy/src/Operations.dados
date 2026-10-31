@@ -308,7 +308,7 @@ int politics_side(Flotilla x):
     return m if m != 0 else 1
 
 string npc_kill(string gov, string where, string fleet):
-    return "npc kill\n\tgovernment " + q(gov) + "\n\tsystem " + q(where) + "\n\tpersonality heroic staying target marked\n\tfleet " + q(fleet) + "\n"
+    return "npc kill\n\tgovernment " + q(gov) + "\n\tsystem " + q(where) + "\n\tpersonality heroic staying target marked tracked\n\tfleet " + q(fleet) + "\n"
 
 // ---- The first hour ----
 

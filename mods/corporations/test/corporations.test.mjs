@@ -97,7 +97,8 @@ test(`the market runs ${DAYS} days and keeps its rules`, { skip }, () => {
 			maxShare = Math.max(maxShare, share);
 			// Canonical companies: only their capacity share, over 50% (M1).
 			const line = Math.max(c.canon ? 0.5 : 0.35, 2 / peers.get(c.sector));
-			const over = share > line || (!c.canon && c.price * c.shares / worth > 0.15) ? (overDays.get(c.id) || 0) + 1 : 0;
+			// (M4) Only a company that bought rivals answers for its capacity share.
+			const over = (c.acquired.length > 0 && share > line) || (!c.canon && c.price * c.shares / worth > 0.15) ? (overDays.get(c.id) || 0) + 1 : 0;
 			overDays.set(c.id, over);
 			worstOver = Math.max(worstOver, over);
 		}
@@ -173,7 +174,7 @@ test("the exchange: its own screen, sorting, a company, buying and selling", { s
 	assert.equal(game.panel.title, "Stock exchange: market");
 	assert.deepEqual(game.panel.columns, ["Company", "Sector", "Price", "30 days", "P/E", "Yield", "Value v", "You hold"]);
 	assert.equal(game.panel.rows.length, listed(mod).length, "every listed company on one screen");
-	assert.deepEqual(game.panel.buttons, ["Market", "Portfolio", "Contracts", "News", "Map", "Orders", "Company", "Leave"]);
+	assert.deepEqual(game.panel.buttons, ["Market", "Portfolio", "Contracts", "News", "Map", "Orders", "Company", "Chiefs", "Leave"]);
 	assert.equal(game.panel.selected, -1);
 	assert.equal(game.panel.charts?.[0]?.label, "Exchange index", "the sidebar charts the index");
 	assert.equal(game.panel.charts[0].values.length, 40);
@@ -195,7 +196,7 @@ test("the exchange: its own screen, sorting, a company, buying and selling", { s
 	mod.on_panel_row(game, 3);
 	assert.equal(game.panel.selected, 3, "the chosen row is marked");
 	assert.ok(game.panel.text.startsWith(top + "\n"), "the sidebar shows the company");
-	assert.deepEqual(game.panel.buttons, ["Market", "Portfolio", "Contracts", "News", "Map", "Orders", "Company", "Buy", "Short", "Leave"]);
+	assert.deepEqual(game.panel.buttons, ["Market", "Portfolio", "Contracts", "News", "Map", "Orders", "Company", "Chiefs", "Buy", "Short", "Leave"]);
 	assert.equal(game.panel.charts[0].label, top + ", 60 days", "the sidebar charts the company's price");
 	const credits = game.condition("credits");
 	mod.on_panel(game, game.panel.buttons.indexOf("Buy"));
@@ -267,8 +268,10 @@ test("jobs: parts for running contracts, and what carrying them does", { skip },
 	game.planet_ = "Earth";
 	game.jobs.clear();
 	mod.on_enter(game, "Sol");
-	assert.ok(game.jobs.size >= 1 && game.jobs.size <= 2, `one or two jobs (${game.jobs.size})`);
-	const [name, text] = [...game.jobs][0];
+	// (M4: tips about breakthroughs may be on the board too.)
+	const parts = [...game.jobs].filter(([n]) => n.startsWith("parts "));
+	assert.ok(parts.length >= 1 && parts.length <= 2, `one or two jobs (${parts.length})`);
+	const [name, text] = parts[0];
 	const id = Number(name.split(" ")[1]);
 	const k = mod.market.contracts.find((x) => x.id === id);
 	assert.equal(k.status, 1, "for a running contract");

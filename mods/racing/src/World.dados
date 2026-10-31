@@ -1,0 +1,1753 @@
+class World
+
+// The racing world of one pilot: three leagues (B, A, S) of TEAMS teams of
+// two cars each (a teams' championship, the one that counts for promotion,
+// prizes and sponsors, and a drivers' championship: Person.d_*), the
+// staff pool, the sponsors and their deals, the calendar, the last races,
+// the news and the player's team. Everything is saved with the pilot as
+// lines (encode), and every day is played out the same way from the saved
+// random state.
+//
+// The week (day since `start_day`, modulo 7), so no day does much:
+//   0, 1, 2   the round of league B, A, S (race weeks only)
+//   3         money: owners' backing, sponsors, salaries, running costs,
+//             interest, AI budgets, bankruptcy and the player's forced sale
+//   4         R&D: each department develops with what it was given
+//   5         staff: careers, contracts, poaching, vacancies (Staff)
+//   6         sponsors: offers, clauses, the Corporations roster (Sponsors)
+// and every day the player's team may have an event (Events).
+// A season is WEEKS weeks: ROUNDS race weeks, then an off-season. The season
+// ends (payouts, titles) on the first day after the last round; the next
+// begins WEEKS weeks after the last began: promotion and relegation,
+// regulations, entry fees, the calendar.
+
+int VERSION = 1
+int ROUNDS = 10
+int WEEKS = 12
+int TEAMS = 10
+int MOVE = 2
+// Promotion's eligibility (eligible): a team goes up only in at least its
+// PROMO_SEASONS-th season in a row in its league, or at once if it came down
+// into it (a rebound). As many go down from the league above as go up.
+int PROMO_SEASONS = 3
+// Seats a team (Team.seats): five roles, and the #2 pilot's.
+int SEATS = 6
+int SECOND = 5
+// Money, by league: everything scales with `scale`.
+[]float scale = [1.0, 6.0, 36.0]
+[]float franchise = [1000000.0, 10000000.0, 100000000.0]
+float ENTRY_FEE = 0.04
+float RACE_POOL = 290000.0
+float CHAMP_POOL = 1500000.0
+// The championship pool by the teams' table; a race's prize pool by car
+// (twenty: two a team, the same 10% a team on average).
+[]float shares = [0.22, 0.16, 0.13, 0.11, 0.09, 0.08, 0.07, 0.06, 0.05, 0.03]
+[]float car_shares = [0.13, 0.1, 0.09, 0.08, 0.07, 0.065, 0.057, 0.052, 0.048, 0.044, 0.04, 0.037, 0.034, 0.031, 0.028, 0.025, 0.022, 0.019, 0.016, 0.012]
+// Two pilots' fame as the team's: the better one's, and PAIR_FAME of the other's (at most 100).
+float PAIR_FAME = 0.5
+[]float RUNNING = [6000.0, 80000.0, 500000.0]
+float REPAIR = 35000.0
+float INTEREST = 0.01
+float OVERDRAFT = 0.4
+float WARN = 0.25
+float SALE = 0.55
+// Buying a team (buy): the owners ask what it is worth (Value) and a
+// willing seller's premium, MARKUP (CHAMP_MARKUP more for last season's
+// champions or the leader of the table), at least MARKUP_MIN of the
+// franchise, and never less than ASK_FLOOR of it (a team in debt).
+float MARKUP = 0.1
+float CHAMP_MARKUP = 0.05
+float MARKUP_MIN = 0.03
+float ASK_FLOOR = 0.1
+// Owners of the leader of a title race under way (from LEADS_AFTER races) do not sell.
+int LEADS_AFTER = 3
+// Reviving a defunct team (revive): it takes the player's reserved place in
+// the B League (an eleventh team) with a weaker car, REVIVE_CASH of the B
+// franchise as its first cash, and REVIVE_SHARE of its old prestige, which
+// recovers with results (REVIVE_SEASON a season, REVIVE_PODIUM a podium).
+float REVIVE_CASH = 0.2
+float REVIVE_SHARE = 0.5
+float REVIVE_SEASON = 0.1
+float REVIVE_PODIUM = 0.01
+// Team names: at most NAME_MAX characters; a team's name history keeps the
+// first and the last NAMES_MAX - 1.
+int NAME_MAX = 32
+int NAMES_MAX = 16
+// Why a team took a name (its name history).
+int FOUNDED = 0
+int RENAMED = 1
+int NEW_OWNER = 2
+int SPONSOR_NAME = 3
+int REBRAND = 4
+int REVIVED = 5
+int DEFUNCT = 6
+[]string why_names = ["founded", "renamed by its owner", "new owners", "a new title sponsor", "a rebrand", "revived", "defunct"]
+// AI teams' renames, by their own dice (dice): new owners after the player
+// sells (in percent), a first title sponsor's name, a rebrand after
+// finishing last.
+float NEW_OWNER_RENAME = 60.0
+float SPONSOR_RENAME = 1.5
+float REBRAND_LAST = 6.0
+// Defunct teams kept in the archive (champions are kept for good).
+int ARCHIVE = 30
+// Why a team went defunct.
+int BANKRUPT = 0
+int GAVE_UP = 1
+int SOLD_UP = 2
+int CULLED = 3
+[]string fate_names = ["bankrupt", "its owners gave up", "its owners sold up after relegation", "the league cut the B League back to ten teams"]
+// Prestige (0 .. 100): up to AGE_PTS for age (1 - e^(-age / AGE_SCALE)), up
+// to TROPHY_PTS for the lifetime record (half at TROPHY_HALF points).
+float AGE_PTS = 30.0
+float AGE_SCALE = 20.0
+float TROPHY_PTS = 70.0
+float TROPHY_HALF = 50.0
+float FIRE_SALE = 0.35
+float PROMOTION_GRANT = 0.2
+float PARACHUTE = 0.04
+// The chance a season that an AI team's owners cut their backing to 30%.
+float OWNER_QUIT = 8.0
+// The chance an AI team in the red at a season's end folds (two such seasons, it does).
+float FOLD = 30.0
+// AI owners' backing a week, and the levels AI cars start at, by league.
+[]float backing_base = [10000.0, 60000.0, 360000.0]
+[]float start_level = [37.0, 57.0, 92.0]
+// R&D: a week's gain is DEV_K x sqrt(spend / 1000) x efficiency / (1 + level / SOFT).
+float DEV_K = 0.5
+float SOFT = 40.0
+float SIM_BOOST = 150.0
+// The share of its salaries an AI team's R&D budget gives way to.
+float AI_SALARY = 0.9
+// The least organised AI team's R&D efficiency (Team.org).
+float AI_ORG = 0.5
+// Regulations: at a new season each level keeps KEEP of what it has over
+// REG_BASE; the department the new rules hit keeps REG_HIT.
+float REG_BASE = 15.0
+float KEEP = 0.5
+float REG_HIT = 0.3
+
+string world = ""
+int start_day = 0
+int day = 0
+int season = 1
+int next_team = 1
+int next_person = 1
+int next_deal = 1
+int next_incident = 1
+int player_team = 0
+// The team that holds the player's reserved place in the B League (a revived
+// defunct team), 0 none. While the player owns it the B League has an
+// eleventh team; once it is sold, the season's end cuts the B League's last.
+int revived_team = 0
+// Defunct teams (Team.archive_encode), oldest first.
+[]Team archive = []
+// The department the last regulation change hit.
+int reg_dept = 0
+// The day Corporations last sent its roster (0 never).
+int corp_day = 0
+Rng rng = Rng()
+[]Team teams = []
+{int: Team} team_by_id = {}
+[]Person people = []
+{int: Person} person_by_id = {}
+[]Sponsor sponsors = []
+[]Deal deals = []
+[]Incident incidents = []
+// The circuit of each league's rounds: calendar[league * ROUNDS + round].
+[]int calendar = []
+// Each league's last race, and the story of the last race the player's team ran.
+[]Result last = [Result(), Result(), Result()]
+[]string story = []
+// "day\tleague\ttext" (league -1 for all), newest last.
+[]string news = []
+// The player's weekly ledger: "day\tin\tout\tcash".
+[]string ledger = []
+// Last season's final tables, by league: team ids in order.
+[][]int finals = [[], [], []]
+int finals_season = 0
+// Lines for the player (Game.message) and notifications to post, emptied by the mod.
+[]string player_events = []
+[]string outbox = []
+
+Names names = Names()
+Fmt fmt = Fmt()
+Race race = Race()
+Staff staff = Staff()
+Sponsors sponsoring = Sponsors()
+Events events = Events()
+Bio bio = Bio()
+Value value = Value()
+Lore lore = Lore()
+Person stand_in = Person()
+// The Paddock Book (Book): the player's bets, open and settled (the last
+// Book.HISTORY), the next bet's id, and what settled bets staked and returned.
+Book book = Book()
+// The intro mission line (Intro, data/intro.txt): 0 not yet, Intro.GIVEN the
+// team was handed over, Intro.REFUNDED it could not be (the sponsorship paid
+// back). And bios written by hand (Intro's people), by person id: Bio.text
+// tells these instead of drawing one.
+int intro = 0
+{int: string} written = {}
+Intro intro_line = Intro()
+[]Bet bets = []
+int next_bet = 1
+float bet_staked = 0.0
+float bet_returned = 0.0
+
+// ---- Setup ----
+
+void setup(int today, string id):
+    world = id
+    rng.seed(today * 7919 + 17)
+    start_day = today + 1
+    day = today
+    season = 1
+    stand_in.skill = -0.6
+    stand_in.name = "a stand-in"
+    for l in 0..<3:
+        for k in 0..<TEAMS:
+            add_ai_team(l, true)
+    staff.seed(self)
+    staff.fill_all(self)
+    sponsoring.seed(self)
+    make_calendar()
+    for round in 0..<2:
+        for t in teams:
+            sponsoring.ai_deals(self, t)
+    note(-1, "The " + string(season) + names.ordinal_suffix(season) + " season of the racing leagues begins.")
+
+Team add_ai_team(int league, bool initial):
+    Team t = Team()
+    t.id = next_team
+    next_team += 1
+    t.name = names.team(rng, used_names())
+    t.league = league
+    t.backing = backing_base[league] * rng.between(0.6, 1.5)
+    t.dev_rate = rng.between(0.55, 0.8) + 0.1 * float(league)
+    t.org = rng.between(AI_ORG, 1.0)
+    t.cash = franchise[league] * rng.between(0.05, 0.2)
+    float lift = rng.between(0.8, 1.2) if initial else rng.between(0.75, 0.95)
+    for d in 0..<5:
+        t.levels[d] = start_level[league] * lift * rng.between(0.9, 1.1)
+    t.approach = rng.range(0, 2)
+    t.founded = day
+    t.born = season
+    t.since = first_full_season(league)
+    // The first teams raced before the records began: an age of their own
+    // dice (older in the higher leagues), so the world's dice are untouched.
+    if initial && season == 1 && finals_season == 0:
+        Rng r = dice(t, 9)
+        []int oldest = [10, 20, 35]
+        []int least = [0, 0, 5]
+        t.born = 1 - r.range(least[league], oldest[league])
+        // In their league since they were founded.
+        t.since = t.born
+    log_name(t, FOUNDED)
+    teams.append(t)
+    team_by_id[t.id] = t
+    stale()
+    return t
+
+void make_calendar():
+    calendar = []
+    for l in 0..<3:
+        []int pool = []
+        for c in 0..<names.circuit_systems.len():
+            pool.append(c)
+        for r in 0..<ROUNDS:
+            int k = rng.range(0, pool.len() - 1)
+            calendar.append(pool[k])
+            pool.remove_at(k)
+
+// ---- Lookups ----
+
+int circuit_of(int league, int round):
+    int k = league * ROUNDS + round
+    return calendar[k] if k >= 0 && k < calendar.len() else 0
+
+[]Team league_teams(int league):
+    return teams.filter(bool(Team t): return t.league == league)
+
+// How many teams a league has: TEAMS, and the B League one more while a
+// revived team holds the player's reserved place (or until the season's end
+// after it is sold).
+int size(int league):
+    int n = 0
+    for t in teams:
+        if t.league == league:
+            n += 1
+    return n if n > 0 else TEAMS
+
+// The league's teams by the season's points (then wins, podiums, best average).
+[]Team table(int league):
+    []Team out = league_teams(league)
+    out.sort(bool(Team a, Team b): return ahead(a, b))
+    return out
+
+bool ahead(Team a, Team b):
+    if a.points != b.points:
+        return a.points > b.points
+    if a.wins != b.wins:
+        return a.wins > b.wins
+    if a.podiums != b.podiums:
+        return a.podiums > b.podiums
+    float fa = a.average_finish()
+    float fb = b.average_finish()
+    if fa != fb:
+        return (fa if fa > 0.0 else 99.0) < (fb if fb > 0.0 else 99.0)
+    return a.id < b.id
+
+// A team's place in its league's table; the tables are worked out once and
+// kept until something changes them (stale()).
+int position(Team t):
+    if pos_day != day:
+        pos_day = day
+        positions = {}
+        for l in 0..<3:
+            []Team tab = table(l)
+            for k in 0..<tab.len():
+                positions[tab[k].id] = k + 1
+    return positions.get(t.id, 0)
+
+void stale():
+    pos_day = -1
+
+int pos_day = -1
+{int: int} positions = {}
+
+Team team(int id):
+    return team_by_id[id] if team_by_id.has(id) else Team()
+
+Person person(int id):
+    return person_by_id[id] if person_by_id.has(id) else stand_in
+
+// The person in a team's seat (Team.seats: the roles, then the #2 pilot),
+// or the stand-in (skill -0.6, no record).
+Person seat(Team t, int s):
+    int id = t.seats[s] if s >= 0 && s < t.seats.len() else 0
+    return person_by_id[id] if id != 0 && person_by_id.has(id) else stand_in
+
+// The team's two pilots' fame as one (sponsors, a team's value): the better
+// one's and PAIR_FAME of the other's, at most 100.
+float pilot_fame(Team t):
+    float a = seat(t, 0).fame
+    float b = seat(t, SECOND).fame
+    float hi = a if a > b else b
+    float lo = b if a > b else a
+    float f = hi + PAIR_FAME * lo
+    return f if f < 100.0 else 100.0
+
+// The drivers' championship of a league this season: pilots by their points
+// (then wins, podiums, best finish).
+[]Person drivers_table(int league):
+    []Person out = people.filter(bool(Person p): return p.role == 0 && p.d_season == season && p.d_league == league && p.d_starts > 0)
+    out.sort(bool(Person a, Person b): return driver_ahead(a, b))
+    return out
+
+bool driver_ahead(Person a, Person b):
+    if a.d_points != b.d_points:
+        return a.d_points > b.d_points
+    if a.d_wins != b.d_wins:
+        return a.d_wins > b.d_wins
+    if a.d_podiums != b.d_podiums:
+        return a.d_podiums > b.d_podiums
+    int fa = a.d_best if a.d_best > 0 else 99
+    int fb = b.d_best if b.d_best > 0 else 99
+    if fa != fb:
+        return fa < fb
+    return a.id < b.id
+
+// A pilot's place in the drivers' championship (0 none).
+int driver_position(Person p):
+    if p.id == 0 || p.role != 0:
+        return 0
+    []Person tab = drivers_table(p.d_league)
+    for k in 0..<tab.len():
+        if tab[k].id == p.id:
+            return k + 1
+    return 0
+
+Team mine():
+    return team_by_id[player_team] if player_team != 0 && team_by_id.has(player_team) else Team()
+
+bool has_team():
+    return player_team != 0 && team_by_id.has(player_team)
+
+Sponsor sponsor(string name):
+    for s in sponsors:
+        if s.name == name:
+            return s
+    return Sponsor()
+
+[]Deal deals_of(int team):
+    return deals.filter(bool(Deal d): return d.team == team && !d.offer)
+
+// Days into the world, its week, the day of the week and the week of the season.
+int week():
+    return (day - start_day) / 7 if day >= start_day else -1
+
+int weekday():
+    return (day - start_day) % 7 if day >= start_day else -1
+
+int season_week():
+    int w = week()
+    return w % WEEKS if w >= 0 else -1
+
+// The round the league runs this week (0 .. ROUNDS - 1), or -1 in the off-season.
+int round_now():
+    int sw = season_week()
+    return sw if sw >= 0 && sw < ROUNDS else -1
+
+// Rounds of the season run so far in a league.
+int rounds_run(int league):
+    int sw = season_week()
+    if sw < 0:
+        return 0
+    if sw >= ROUNDS:
+        return ROUNDS
+    return sw + (1 if weekday() > league else 0)
+
+// The day a league's round runs.
+int round_day(int league, int round):
+    int w = week()
+    int season_start = start_day + 7 * (w - (w % WEEKS)) if w >= 0 else start_day
+    return season_start + 7 * round + league
+
+bool off_season():
+    return season_week() >= ROUNDS
+
+// ---- The day ----
+
+void advance(int today):
+    if today <= day:
+        return
+    int from = day + 1
+    // A long gap (a mission that skips months) plays out at most a season's days.
+    if today - from > 7 * WEEKS:
+        from = today - 7 * WEEKS
+    for d in from..=today:
+        one_day(d)
+    day = today
+
+void one_day(int d):
+    day = d
+    staff.memo_day = d
+    if d < start_day:
+        return
+    int w = week()
+    int wd = weekday()
+    int sw = w % WEEKS
+    // The off-season's weeks have no races: their first three days carry the
+    // season's turn. The season ends on the first day after its last round; the
+    // next begins in the last week (rules, moves, calendar), then contracts
+    // run out, then empty seats are filled, before its first round.
+    if sw == ROUNDS && wd == 0:
+        end_season()
+    if sw < ROUNDS && wd <= 2:
+        race_day(wd, sw)
+    if sw == WEEKS - 1 && wd == 0:
+        new_season(w / WEEKS + 2)
+    if sw == WEEKS - 1 && wd == 1:
+        staff.new_season(self)
+    if sw == WEEKS - 1 && wd == 2:
+        staff.fill_all(self)
+    if wd == 3:
+        money_day()
+    if wd == 4:
+        rd_day()
+    if wd == 5:
+        staff.week(self)
+    if wd == 6:
+        sponsoring.week(self)
+    events.daily(self)
+    sponsoring.flush_payments(self)
+
+// ---- Races ----
+
+void race_day(int league, int round):
+    bool player_here = has_team() && mine().league == league
+    Result r = race.run(self, league, round, player_here)
+    last[league] = r
+    if player_here:
+        story = r.story
+    float pool = RACE_POOL * scale[league]
+    // Each car: its prize, its points (the teams' championship adds both
+    // cars'), its pilot's drivers' championship. A team's race is its best
+    // car's place among the teams (Team.finishes; sponsors read it).
+    []int seen = []
+    for k in 0..<r.order.len():
+        Team t = team(r.order[k])
+        int status = r.status[k]
+        float prize = pool * (car_shares[k] if k < car_shares.len() else 0.0)
+        r.prizes.append(prize)
+        earn(t, prize)
+        t.points += r.points[k]
+        if !seen.contains(t.id):
+            seen.append(t.id)
+            t.races += 1
+            t.life[t.L_RACES] += 1
+            t.finishes.append(seen.len())
+            t.form = 0.0
+            if k < 3 && status == 0:
+                sponsoring.podium(self, t, k == 0)
+        if k == 0:
+            t.wins += 1
+            t.life[t.L_WINS] += 1
+        if k < 3 && status == 0:
+            t.podiums += 1
+            t.life[t.L_PODIUMS] += 1
+            recover(t, REVIVE_PODIUM)
+        if status != 0:
+            t.dnfs += 1
+        if status == 2:
+            float repair = REPAIR * scale[league] * rng.between(0.5, 1.5)
+            spend(t, repair)
+            if t.player:
+                Person who = person(r.pilot_at(k))
+                player_events.append("Racing: " + (who.name + "'s" if who.id != 0 else "the stand-in's") + " car was wrecked at the " + names.circuit_titles[r.circuit] + "; repairs cost " + fmt.credits(repair) + " credits.")
+        driver_result(r, k)
+    for t in league_teams(league):
+        []int ks = r.indices_of(t.id)
+        if ks.len() > 0:
+            staff.race_record(self, t, r, ks)
+            lore.race(self, t, r, ks)
+            head_to_head(r, ks)
+    stale()
+    book.race_run(self, r)
+    Team winner = team(r.order[0]) if r.order.len() > 0 else Team()
+    string line = names.league_names[league] + ", round " + string(round + 1) + ", " + names.circuit_titles[r.circuit] + ": " + winner.name + " wins"
+    Person wp = person(r.pilot_at(0))
+    if wp.id != 0:
+        line = line + " (" + wp.name + ")"
+    note(league, line + ".")
+    if player_here:
+        Team me = mine()
+        []int ks = r.indices_of(me.id)
+        []string cars = []
+        int pts = 0
+        float money = 0.0
+        for k in ks:
+            Person d = person(r.pilot_at(k))
+            string how = "P" + string(k + 1) if r.status[k] == 0 else Result().status_names[r.status[k]]
+            cars.append(how + " (" + (d.name if d.id != 0 else "the stand-in") + ")")
+            pts += r.points[k]
+            money += r.prizes[k]
+        int pos = r.position_of(me.id)
+        player_events.append("Racing: " + me.name + " at the " + names.circuit_titles[r.circuit] + ": " + cars.join(" and ") + ", " + string(pts) + " points, " + fmt.credits(money) + " credits in prize money. " + string(position(me)) + names.ordinal_suffix(position(me)) + " in the " + names.league_names[league] + " teams' championship.")
+        outbox.append("racing.result\t{\"team\":" + json(me.name) + ",\"league\":\"" + names.league_short[league] + "\",\"round\":" + string(round + 1) + ",\"position\":" + string(pos) + ",\"circuit\":" + json(names.circuit_systems[r.circuit]) + "}")
+
+// A car's result in its pilot's drivers' championship (a pilot who moves
+// league mid-season starts the new league's tally afresh).
+void driver_result(Result r, int k):
+    int id = r.pilot_at(k)
+    if id == 0 || !person_by_id.has(id):
+        return
+    Person p = person_by_id[id]
+    if p.d_season != season || p.d_league != r.league:
+        p.d_season = season
+        p.d_league = r.league
+        p.d_points = 0
+        p.d_wins = 0
+        p.d_podiums = 0
+        p.d_starts = 0
+        p.d_best = 0
+    bool fin = r.status[k] == 0
+    p.d_starts += 1
+    p.d_points += r.points[k]
+    if fin && k == 0:
+        p.d_wins += 1
+    if fin && k < 3:
+        p.d_podiums += 1
+    if fin && (p.d_best == 0 || k + 1 < p.d_best):
+        p.d_best = k + 1
+
+void mate(Person p, int other):
+    if p.h_mate != other:
+        p.h_mate = other
+        p.h_n = 0
+        p.h_quali = 0
+        p.h_race = 0
+    p.h_n += 1
+
+// Teammates against each other this season: on the grid and at the flag.
+void head_to_head(Result r, []int ks):
+    if ks.len() < 2:
+        return
+    int ia = r.pilot_at(ks[0])
+    int ib = r.pilot_at(ks[1])
+    if ia == 0 || ib == 0 || !person_by_id.has(ia) || !person_by_id.has(ib):
+        return
+    Person a = person_by_id[ia]
+    Person b = person_by_id[ib]
+    mate(a, ib)
+    mate(b, ia)
+    // ks[0] is the car ahead at the flag (the classification's order).
+    a.h_race += 1
+    if r.grid[ks[0]] < r.grid[ks[1]]:
+        a.h_quali += 1
+    else:
+        b.h_quali += 1
+
+void earn(Team t, float amount):
+    t.cash += amount
+    t.week_in += amount
+
+void spend(Team t, float amount):
+    t.cash -= amount
+    t.week_out += amount
+
+// ---- Money (weekday 3) ----
+
+void money_day():
+    for t in teams.copy():
+        float sal = 0.0
+        for s in 0..<SEATS:
+            if t.seats[s] != 0:
+                sal += person(t.seats[s]).salary
+        spend(t, sal)
+        spend(t, RUNNING[t.league] * (0.5 if off_season() else 1.0))
+        if t.cash < 0.0:
+            spend(t, -t.cash * INTEREST)
+        sponsoring.pay(self, t)
+        if !t.player:
+            earn(t, t.backing)
+            ai_budget(t)
+            if t.cash < -OVERDRAFT * franchise[t.league]:
+                bankrupt(t, BANKRUPT)
+        else:
+            player_week(t)
+
+// What an AI team gives R&D this week: its development rate of what comes in
+// (backing, sponsors, its share of prize money on average), less salaries;
+// more when rich, little in the red.
+void ai_budget(Team t):
+    float income = t.backing + sponsoring.weekly(self, t) + RACE_POOL * scale[t.league] * 0.1
+    float sal = 0.0
+    for s in 0..<SEATS:
+        if t.seats[s] != 0:
+            sal += person(t.seats[s]).salary
+    float total = t.dev_rate * income - sal * AI_SALARY
+    float reserve = 0.08 * franchise[t.league]
+    if t.cash > reserve:
+        total += (t.cash - reserve) * 0.02
+    if t.cash < 0.0:
+        total *= 0.6
+    // Owners take profits out of a rich team.
+    if t.cash > 2.0 * reserve:
+        t.cash -= (t.cash - 2.0 * reserve) * 0.05
+    total = total if total > 0.0 else 0.0
+    []float split = [0.25, 0.25, 0.2, 0.15, 0.15]
+    for d in 0..<5:
+        t.budgets[d] = total * split[d]
+
+void player_week(Team t):
+    ledger.append(string(day) + "\t" + string(int(t.week_in)) + "\t" + string(int(t.week_out)) + "\t" + string(int(t.cash)))
+    for ledger.len() > 26:
+        ledger.remove_at(0)
+    t.week_in = 0.0
+    t.week_out = 0.0
+    float limit = OVERDRAFT * franchise[t.league]
+    if t.cash < -limit:
+        t.debt_weeks += 1
+        if t.debt_weeks >= 2:
+            forced_sale(t)
+            return
+        player_events.append("Racing: " + t.name + " is " + fmt.credits(-t.cash) + " credits overdrawn, past its limit of " + fmt.credits(limit) + ". Pay it down this week or the league forces a sale.")
+    else if t.cash < -WARN * franchise[t.league]:
+        t.debt_weeks = 0
+        player_events.append("Racing: " + t.name + " is " + fmt.credits(-t.cash) + " credits overdrawn (the league forces a sale past " + fmt.credits(limit) + ").")
+    else:
+        t.debt_weeks = 0
+
+void bankrupt(Team t, int fate):
+    if fate == BANKRUPT:
+        note(t.league, t.name + " goes bankrupt; new owners take over its place in the " + names.league_names[t.league] + ".")
+    outbox.append("racing.bankrupt\t{\"team\":" + json(t.name) + ",\"league\":\"" + names.league_short[t.league] + "\"}")
+    Team n = replace_team(t, fate)
+    note(n.league, t.name + " is defunct after " + seasons_text(season - t.born + 1) + "; a new team, " + n.name + ", takes its place in the " + names.league_names[n.league] + ".")
+
+// A team leaves the league; a new AI team takes its slot, its points and its
+// results (so the table still adds up), with a weaker car.
+Team replace_team(Team t, int fate):
+    book.team_gone(self, t)
+    to_archive(t, fate)
+    Team n = add_ai_team(t.league, false)
+    n.points = t.points
+    n.wins = t.wins
+    n.podiums = t.podiums
+    n.races = t.races
+    n.dnfs = t.dnfs
+    n.finishes = t.finishes
+    n.protect = t.protect
+    for l in 0..<3:
+        for k in 0..<finals[l].len():
+            if finals[l][k] == t.id:
+                finals[l][k] = n.id
+    for s in 0..<SEATS:
+        if t.seats[s] != 0:
+            staff.release(self, person(t.seats[s]), false)
+    deals = deals.filter(bool(Deal d): return d.team != t.id)
+    remove_team(t)
+    staff.fill_seats(self, n)
+    sponsoring.ai_deals(self, n)
+    return n
+
+void remove_team(Team t):
+    stale()
+    teams = teams.filter(bool(Team x): return x.id != t.id)
+    team_by_id.delete(t.id)
+
+// ---- R&D (weekday 4) ----
+
+void rd_day():
+    for t in teams:
+        Person ro = seat(t, 2)
+        float eff = 1.0 + 0.35 * ro.skill + 0.1 * rng.gauss() * (1.0 - 0.5 * ro.trait)
+        if lore.has(ro, lore.BREAKTHROUGH):
+            eff += lore.YIELD
+        eff = eff if eff > 0.3 else 0.3
+        float yield = eff * t.org
+        float spent = 0.0
+        for d in 0..<5:
+            float b = t.budgets[d]
+            b = b if b > 0.0 else 0.0
+            if t.player && t.cash - b < -OVERDRAFT * franchise[t.league]:
+                b = 0.0
+            spent += b
+            float sim = 1.0 + (t.levels[4] - REG_BASE) / SIM_BOOST if d < 4 else 1.0
+            float g = DEV_K * float(globalThis.Math.sqrt(b / 1000.0)) * yield * sim / (1.0 + t.levels[d] / SOFT)
+            t.gains[d] = g
+            t.levels[d] = t.levels[d] + g
+        spend(t, spent)
+        if spent > 0.0:
+            staff.observe(ro, eff, (eff - 1.0) / 0.35)
+            lore.research(self, t, ro, eff)
+
+// ---- Seasons ----
+
+void end_season():
+    finals_season = season
+    for l in 0..<3:
+        []Team tab = table(l)
+        []int ids = []
+        float pool = CHAMP_POOL * scale[l]
+        for k in 0..<tab.len():
+            Team t = tab[k]
+            ids.append(t.id)
+            t.last_pos = k + 1
+            t.last_league = l
+            t.history = t.history + ("," if t.history != "" else "") + string(season) + ":" + names.league_short[l] + ":" + string(k + 1)
+            t.life[t.L_SEASONS + l] += 1
+            recover(t, REVIVE_SEASON)
+            earn(t, pool * (shares[k] if k < shares.len() else 0.0))
+            if t.player:
+                player_events.append("Racing: the season is over. " + t.name + " finished " + string(k + 1) + names.ordinal_suffix(k + 1) + " in the " + names.league_names[l] + " teams' championship and is paid " + fmt.credits(pool * (shares[k] if k < shares.len() else 0.0)) + " credits from the championship pool.")
+        finals[l] = ids
+        // The drivers' champion: the title is the pilot's (Lore keeps it).
+        []Person drivers = drivers_table(l)
+        Person dc = drivers[0] if drivers.len() > 0 else stand_in
+        book.season_end(self, l, tab, dc)
+        if dc.id != 0:
+            dc.titles += 1
+            if dc.team != 0 && team_by_id.has(dc.team):
+                team(dc.team).life[Team().L_DRIVERS] += 1
+            lore.driver_title(self, team(dc.team), dc, l)
+            note(l, dc.name + " is the " + names.league_names[l] + " drivers' champion of season " + string(season) + (" with " + team(dc.team).name if dc.team != 0 else "") + ", on " + string(dc.d_points) + " points.")
+        for t in tab:
+            if t.player:
+                []string yours = []
+                for st in [0, SECOND]:
+                    Person p = seat(t, st)
+                    if p.id != 0 && driver_position(p) > 0:
+                        yours.append(p.name + " " + string(driver_position(p)) + names.ordinal_suffix(driver_position(p)))
+                if yours.len() > 0:
+                    player_events.append("Racing: in the " + names.league_names[l] + " drivers' championship, " + (dc.name if dc.id != 0 else "nobody") + " is champion; yours: " + yours.join(", ") + ".")
+        // The teams' champion: the team's title, and its crew's; its pilots
+        // keep it in their history.
+        if tab.len() > 0:
+            Team champ = tab[0]
+            champ.titles += 1
+            champ.life[champ.L_TITLE + l] += 1
+            for s in 0..<SEATS:
+                if champ.seats[s] != 0:
+                    Person cp = person(champ.seats[s])
+                    if cp.role != 0:
+                        cp.titles += 1
+                    lore.title(self, champ, cp, l)
+            note(l, champ.name + " are " + names.league_names[l] + " teams' champions of season " + string(season) + ".")
+            outbox.append("racing.champion\t{\"team\":" + json(champ.name) + ",\"league\":\"" + names.league_short[l] + "\",\"season\":" + string(season) + ",\"driver\":" + json(dc.name if dc.id != 0 else "") + ",\"driver_team\":" + json(team(dc.team).name if dc.id != 0 && dc.team != 0 else "") + "}")
+        // Teammates' season against each other (Lore).
+        for t in tab:
+            lore.teammates(self, t, seat(t, 0), seat(t, SECOND))
+    sponsoring.season_end(self)
+    for t in teams:
+        value.close_season(self, t)
+    // Owners in the red two seasons running give up.
+    for t in teams.copy():
+        if t.player:
+            continue
+        t.red_seasons = t.red_seasons + 1 if t.cash < 0.0 else 0
+        if t.red_seasons >= 2 || (t.cash < 0.0 && rng.chance(FOLD)):
+            note(t.league, t.name + "'s owners give up on a team in the red.")
+            bankrupt(t, GAVE_UP)
+    // Last in its league, an AI team now and then rebrands (its own dice).
+    for l in 0..<3:
+        []Team last_tab = table(l)
+        if last_tab.len() > 0:
+            Team last_t = last_tab[last_tab.len() - 1]
+            if !last_t.player:
+                Rng r = dice(last_t, 3)
+                if r.chance(REBRAND_LAST):
+                    rename(last_t, names.team(r, used_names()), REBRAND)
+    cull()
+
+// Who goes up and down from last season's tables (finals, of season
+// finals_season): from the B and A Leagues the top eligible teams (an
+// ineligible one is passed over and the next eligible goes instead), at most
+// MOVE; from the A and S Leagues as many as go up from the league below, the
+// bottom ones not spared (a team new to its league this season is spared,
+// and the next one up goes instead). No eligible team below: nobody goes
+// down. So every league keeps its size.
+[]int movers(int league, bool up):
+    []int out = []
+    []int tab = finals[league]
+    int n = promotions(league, finals_season) if up else (promotions(league - 1, finals_season) if league > 0 else 0)
+    if up:
+        for k in 0..<tab.len():
+            if out.len() < n && team_by_id.has(tab[k]) && eligible(team_by_id[tab[k]], finals_season):
+                out.append(tab[k])
+    else:
+        for k in 0..<tab.len():
+            int id = tab[tab.len() - 1 - k]
+            if out.len() < n && team_by_id.has(id) && !team_by_id[id].protect:
+                out.append(id)
+    return out
+
+// The first season a team joining a league now plays wholly in it: this one
+// if the league has not raced yet this season, else the next.
+int first_full_season(int league):
+    if finals_season == season:
+        return season + 1
+    int sw = season_week()
+    if sw < 0 || sw >= ROUNDS || rounds_run(league) == 0:
+        return season
+    return season + 1
+
+// May a team go up at the end of season `at`: it came down into its league
+// (a rebound), or `at` is at least its PROMO_SEASONS-th season there in a row.
+bool eligible(Team t, int at):
+    return t.rebound || at - t.since + 1 >= PROMO_SEASONS
+
+// The first season at whose end the team may go up (0: it may now, a rebound).
+int eligible_from(Team t):
+    return 0 if t.rebound else t.since + PROMO_SEASONS - 1
+
+// Where a team stands for promotion, told (the Standings, the Team tab).
+string promotion_text(Team t):
+    if t.league >= 2:
+        return ""
+    if t.rebound:
+        return "It came down into the " + names.league_names[t.league] + ", so it may go straight back up."
+    int nth = season - t.since + 1
+    string s = "Its " + (string(nth) + names.ordinal_suffix(nth) + " season" if nth >= 1 else "first season (from season " + string(t.since) + ")") + " in a row in the " + names.league_names[t.league] + ": "
+    if eligible(t, season):
+        return s + "eligible for promotion."
+    return s + "eligible for promotion from the end of season " + string(eligible_from(t)) + " (" + string(PROMO_SEASONS) + " seasons in a row, or at once after relegation)."
+
+// How many teams go up from a league at the end of season `at` (and so how
+// many come down from the league above): its eligible teams, at most MOVE,
+// and no more than the league above has teams not spared.
+int promotions(int league, int at):
+    if league < 0 || league >= 2:
+        return 0
+    int e = 0
+    for t in league_teams(league):
+        if eligible(t, at):
+            e += 1
+    int room = 0
+    for t in league_teams(league + 1):
+        if !t.protect:
+            room += 1
+    int n = MOVE if MOVE < e else e
+    return n if n < room else room
+
+// The season's turn, told: the top MOVE passed over as not yet eligible, and
+// the bottom MOVE of the league above who stay up for want of challengers.
+void promotion_notes(int league, []int ups, []int downs):
+    []int tab = finals[league]
+    for k in 0..<tab.len():
+        if k >= MOVE:
+            break
+        int id = tab[k]
+        if !team_by_id.has(id) || ups.contains(id):
+            continue
+        Team t = team_by_id[id]
+        int nth = finals_season - t.since + 1
+        string what = (" won the " if k == 0 else " finished " + string(k + 1) + names.ordinal_suffix(k + 1) + " in the ") + names.league_names[league] + " but is not yet eligible for promotion (" + string(nth) + names.ordinal_suffix(nth) + " season there of the " + string(PROMO_SEASONS) + " it needs)"
+        note(league, t.name + what + "." + (" The title is theirs all the same." if k == 0 else ""))
+        if t.player:
+            player_events.append("Racing: " + t.name + what + ". " + ("The title and the championship pool are yours all the same. " if k == 0 else "") + "It may go up from the end of season " + string(eligible_from(t)) + ".")
+    if league + 1 > 2 || downs.len() >= MOVE:
+        return
+    []int above = finals[league + 1]
+    []string kept = []
+    int seen = 0
+    for k in 0..<above.len():
+        int id = above[above.len() - 1 - k]
+        if seen >= MOVE || !team_by_id.has(id) || team_by_id[id].protect:
+            continue
+        seen += 1
+        if downs.contains(id):
+            continue
+        Team t = team_by_id[id]
+        kept.append(t.name)
+        if t.player:
+            player_events.append("Racing: " + t.name + " finished in the " + names.league_names[league + 1] + "'s relegation zone, but " + ("no " + names.league_names[league] + " team was" if ups.len() == 0 else "only " + string(ups.len()) + " " + names.league_names[league] + " team was") + " eligible for promotion: you stay up.")
+    if kept.len() > 0:
+        note(league + 1, ("No " if ups.len() == 0 else "Only " + string(ups.len()) + " ") + names.league_names[league] + " team" + (" was" if ups.len() < 2 else "s were") + " eligible for promotion, so " + kept.join(" and ") + " stay" + ("s" if kept.len() == 1 else "") + " in the " + names.league_names[league + 1] + ".")
+
+void new_season(int number):
+    season = number
+    stale()
+    book.sweep(self)
+    // Promotion and relegation from last season's final tables.
+    []int up_b = movers(0, true)
+    []int down_a = movers(1, false)
+    []int up_a = movers(1, true)
+    []int down_s = movers(2, false)
+    // A team cannot both go up from A and down from A.
+    up_a = up_a.filter(bool(int id): return !down_a.contains(id))
+    promotion_notes(0, up_b, down_a)
+    promotion_notes(1, up_a, down_s)
+    for id in up_b:
+        move(team(id), 1, true)
+    for id in down_a:
+        move(team(id), 0, false)
+    for id in up_a:
+        move(team(id), 2, true)
+    for id in down_s:
+        move(team(id), 1, false)
+    // Regulations: every car keeps part of its edge; one department loses more.
+    reg_dept = rng.range(0, 3)
+    for t in teams:
+        for d in 0..<5:
+            float keep = REG_HIT if d == reg_dept else KEEP
+            t.levels[d] = REG_BASE + (t.levels[d] - REG_BASE) * keep
+        t.new_season()
+        float fee = ENTRY_FEE * franchise[t.league]
+        spend(t, fee)
+        if t.player:
+            player_events.append("Racing: season " + string(season) + " begins. The " + names.league_names[t.league] + " entry fee is " + fmt.credits(fee) + " credits. New regulations hit " + names.dept_names[reg_dept].to_lower() + " hardest.")
+        else:
+            t.backing = t.backing * rng.between(0.85, 1.2)
+            if rng.chance(OWNER_QUIT):
+                t.backing = t.backing * 0.3
+                note(t.league, t.name + "'s owners cut their funding.")
+    note(-1, "Season " + string(season) + " begins. New regulations reset much of the cars' " + names.dept_names[reg_dept].to_lower() + ".")
+    make_calendar()
+
+void move(Team t, int to, bool up):
+    if t.id == 0:
+        return
+    stale()
+    int from = t.league
+    t.league = to
+    // A new league: its seasons there count from this one; come down, it may
+    // go straight back up.
+    t.since = season
+    t.rebound = !up
+    if up:
+        float grant = PROMOTION_GRANT * franchise[to]
+        earn(t, grant)
+        t.life[t.L_PROMOTIONS] += 1
+        for s in 0..<SEATS:
+            if t.seats[s] != 0:
+                lore.promoted(self, t, person(t.seats[s]), to, season - 1)
+        note(-1, t.name + " are promoted to the " + names.league_names[to] + ".")
+        if t.player:
+            player_events.append("Racing: " + t.name + " is promoted to the " + names.league_names[to] + "! The league pays a promotion grant of " + fmt.credits(grant) + " credits.")
+        else:
+            t.backing = t.backing * scale[to] / scale[from] * 0.7
+    else:
+        float chute = PARACHUTE * franchise[from]
+        earn(t, chute)
+        note(-1, t.name + " are relegated to the " + names.league_names[to] + ".")
+        if t.player:
+            player_events.append("Racing: " + t.name + " is relegated to the " + names.league_names[to] + ". A parachute payment of " + fmt.credits(chute) + " credits softens the blow.")
+        else:
+            t.backing = t.backing * scale[to] / scale[from] * 1.2
+            // Relegation ruins some owners (most often from the S League).
+            if rng.chance(FOLD if from == 2 else FOLD / 2.0):
+                note(to, t.name + "'s owners cannot face relegation and sell up.")
+                bankrupt(t, SOLD_UP)
+
+// ---- The player's team ----
+
+// What the team would sell for now (Value): its assets (the franchise slot
+// and its cash, less any overdraft), plus premiums for its standings, its
+// marketability and its prestige; a forced sale pays the assets only.
+float sale_value(Team t, bool forced):
+    return value.sale_value(self, t, forced)
+
+// Why a team's owners will not sell it to the player ("" they will): the
+// player's own, or the leader of a title race under way.
+string not_for_sale(Team t):
+    if t.id == 0:
+        return "There is no such team."
+    if t.player:
+        return "It is your team."
+    if round_now() >= 0 && t.races >= LEADS_AFTER && position(t) == 1:
+        return "Its owners will not sell while it leads the " + names.league_names[t.league] + "."
+    return ""
+
+// What the owners ask: its value and a willing seller's premium (more for a
+// champion or the leader), at least MARKUP_MIN of the franchise, never less
+// than ASK_FLOOR of it. Selling it again at once always loses the premium.
+float premium_share(Team t):
+    bool champ = (t.last_pos == 1 && t.last_league == t.league) || (t.races >= LEADS_AFTER && position(t) == 1)
+    return MARKUP + (CHAMP_MARKUP if champ else 0.0)
+
+float asking_price(Team t):
+    float v = sale_value(t, false)
+    float f = franchise[t.league]
+    float least = MARKUP_MIN * f
+    float prem = premium_share(t) * v
+    float ask = v + (prem if prem > least else least)
+    ask = ask if ask > ASK_FLOOR * f else ASK_FLOOR * f
+    int k = globalThis.Math.ceil(ask / 1000.0)
+    return float(k) * 1000.0
+
+// The teams the player could buy, cheapest first (a league's, or all: -1).
+[]Team for_sale(int league):
+    []Team out = teams.filter(bool(Team t): return (league < 0 || t.league == league) && not_for_sale(t) == "")
+    out.sort(bool(Team a, Team b): return asking_price(a) < asking_price(b))
+    return out
+
+// The player buys a team as it is: its name, place, car, staff on their
+// contracts, cash and debts, sponsors and record; its owners leave. The
+// player's team runs at full organisation (Team.org 1). Bets on its league
+// are void (Book.owner). Answers the team (none when it is not for sale).
+Team buy(int id, string planet):
+    Team t = team(id)
+    if has_team() || not_for_sale(t) != "":
+        return Team()
+    note(t.league, t.name + "'s owners sell the team to a new owner.")
+    take_over(t, planet)
+    sponsoring.take_over(self, t)
+    return t
+
+void take_over(Team t, string planet):
+    t.player = true
+    t.org = 1.0
+    t.hq = planet
+    t.founded = day
+    t.debt_weeks = 0
+    t.red_seasons = 0
+    t.week_in = 0.0
+    t.week_out = 0.0
+    ledger = []
+    incidents = []
+    player_team = t.id
+    stale()
+    book.owner(self, t.league)
+    outbox.append("racing.sponsors_wanted\t" + sponsoring.wanted(self))
+
+// ---- Reviving a defunct team ----
+
+// The player's reserved place: free while no revived team holds it.
+bool reserved_free():
+    return revived_team == 0 || !team_by_id.has(revived_team)
+
+Team archived(int id):
+    for a in archive:
+        if a.id == id:
+            return a
+    return Team()
+
+// Why a defunct team cannot be revived now ("" it can).
+string not_revivable(Team a):
+    if a.id == 0:
+        return "There is no such team in the archive."
+    if has_team():
+        return "You own a team: sell it first."
+    if !reserved_free():
+        return "Your reserved place in the " + names.league_names[0] + " is taken until the season's end."
+    if a.fate == CULLED && a.died == season:
+        return "It left the league this season."
+    return ""
+
+// The price of a revival: the place on the grid (SALE of the B franchise,
+// as any team's assets count it), the first cash, and the brand (the
+// prestige it comes back with, REVIVE_SHARE of its old, as a team's value
+// counts it), with the seller's MARKUP. Selling at once loses the markup.
+float brand_price(Team a):
+    return value.prestige_value(self, 0, prestige_of(a, a.died) * REVIVE_SHARE)
+
+float revive_price(Team a):
+    float f = franchise[0]
+    float base = SALE * f + REVIVE_CASH * f + brand_price(a)
+    float least = MARKUP_MIN * f
+    float prem = MARKUP * base
+    int k = globalThis.Math.ceil((base + (prem if prem > least else least)) / 1000.0)
+    return float(k) * 1000.0
+
+// The player revives a defunct team in the reserved place of the B League:
+// its id, name, name history, born, record and some of its prestige come
+// back, with a weaker car (as a new team's), stand-ins in every seat, and
+// REVIVE_CASH of the franchise. It races from the next round, spared
+// relegation this season.
+Team revive(int id, string planet):
+    Team a = archived(id)
+    if not_revivable(a) != "":
+        return Team()
+    archive = archive.filter(bool(Team x): return x.id != id)
+    Team t = Team()
+    t.id = a.id
+    t.name = a.name
+    t.league = 0
+    t.born = a.born
+    t.life = a.life.copy()
+    t.names_log = a.names_log
+    t.titles = a.life_titles()
+    int gap = season - a.died
+    t.revival = REVIVE_SHARE
+    t.cash = REVIVE_CASH * franchise[0]
+    t.backing = backing_base[0]
+    float lift = rng.between(0.75, 0.95)
+    for d in 0..<5:
+        t.levels[d] = start_level[0] * lift * rng.between(0.9, 1.1)
+    t.protect = true
+    t.since = first_full_season(0)
+    t.rebound = false
+    t.approach = 1
+    t.races = 0
+    log_name(t, REVIVED)
+    teams.append(t)
+    team_by_id[t.id] = t
+    revived_team = t.id
+    take_over(t, planet)
+    note(-1, "After " + seasons_text(gap) + " in the archive, " + t.name + " returns to the grid in the " + names.league_names[0] + ", revived by a new owner.")
+    sponsoring.offers(self, t, 2)
+    return t
+
+// For missions and other code: a defunct team made by hand (a family's old
+// team, say), put in the archive, its record as Team.life (LIFE numbers)
+// and its last season `died`. revive(id, planet) brings it back like any
+// other (the office's price is the office's: from code it costs nothing).
+Team add_legacy(string name, int born, int died, []int record):
+    Team a = Team()
+    if name_problem(name, 0) != "":
+        return a
+    a.id = next_team
+    next_team += 1
+    a.name = clean_name(name)
+    a.born = born
+    a.died = died
+    a.fate = GAVE_UP
+    for k in 0..<record.len():
+        if k < a.LIFE:
+            a.life[k] = record[k]
+    a.names_log = string(born) + ":0:" + string(FOUNDED) + ":" + a.name
+    log_name(a, DEFUNCT)
+    archive.append(a)
+    return a
+
+// The season's end: a revived team the player no longer owns leaves the B
+// League one too many, and its last team goes defunct (the revived team
+// itself, if it is last), freeing the reserved place.
+void cull():
+    if revived_team == 0 || (has_team() && player_team == revived_team && team_by_id.has(revived_team)):
+        return
+    revived_team = 0
+    if size(0) <= TEAMS:
+        return
+    []Team tab = table(0)
+    Team last_t = tab[tab.len() - 1]
+    if last_t.player:
+        last_t = tab[tab.len() - 2]
+    note(0, last_t.name + ", last in the " + names.league_names[0] + ", folds as the league goes back to " + string(TEAMS) + " teams.")
+    book.team_gone(self, last_t)
+    to_archive(last_t, CULLED)
+    for l in 0..<3:
+        finals[l] = finals[l].filter(bool(int x): return x != last_t.id)
+    for s in 0..<SEATS:
+        if last_t.seats[s] != 0:
+            staff.release(self, person(last_t.seats[s]), false)
+    deals = deals.filter(bool(Deal d): return d.team != last_t.id)
+    remove_team(last_t)
+
+// ---- The archive ----
+
+// A team goes defunct: it is kept with its record and names (the last
+// ARCHIVE, and every champion for good).
+void to_archive(Team t, int fate):
+    Team a = Team()
+    a.id = t.id
+    a.name = t.name
+    a.league = t.league
+    a.born = t.born
+    a.life = t.life.copy()
+    a.names_log = t.names_log
+    a.died = season
+    a.fate = fate
+    log_name(a, DEFUNCT)
+    archive.append(a)
+    int plain = 0
+    for x in archive:
+        if x.life_titles() == 0:
+            plain += 1
+    if plain > ARCHIVE:
+        for k in 0..<archive.len():
+            if archive[k].life_titles() == 0:
+                archive.remove_at(k)
+                break
+
+// ---- Prestige ----
+
+// A team's prestige (0 .. 100) by its age and lifetime record at a season
+// (Team.revival of it for a revived team): AGE_PTS x (1 - e^(-age /
+// AGE_SCALE)) + TROPHY_PTS x X / (X + TROPHY_HALF), X the record's points:
+// teams' titles 3, 6, 12 (B, A, S), drivers' titles 3, wins 0.25, podiums
+// 0.04, promotions 1, seasons in the A League 0.05 and the S League 0.15.
+float prestige_of(Team t, int at):
+    float age = float(at - t.born)
+    age = age if age > 0.0 else 0.0
+    float a = AGE_PTS * (1.0 - float(globalThis.Math.exp(-age / AGE_SCALE)))
+    []int l = t.life
+    float x = 3.0 * float(l[3]) + 6.0 * float(l[4]) + 12.0 * float(l[5]) + 3.0 * float(l[6]) + 0.25 * float(l[1]) + 0.04 * float(l[2]) + float(l[7]) + 0.05 * float(l[9]) + 0.15 * float(l[10])
+    return a + TROPHY_PTS * x / (x + TROPHY_HALF)
+
+float prestige(Team t):
+    if t.id == 0:
+        return 0.0
+    return prestige_of(t, season) * t.revival
+
+string prestige_label(float p):
+    if p < 12.0:
+        return "an upstart"
+    if p < 30.0:
+        return "established"
+    if p < 55.0:
+        return "storied"
+    return "legendary"
+
+// A revived team's prestige recovers with its results.
+void recover(Team t, float by):
+    if t.revival < 1.0:
+        t.revival = t.revival + by if t.revival + by < 1.0 else 1.0
+
+// The record as text: age, prestige, trophies.
+string record_text(Team t, int at):
+    []int l = t.life
+    float p = prestige_of(t, at) * t.revival
+    int age = at - t.born
+    string s = "Prestige " + string(int(globalThis.Math.round(p))) + " (" + prestige_label(p) + ")" + (", recovering: " + fmt.whole_percent(t.revival) + " of its old" if t.revival < 1.0 else "") + ". Age " + seasons_text(age if age > 0 else 0) + (" (it raced before the records began)" if t.born < 1 else "") + ". "
+    s = s + "Teams' titles " + string(t.life_titles()) + (" (B " + string(l[3]) + ", A " + string(l[4]) + ", S " + string(l[5]) + ")" if t.life_titles() > 0 else "") + ", drivers' titles " + string(l[6]) + ", " + string(l[1]) + " wins, " + string(l[2]) + " podiums in " + string(l[0]) + " races, " + string(l[7]) + " promotions; seasons B " + string(l[8]) + ", A " + string(l[9]) + ", S " + string(l[10]) + "."
+    return s
+
+// ---- Names ----
+
+string seasons_text(int n):
+    return string(n) + (" season" if n == 1 else " seasons")
+
+// A team's own dice for its renames and its age: seeded by the world's start,
+// the team, the season and the day, never the world's dice.
+Rng dice(Team t, int salt):
+    Rng r = Rng()
+    r.seed((start_day % 1000003) * 7919 + t.id * 104729 + season * 15485863 + (day % 100000) * 31337 + salt * 7727 + 11)
+    r.next()
+    return r
+
+// Names in use: every team's, and the archive's (a defunct team's name is
+// kept for its revival).
+[]string used_names():
+    []string out = []
+    for x in teams:
+        out.append(x.name)
+    for a in archive:
+        out.append(a.name)
+    return out
+
+// A name made safe: letters, digits, spaces and ' . & ! + ( ) / -, single
+// spaces, trimmed (nothing that breaks a saved line, a history entry or a
+// message).
+string clean_name(string raw):
+    any f = globalThis.Function("s", "return String(s).replace(/[^\\p{L}\\p{N} '.&!+()\\/-]/gu, ' ').replace(/\\s+/g, ' ').trim();")
+    string out = f(raw)
+    return out
+
+// Why a team cannot take a name ("" it can): empty, too long, another
+// team's (any case), or a defunct team's in the archive.
+string name_problem(string name, int id):
+    string n = clean_name(name)
+    if n == "":
+        return "A team needs a name."
+    if n.len() > NAME_MAX:
+        return "A team's name has at most " + string(NAME_MAX) + " characters."
+    string low = n.to_lower()
+    for x in teams:
+        if x.name.to_lower() == low:
+            return "That is its name already." if x.id == id else "Another team, " + x.name + ", races under that name."
+    for a in archive:
+        if a.name.to_lower() == low:
+            return "That name belongs to " + a.name + ", a defunct team in the archive."
+    return ""
+
+// The team takes a new name (why: RENAMED, NEW_OWNER, ...): its name history
+// keeps the old one; the news, the player, and other mods hear of it
+// ("racing.team_renamed" and a fresh "racing.sponsors_wanted"). Answers
+// whether it did.
+bool rename(Team t, string name, int why):
+    if t.id == 0 || name_problem(name, t.id) != "":
+        return false
+    string old = t.name
+    t.name = clean_name(name)
+    log_name(t, why)
+    book.cache_day = -1
+    note(t.league, old + " is now " + t.name + " (" + why_names[why] + ").")
+    if t.player && why != RENAMED:
+        player_events.append("Racing: your team " + old + " is now " + t.name + ".")
+    outbox.append("racing.team_renamed\t{\"from\":" + json(old) + ",\"to\":" + json(t.name) + ",\"league\":\"" + names.league_short[t.league] + "\",\"player\":" + ("true" if t.player else "false") + "}")
+    outbox.append("racing.sponsors_wanted\t" + sponsoring.wanted(self))
+    return true
+
+// Names the player might give the team: n from the generator (page by page,
+// from the team's dice), none in use.
+[]string name_ideas(Team t, int page, int n):
+    Rng r = Rng()
+    r.seed((start_day % 1000003) * 7919 + t.id * 104729 + page * 15485863 + 23)
+    []string used = used_names()
+    []string out = []
+    for k in 0..<n * 4:
+        if out.len() >= n:
+            break
+        string c = names.team(r, used)
+        if name_problem(c, t.id) == "" && !out.contains(c):
+            out.append(c)
+            used.append(c)
+    return out
+
+// A new AI title sponsor puts its name on a team now and then: its first
+// word before the team's name (before the last sponsor's, if it carried one).
+void sponsor_name(Team t, string sponsor):
+    if t.player:
+        return
+    Rng r = dice(t, 2)
+    if !r.chance(SPONSOR_RENAME):
+        return
+    string word = clean_name(sponsor)
+    if word.contains(" "):
+        word = word[0..<word.index_of(" ")]
+    if word.len() < 3:
+        return
+    string base = t.name
+    []string log = t.names_log.split(";") if t.names_log != "" else []
+    if log.len() >= 2 && entry_why(log[log.len() - 1]) == SPONSOR_NAME:
+        base = entry_name(log[log.len() - 2])
+    string n = word + " " + base
+    if n.len() > NAME_MAX:
+        n = word + " " + names.team_second[r.range(0, names.team_second.len() - 1)]
+    rename(t, n, SPONSOR_NAME)
+
+// The stamp of a name taken now: the rounds the league has run this season,
+// or ROUNDS + 1 once the season has ended.
+int name_stamp(int league):
+    return ROUNDS + 1 if finals_season == season else rounds_run(league)
+
+void log_name(Team t, int why):
+    []string parts = t.names_log.split(";") if t.names_log != "" else []
+    parts.append(string(t.died if why == DEFUNCT else season) + ":" + string(ROUNDS + 1 if why == DEFUNCT else name_stamp(t.league)) + ":" + string(why) + ":" + t.name)
+    for parts.len() > NAMES_MAX:
+        parts.remove_at(1)
+    t.names_log = parts.join(";")
+
+int entry_season(string e):
+    return e.split(":")[0].to_int()
+
+int entry_stamp(string e):
+    []string f = e.split(":")
+    return f[1].to_int() if f.len() > 1 else 0
+
+int entry_why(string e):
+    []string f = e.split(":")
+    return f[2].to_int() if f.len() > 2 else 0
+
+string entry_name(string e):
+    []string f = e.split(":")
+    if f.len() < 4:
+        return ""
+    []string rest = []
+    for k in 3..<f.len():
+        rest.append(f[k])
+    return rest.join(":")
+
+// The name a team raced under at a season's round (round -1: the season's
+// end), from its name history; a defunct team's from the archive.
+string team_name_at(int id, int season_at, int round):
+    Team t = team(id)
+    if t.id == 0:
+        t = archived(id)
+    if t.id == 0:
+        return ""
+    int at = season_at * 100 + (round if round >= 0 else ROUNDS)
+    string out = ""
+    if t.names_log != "":
+        for e in t.names_log.split(";"):
+            if out == "" || entry_season(e) * 100 + entry_stamp(e) <= at:
+                out = entry_name(e)
+    return out if out != "" else t.name
+
+// The name a team had before its last rename ("" none).
+string former_name(Team t):
+    []string log = t.names_log.split(";") if t.names_log != "" else []
+    for k in 0..<log.len():
+        int j = log.len() - 1 - k
+        string n = entry_name(log[j])
+        if n != t.name && entry_why(log[j]) != DEFUNCT:
+            return n
+    return ""
+
+// The name history as text: "Albedo Racing (seasons 1-6, founded) ->
+// Kestrel Racing (season 7 on, new owners)".
+string names_text(Team t):
+    if t.names_log == "":
+        return t.name
+    []string log = t.names_log.split(";")
+    []string out = []
+    for k in 0..<log.len():
+        string e = log[k]
+        int from = entry_season(e)
+        int why = entry_why(e)
+        int to = entry_season(log[k + 1]) if k + 1 < log.len() else -1
+        if why == DEFUNCT:
+            out.append("defunct from season " + string(from) + (" to " + string(to) if to >= 0 else ""))
+            continue
+        string span = ""
+        if to < 0:
+            span = "season " + string(from) + " on"
+        else if to > from:
+            span = "seasons " + string(from) + "-" + string(to)
+        else:
+            span = "season " + string(from)
+        out.append(entry_name(e) + " (" + span + ", " + why_names[why] + ")")
+    return out.join(" -> ")
+
+// The player sells the team (or the league forces it): new AI owners take it
+// over as it is, with money of their own, and often a new name. Answers what
+// the player was paid (negative: what they owe).
+float sell(bool forced):
+    Team t = mine()
+    if t.id == 0:
+        return 0.0
+    float value = sale_value(t, forced)
+    // The buyer takes over the team as it is, with its own money.
+    t.player = false
+    t.org = rng.between(AI_ORG, 1.0)
+    t.cash = franchise[t.league] * 0.1
+    t.backing = backing_base[t.league] * rng.between(0.7, 1.3)
+    t.dev_rate = rng.between(0.6, 0.9)
+    t.hq = ""
+    player_team = 0
+    deals = deals.filter(bool(Deal d): return !(d.team == t.id && d.offer))
+    incidents = []
+    for p in people:
+        if p.offer_team != 0:
+            p.offer_team = 0
+            p.offer_until = 0
+    note(t.league, t.name + " is sold to new owners.")
+    Rng r = dice(t, 1)
+    if r.chance(NEW_OWNER_RENAME):
+        rename(t, names.team(r, used_names()), NEW_OWNER)
+    outbox.append("racing.sponsors_wanted\t" + sponsoring.wanted(self))
+    return value
+
+void forced_sale(Team t):
+    float value = sell(true)
+    player_events.append("Racing: the league has forced the sale of your team for its debts, at a fire-sale price for the franchise less the overdraft (no premium for standings, sponsors or prestige). " + ("You are paid " + fmt.credits(value) + " credits." if value >= 0.0 else "The sale does not cover them: you owe " + fmt.credits(-value) + " credits."))
+    pending_payout += value
+
+// What the league owes the player (a forced sale in a day, when no hook can
+// touch credits... it can: the mod pays this out in on_day). Emptied by the mod.
+float pending_payout = 0.0
+
+// ---- News ----
+
+void note(int league, string text):
+    news.append(string(day) + "\t" + string(league) + "\t" + names.clean(text))
+    for news.len() > 120:
+        news.remove_at(0)
+
+string json(string s):
+    string q = globalThis.JSON.stringify(s)
+    return q
+
+// ---- Saving ----
+
+string encode():
+    []string out = []
+    []string head = ["w", string(VERSION), world, string(start_day), string(day), string(season), string(next_team), string(next_person), string(next_deal), string(next_incident), string(player_team), string(reg_dept), string(corp_day), string(rng.state), string(finals_season), string(pending_payout), string(next_bet), string(bet_staked), string(bet_returned)]
+    head.append(string(revived_team))
+    head.append(string(intro))
+    out.append(head.join("|"))
+    out.append("c|" + Team().ints(calendar))
+    for l in 0..<3:
+        out.append("f|" + string(l) + "|" + Team().ints(finals[l]))
+    for t in teams:
+        out.append("t|" + t.encode())
+    for p in people:
+        out.append("p|" + p.encode())
+    for s in sponsors:
+        out.append("s|" + s.encode())
+    for d in deals:
+        out.append("d|" + d.encode())
+    for i in incidents:
+        out.append("i|" + i.encode())
+    for b in bets:
+        out.append("b|" + b.encode())
+    for a in archive:
+        out.append("x|" + a.archive_encode())
+    for p in people:
+        if written.has(p.id):
+            out.append("h|" + string(p.id) + "|" + written[p.id])
+    for r in last:
+        out.append("r|" + r.encode())
+    for line in story:
+        out.append("y|" + line.replace_all("\t", "^"))
+    for line in news:
+        out.append("n|" + line.replace_all("\t", "^"))
+    for line in ledger:
+        out.append("l|" + line.replace_all("\t", "^"))
+    return out.join("\n")
+
+// Read a saved world; false (and nothing kept) when the text is not one.
+bool decode(string text):
+    []string lines = text.split("\n")
+    if lines.len() == 0 || !lines[0].starts_with("w|"):
+        return false
+    []string h = lines[0].split("|")
+    if h.len() < 16:
+        return false
+    world = h[2]
+    start_day = h[3].to_int()
+    day = h[4].to_int()
+    season = h[5].to_int()
+    next_team = h[6].to_int()
+    next_person = h[7].to_int()
+    next_deal = h[8].to_int()
+    next_incident = h[9].to_int()
+    player_team = h[10].to_int()
+    reg_dept = h[11].to_int()
+    corp_day = h[12].to_int()
+    rng.state = h[13].to_int()
+    finals_season = h[14].to_int()
+    pending_payout = h[15].to_float()
+    // A save from before the Paddock Book has no bets.
+    next_bet = h[16].to_int() if h.len() > 18 else 1
+    bet_staked = h[17].to_float() if h.len() > 18 else 0.0
+    bet_returned = h[18].to_float() if h.len() > 18 else 0.0
+    // A save from before revivals has none, and no archive.
+    revived_team = h[19].to_int() if h.len() > 19 else 0
+    intro = h[20].to_int() if h.len() > 20 else 0
+    archive = []
+    bets = []
+    teams = []
+    team_by_id = {}
+    people = []
+    person_by_id = {}
+    sponsors = []
+    deals = []
+    incidents = []
+    last = []
+    story = []
+    news = []
+    ledger = []
+    stand_in.skill = -0.6
+    stand_in.name = "a stand-in"
+    for k in 1..<lines.len():
+        string line = lines[k]
+        if line.len() < 2:
+            continue
+        string kind = line[0..<1]
+        string rest = line[2..<line.len()]
+        if kind == "c":
+            calendar = Team().read_ints(rest)
+        else if kind == "f":
+            []string f = rest.split("|")
+            int l = f[0].to_int()
+            if l >= 0 && l < 3:
+                finals[l] = Team().read_ints(f[1] if f.len() > 1 else "")
+        else if kind == "t":
+            Team t = Team()
+            t.decode(rest)
+            teams.append(t)
+            team_by_id[t.id] = t
+        else if kind == "p":
+            Person p = Person()
+            p.decode(rest)
+            people.append(p)
+            person_by_id[p.id] = p
+        else if kind == "s":
+            Sponsor s = Sponsor()
+            s.decode(rest)
+            sponsors.append(s)
+        else if kind == "d":
+            Deal d = Deal()
+            d.decode(rest)
+            deals.append(d)
+        else if kind == "i":
+            Incident i = Incident()
+            i.decode(rest)
+            incidents.append(i)
+        else if kind == "x":
+            Team a = Team()
+            a.archive_decode(rest)
+            archive.append(a)
+        else if kind == "h":
+            int bar = rest.index_of("|")
+            if bar > 0:
+                written[rest[0..<bar].to_int()] = rest[bar + 1..<rest.len()]
+        else if kind == "b":
+            Bet b = Bet()
+            b.decode(rest)
+            bets.append(b)
+        else if kind == "r":
+            Result r = Result()
+            r.decode(rest)
+            last.append(r)
+        else if kind == "y":
+            story.append(rest.replace_all("^", "\t"))
+        else if kind == "n":
+            news.append(rest.replace_all("^", "\t"))
+        else if kind == "l":
+            ledger.append(rest.replace_all("^", "\t"))
+    for last.len() < 3:
+        last.append(Result())
+    if calendar.len() < 3 * ROUNDS:
+        make_calendar()
+    if player_team != 0 && !team_by_id.has(player_team):
+        player_team = 0
+    // People from a save before bios get their peak now (from their own dice,
+    // so the same save always gives the same peaks).
+    for p in people:
+        bio.ensure(self, p)
+    // People from a save before lore and contracts: no history, fame or
+    // traits, and the deal they are on becomes a one-season contract (to the
+    // end of this season) at the salary they are paid.
+    for p in people:
+        if p.legacy:
+            p.legacy = false
+            if p.team != 0:
+                p.contract_end = season
+                p.signed = season
+    // A save from before two cars: each team's pilot keeps the #1 seat and
+    // the team's season as their drivers' tally; the pool gets the pilots
+    // two cars need, AI teams fill their second seats, and the player is told.
+    bool two_cars = false
+    for t in teams:
+        if t.one_car:
+            t.one_car = false
+            two_cars = true
+            Person p = seat(t, 0)
+            if p.id != 0 && p.d_season == 0:
+                p.d_season = season
+                p.d_league = t.league
+                p.d_points = t.points
+                p.d_wins = t.wins
+                p.d_podiums = t.podiums
+                p.d_starts = t.races
+                for f in t.finishes:
+                    if f > 0 && (p.d_best == 0 || f < p.d_best):
+                        p.d_best = f
+    if two_cars:
+        staff.top_up(self)
+        staff.fill_all(self)
+        if has_team():
+            player_events.append("Racing: the leagues now race two cars a team, with a drivers' championship beside the teams'. " + (seat(mine(), 0).name + " keeps the #1 seat; " if mine().seats[0] != 0 else "") + "your #2 seat is empty and a stand-in drives it until you hire a second pilot (Team tab).")
+    // Teams from a save before sponsor histories get an estimate (Value.migrate).
+    for t in teams:
+        if !t.sponsor_known:
+            value.migrate(self, t)
+    // Teams from a save before lifetimes: their record estimated (estimate_life).
+    for t in teams:
+        if !t.life_known:
+            estimate_life(t)
+    // Teams from a save before promotion's eligibility (estimate_stay).
+    for t in teams:
+        if !t.stay_known:
+            estimate_stay(t)
+    return true
+
+// A save from before promotion's eligibility: a team's seasons in its league
+// from its history (the run of seasons at its end in the league it is in;
+// a team in another league than its last season's moved at this season's
+// start), and whether it came down into it. Where the run goes back to the
+// team's first known season, or it has no history, the benefit of the
+// doubt: in its league since it was founded, and a team of the first season
+// (whose past is from before the records) eligible now.
+void estimate_stay(Team t):
+    t.stay_known = true
+    t.rebound = false
+    []int ss = []
+    []int ls = []
+    if t.history != "":
+        for part in t.history.split(","):
+            []string f = part.split(":")
+            if f.len() < 3:
+                continue
+            ss.append(f[0].to_int())
+            ls.append(value.league_of(f[1]))
+    int n = ss.len()
+    int founding = 1 - PROMO_SEASONS
+    if n == 0:
+        t.since = t.born if t.born > 1 else founding
+        return
+    if ls[n - 1] != t.league:
+        t.since = ss[n - 1] + 1
+        t.rebound = ls[n - 1] > t.league
+        return
+    int k = n - 1
+    for k > 0 && ls[k - 1] == t.league:
+        k -= 1
+    if k > 0:
+        t.since = ss[k]
+        t.rebound = ls[k - 1] > t.league
+    else:
+        t.since = founding if ss[0] <= 1 else (t.born if t.born < ss[0] else ss[0])
+
+// A save from before lifetimes: a team's record from what is kept, erring
+// low: its seasons, titles and promotions from its history (all its
+// seasons), the races of those seasons, the wins and podiums of this one
+// (earlier ones are not known), the drivers' titles its pilots keep in
+// their histories with it; founded in its first known season. Its name
+// history starts with the name it has.
+void estimate_life(Team t):
+    t.life_known = true
+    t.life = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    int first = season
+    int prev = -1
+    if t.history != "":
+        for part in t.history.split(","):
+            []string f = part.split(":")
+            if f.len() < 3:
+                continue
+            int s = f[0].to_int()
+            int l = value.league_of(f[1])
+            first = s if s < first else first
+            t.life[t.L_SEASONS + l] += 1
+            t.life[t.L_RACES] += ROUNDS
+            if f[2].to_int() == 1:
+                t.life[t.L_TITLE + l] += 1
+            if prev >= 0 && l > prev:
+                t.life[t.L_PROMOTIONS] += 1
+            prev = l
+    t.life[t.L_RACES] += t.races
+    t.life[t.L_WINS] = t.wins
+    t.life[t.L_PODIUMS] = t.podiums
+    for p in people:
+        for e in p.notes:
+            []string f = e.split(":")
+            if f.len() >= 8 && f[4].to_int() == lore.TITLE && f[5].to_int() == lore.DRIVERS && f[7].to_int() == t.id:
+                t.life[t.L_DRIVERS] += 1
+    t.born = first if first > 1 else 1
+    t.revival = 1.0
+    t.names_log = string(t.born) + ":0:" + string(FOUNDED) + ":" + t.name

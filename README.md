@@ -8,8 +8,12 @@ the Dado mod loader:
 | Corporations: a stock exchange, companies bidding for contracts, shipyards with stock | [`mods/corporations`](mods/corporations) | `Corporations` |
 | Diplomacy: wars between the Republic, the Free Worlds and the Syndicate, flotillas, a faction panel | [`mods/diplomacy`](mods/diplomacy) ([README](mods/diplomacy/README.md)) | `Diplomacy`, and the optional `Diplomacy Debug` |
 | Outfit Integration: shipyards integrate an installed outfit into a ship's hull | [`mods/outfit_integration`](mods/outfit_integration) | `Outfit Integration` |
+| The Shoal: an endgame salvage grind past the edge of the charts | [`mods/shoal`](mods/shoal) ([README](mods/shoal/README.md)) | `The Shoal` |
+| MOPS: a deniable agency that pays a fortune to suppress hostile aliens on humanity's borders (data only) | [`mods/mops`](mods/mops) ([README](mods/mops/README.md)) | `MOPS` |
+| The Racing League: own a racing team in three leagues | [`mods/racing`](mods/racing) ([README](mods/racing/README.md)) | `The Racing League` |
+| Racing League and Corporations: joins the two (the exchange's companies sponsor the teams; your company can too) | [`mods/racing_corporations`](mods/racing_corporations) ([README](mods/racing_corporations/README.md)) | `Racing League and Corporations` |
 
-All three are written in DadoScript. The repository carries the parts of the
+All but MOPS, which is data only, are written in DadoScript. The repository carries the parts of the
 [mod SDK](https://github.com/Anaxarchus/endless-sky-mod-sdk) it needs to build,
 test and edit them, so it works on its own.
 

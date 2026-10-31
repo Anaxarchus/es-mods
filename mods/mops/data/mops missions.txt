@@ -1,0 +1,187 @@
+# Copyright (c) 2026 by Anaxarchus
+#
+# Endless Sky is free software: you can redistribute it and/or modify it under the
+# terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later version.
+#
+# Endless Sky is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+# PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+# MOPS: the Multilateral Office for Perimeter Suppression.
+#
+# The way in, two missions:
+#
+#   "MOPS 1: Breach"     In the spaceport bar of a human world within six jumps of
+#                        Sumar (the Hai border), once the player is combat rank 5
+#                        or higher. The game shows rank floor(ln("combat rating")),
+#                        so rank 5 is a rating of e^5 = 148.4 or more:
+#                        "combat rating" >= 149. A MOPS field officer, Imre Dask,
+#                        whose transport has just been impounded, needs a ship.
+#                        With Dask aboard (one passenger), destroy the two captive
+#                        Unfettered fighters that broke loose in one of the border
+#                        systems (Sumar, Rajak, Hassaleh, Danoa or Ultima Thule),
+#                        then fly Dask to Farpoint for a first-contact debriefing.
+#                        Declining, aborting or failing it lets it come back.
+#   "MOPS 2: Contract"   On landing at Farpoint after the debriefing, and on every
+#                        landing there until accepted: Deputy Coordinator Prell
+#                        offers a contractor's position. Signing sets
+#                        "mops: contractor", which opens the job board ("mops
+#                        jobs.txt"). It never becomes an active mission: the offer
+#                        conversation does everything and ends, so it cannot be
+#                        failed or left half done.
+
+
+mission "MOPS 1: Breach"
+	name "MOPS containment run"
+	description `Field Officer Imre Dask of the Multilateral Office for Perimeter Suppression has commandeered your ship (politely, eventually). Destroy the two captive "specimens" that broke loose in a system on humanity's northern border, then bring Dask to <destination> for debriefing by <date>.`
+	repeat
+	deadline 30
+	passengers 1
+	source
+		near "Sumar" 0 6
+		government "Republic" "Free Worlds" "Syndicate" "Neutral" "Independent"
+		attributes "spaceport"
+	destination "Farpoint"
+	to offer
+		"combat rating" >= 149
+		not "mops: contractor"
+		not "MOPS 1: Breach: active"
+		not "MOPS 1: Breach: done"
+		random < 30
+	npc kill
+		government "Hai (Unfettered)"
+		personality heroic staying vindictive marked target
+		system
+			system "Sumar" "Rajak" "Hassaleh" "Danoa" "Ultima Thule"
+		ship "Lightning Bug (Pulse)" "Specimen Fourteen"
+		ship "Lightning Bug" "Specimen Fifteen"
+		dialog `The second fighter comes apart. Dask lets out a long breath and starts typing on a slate. "Containment restored. Nobody saw anything. Well. You saw something." They look at you with something close to sympathy. "Which is a problem. Set a course for <destination>, Captain. You've had contact with alien life on a MOPS operation, and that means a debriefing."`
+	on offer
+		conversation
+			`The spaceport bar is quiet until the door bangs open and someone in a rumpled grey jacket strides in, holding up a laminated card that says only AUTHORIZED in large red letters. "Attention," they announce to the room. "Under the Emergency Requisition Accord, I am commandeering a starship. Who owns a starship?"`
+			`	Nobody answers. A freighter captain near the door quietly finishes her drink and leaves. The newcomer's eyes travel around the room, past the dockworkers and the drunk, and land on you.`
+			choice
+				`	"I own a starship."`
+				`	"What's the Emergency Requisition Accord?"`
+					goto accord
+				`	(Keep your head down.)`
+					goto hide
+			`	"Excellent." They drop into the seat across from you. "Field Officer Imre Dask, Multilateral Office for Perimeter Suppression. MOPS. Please don't laugh, it's been a very long day."`
+				goto story
+			label accord
+			`	"It's a document I'm fairly sure exists." They drop into the seat across from you anyway. "Field Officer Imre Dask, Multilateral Office for Perimeter Suppression. MOPS. Please don't laugh, it's been a very long day."`
+				goto story
+			label hide
+			`	It doesn't work. They drop into the seat across from you. "You have a pilot's posture. Field Officer Imre Dask, Multilateral Office for Perimeter Suppression. MOPS. Please don't laugh, it's been a very long day."`
+			label story
+			`	"Here's the short version. I was escorting two captured... let's say specimens... to a holding facility. Small ships, on tow, engines locked out, crews very much not happy about it. Halfway there my pilot resigned. Mid-jump. By escape pod. The resignation letter was two lines long and one of them was a swear word." Dask rubs their eyes. "The tow failed, the specimens woke up, and they're now loose in one of the systems along the northern border."`
+			`	"And when I limped in here, the port authority impounded my ship for unpaid docking fees. MOPS cannot pay docking fees, you see, because MOPS does not exist, and an agency that does not exist cannot sign an invoice. The Office has filed my ship as 'reassigned.'"`
+			choice
+				`	"So you need a ride."`
+				`	"Why not call the Navy?"`
+					goto navy
+			`	"I need a ride, and I need someone in the pilot's seat who can shoot. Two small fighters, angry but not numerous. We find them, we end them, and then we go to Farpoint, where the Office will pay you for your trouble." A pause. "And for some paperwork. There's always paperwork."`
+				goto ask
+			label navy
+			`	"Because then the Navy would know what is loose in Republic space, and then Parliament would know, and then the news would know, and then I would be the officer who started a diplomatic incident over a towing accident." Dask smiles thinly. "Whereas if a private captain who happened to be passing destroyed two unidentified raiders, that's just Tuesday. And please don't ask what they are. I'll have to give you a form."`
+			label ask
+			`	"I can pay. Not much now. Considerably more at Farpoint." Dask holds out the laminated card, as if it might help. "Will you fly me, Captain?"`
+			choice
+				`	"All right. Let's go and catch your specimens."`
+					goto yes
+				`	"Not today. Find someone else."`
+			`	Dask nods, unsurprised, and turns back to the room with the card held high. "Attention! Under the Emergency Requisition Accord..." The drunk raises his hand. You decide not to watch how that goes.`
+				decline
+			label yes
+			`	"Thank you." Dask is already on their feet. "I'll need a bunk, a comm channel and, if possible, coffee. Mostly I need you to shoot straight. Specimens Fourteen and Fifteen are on your map now. Don't get attached. They bite."`
+				accept
+	on accept
+		log "Factions" "MOPS" `The Multilateral Office for Perimeter Suppression (MOPS) is a deniable agency, funded jointly and quietly by the human governments, that "suppresses" hostile threats on humanity's borders. It does not officially exist, cannot sign invoices, and keeps an office at Farpoint.`
+		log `Met Field Officer Imre Dask of MOPS in a spaceport bar, after their pilot resigned mid-jump and their ship was impounded for unpaid docking fees. Agreed to fly Dask after two captive "specimens" that broke loose on the northern border, then bring them to Farpoint.`
+	on visit
+		dialog `You have reached <planet>, but Dask won't get off your ship. "The specimens are still out there, Captain. If I walk into that office without containment, I will be debriefed until I die."`
+	on fail
+		dialog `You've missed the deadline to get Dask to <planet>. Dask disembarks at the next port with a face like a closed file. "The Office will send someone else. The Office always sends someone else." You suspect you haven't heard the last of MOPS.`
+	on abort
+		dialog `Dask takes the news calmly, collects their bag and the laminated card, and walks off down the ramp toward the nearest bar. "Attention," you hear, faintly. "Under the Emergency Requisition Accord..."`
+	on complete
+		payment 60000
+		conversation
+			branch met
+				or
+					has "First Contact: Hai: offered"
+					has "First Contact: Unfettered: offered"
+					has "event: label hai space"
+			`Farpoint was built for a war that never came, and most of the base is empty. MOPS occupies a wing that the Navy has forgotten it owns, behind a door marked JANITORIAL (MULTILATERAL). Dask signs you in, signs you out again "for the record," and sits you down across from a small, neat woman behind a desk stacked so high with paper that she has had to cut a window in it.`
+			`	"Bettany Vosk. Registrar." She does not look up. "Captain, earlier today you destroyed two ships that were not built by human beings and were not crewed by human beings. How are you feeling?"`
+			`	You think about the strange curved hulls, the weapons that did not sound like any you know, the way the specimens flew. It is one thing to hear spaceport rumours about aliens. It is another to have shot at them.`
+			choice
+				`	"So those really were aliens."`
+				`	"I'd like a drink, please."`
+					goto drink
+			`	"Were they?" Vosk slides a form through the window. "Incident Classification Worksheet. For the purposes of this worksheet, you encountered two weather balloons. Large ones. Armed ones. Initial where it says 'weather balloon.'"`
+				goto forms
+			label drink
+			`	Dask, wordlessly, puts a paper cup of something brown and terrible in front of you. Vosk slides a form through the window. "Incident Classification Worksheet. For the purposes of this worksheet, you encountered two weather balloons. Large ones. Armed ones. Initial where it says 'weather balloon.'"`
+			label forms
+			`	There is a First-Contact Disclosure Statement, in which you describe what you saw in no more than forty words, none of them "alien." There is a Non-Disclosure Agreement, then a Non-Disclosure Agreement about the Non-Disclosure Agreement. There is a Waiver of Recollection, which you are assured is "mostly symbolic," and a form asking whether you have spoken to any journalists, and a second, identical form, "in case you lied on the first."`
+			choice
+				`	"What were they? Where do they come from?"`
+				`	"What happens if I tell someone?"`
+					goto tell
+			`	"That's above your clearance," says Vosk. "Your clearance is 'Witness.' It's the lowest one. It's below 'Cleaner.'" Dask coughs. "What you need to know is that there are things out past the borders, that some of them don't like us, and that the people of human space sleep better not knowing. You're going to help them keep sleeping."`
+				goto end
+			label tell
+			`	"Nothing at all. Officially." Vosk stamps something. "Unofficially, the Office has a department that specializes in making people forget things, and it is very proud of its success rate, which it has forgotten. Initial here, to confirm you found that funny."`
+				goto end
+			label met
+			`Farpoint was built for a war that never came, and most of the base is empty. MOPS occupies a wing that the Navy has forgotten it owns, behind a door marked JANITORIAL (MULTILATERAL). Dask signs you in, signs you out again "for the record," and sits you down across from a small, neat woman behind a desk stacked so high with paper that she has had to cut a window in it.`
+			`	"Bettany Vosk. Registrar." She glances at a file. "I see you've already met the Hai. That saves us the weather balloon forms." She sounds faintly disappointed.`
+			`	"So, for the record: those were Unfettered. Hai who reject their own government's peace, and who would very much like more room to expand, starting with ours. The Hai government doesn't like talking about them. The Republic, the Free Worlds and the Syndicate like it even less, because if the public knew that hostile Hai warships occasionally slip through the Ultima Thule wormhole, they would start asking why the friendly Hai are allowed through it too, and then there goes the trade, the treaties, and several elections."`
+			choice
+				`	"So MOPS cleans up after them, quietly."`
+				`	"And nobody admits it happens."`
+			`	"Exactly. When it goes well, an unidentified raider is destroyed by an independent captain. When it goes badly, the independent captain was acting alone, and the governments have never heard of them." Vosk slides over a single, thin form. "You get the short version. One Non-Disclosure Agreement, one Waiver of Diplomatic Embarrassment, and a box to tick confirming you won't tell the Hai we're shooting their cousins. They know. We know they know. Tick the box."`
+			label end
+			`	At last she stamps the final page, holds it up to the light, and transfers <payment> to your account. "Your fare, a hazard allowance, and a refund for the officer's coffee, less the cost of your forms." She finally looks up. "Deputy Coordinator Prell would like a word before you go. Don't leave the room. Actually, there's nowhere to go. Don't leave the chair."`
+		log `Destroyed two captive alien warships on the northern border with Field Officer Dask aboard, then brought Dask to the MOPS wing at Farpoint, where Registrar Bettany Vosk debriefed me as a "Witness" and buried me in non-disclosure agreements.`
+
+
+mission "MOPS 2: Contract"
+	landing
+	repeat
+	source "Farpoint"
+	to offer
+		has "MOPS 1: Breach: done"
+		not "mops: contractor"
+	on offer
+		conversation
+			`A man in a suit that was expensive about a decade ago lets himself into the room with a cup of noodles in one hand and a slate in the other. "Captain <last>. Halvard Prell, Deputy Coordinator, Recruitment and Attrition. Same office. It saves on stationery." He sits on the corner of Vosk's desk; she glares at him through her window.`
+			`	"Dask says you can fly, you can shoot, and you didn't ask too many questions. That's the whole job description. And since you're about to sign a great many non-disclosure agreements, I can tell you what's out there." He turns the slate toward you: a map of humanity's borders, shaded a worried red. "Things that do not like us. The ships you shot were Unfettered: Hai, the people beyond the wormhole, or rather the ones among them who never accepted their government's peace with us. They come through the wormhole at Ultima Thule. Korath raiders around Polaris and in the pirate worlds past Durax. Worse, further out. Somebody has to go and suppress them, quietly, and not in uniform."`
+			`	"Here's what MOPS is really for, Captain. When an operation goes well, nobody hears about it. When it goes sideways, and they do go sideways, somebody has to have been there who was never ours. A private captain. A contractor. When the Senate asks who authorized the shooting near Sumar, the answer is 'an independent operator, acting on their own initiative, whom the signatory governments have never met.' You absorb the embarrassment. You absorb the tough questions. Occasionally you absorb a torpedo."`
+			choice
+				`	"And what do I get for absorbing all that?"`
+				`	"And if I'm killed?"`
+					goto killed
+			`	He names a figure for a single operation. You make him repeat it. He does, with the patience of a man who has watched this face many times. "Our contractors do not tend to have long careers. The pay reflects the career length."`
+				goto offer
+			label killed
+			`	"Then you were never employed by us, the signatory governments express their regret at the tragic mining accident, and a very generous lump sum goes to your next of kin." He checks the slate. "Who will be pre-notified on signing. It saves time later."`
+			label offer
+			`	Vosk pushes a contract through her window. It is thick. "Auxiliary Perimeter Sanitation Contractor (Unaffiliated)," she says. "Sign, and MOPS operations will appear on job boards near where we need them, described as pest control. Don't sign, and this conversation did not happen. Again."`
+			choice
+				`	(Sign the contract.)`
+					goto sign
+				`	"I'll think about it."`
+			`	Prell shrugs and finishes his noodles. "The offer stands. It's on file here at Farpoint, and so are you. Land here any time you change your mind. We'll be in this room. We are always in this room."`
+				decline
+			label sign
+			action
+				payment 150000
+				"mops: contractor" = 1
+				log `Signed on with MOPS as an "Auxiliary Perimeter Sanitation Contractor (Unaffiliated)" at Farpoint. Deputy Coordinator Halvard Prell explained the job: suppress hostile aliens on humanity's borders, and when an operation goes sideways, be the independent captain the signatory governments have never met. My next of kin have been pre-notified. MOPS operations now appear on job boards at spaceports near the borders.`
+				log "Factions" "MOPS" `MOPS operations appear on the job boards of human spaceports near humanity's borders: Unfettered Hai incursions around Sumar and the Ultima Thule wormhole, Korath raiders near Polaris and in the pirate systems around Durax, and, for its most experienced contractors, worse. They pay better than anything else in human space. Their contractors exist so that, when things go wrong, MOPS does not have to.`
+			`	You sign, initial, and sign again. Vosk stamps the last page and transfers <payment> to your account. "Signing bonus. Please spend it. Our actuaries recommend it."`
+			`	Prell shakes your hand. It is very dry. "Welcome to MOPS, Contractor <last>. As of now you are deniable, disposable and exceptionally well paid. Dask sends their regards, and asks that you never mention the escape pod."`
+				decline

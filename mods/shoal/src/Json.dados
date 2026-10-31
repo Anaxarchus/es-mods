@@ -1,0 +1,75 @@
+class Json
+
+// Writing and reading the state as JSON text (Game.set_data). Writing builds
+// the text by hand; reading goes through the engine's JSON.parse and picks
+// fields out of the `any` it answers, with a default for one that is missing
+// or malformed, so an older or damaged state still reads.
+
+string ints([]int v):
+    []string parts = []
+    for x in v:
+        parts.append(string(x))
+    return "[" + parts.join(",") + "]"
+
+string strs([]string v):
+    []string parts = []
+    for x in v:
+        string q = globalThis.JSON.stringify(x)
+        parts.append(q)
+    return "[" + parts.join(",") + "]"
+
+// An object, or {} when the text is not a JSON object.
+any parse_object(string s):
+    any f = globalThis.Function("s", "try { const o = JSON.parse(s); return (o && typeof o === 'object' && !Array.isArray(o)) ? o : {}; } catch (e) { return {}; }")
+    any doc = f(s)
+    return doc
+
+bool has(any o, string key):
+    bool h = globalThis.Object.prototype.hasOwnProperty.call(o, key)
+    return h
+
+// A whole-number field; the fallback when missing, not a finite number, or past 2^31.
+int num(any o, string key, int fallback):
+    if !has(o, key):
+        return fallback
+    any x = o[key]
+    return whole(x, fallback)
+
+int whole(any x, int fallback):
+    bool ok = globalThis.Number.isFinite(x)
+    if !ok:
+        return fallback
+    float f = globalThis.Math.trunc(x)
+    if f > 2147483647.0 || f < -2147483648.0:
+        return fallback
+    return int(f)
+
+// A list of whole numbers; non-numbers read as 0.
+[]int int_list(any o, string key):
+    []int out = []
+    if !has(o, key):
+        return out
+    any list = o[key]
+    bool is_list = globalThis.Array.isArray(list)
+    if !is_list:
+        return out
+    int n = list.length
+    for k in 0..<n:
+        out.append(whole(list[k], 0))
+    return out
+
+// A list of strings; non-strings read as "".
+[]string str_list(any o, string key):
+    []string out = []
+    if !has(o, key):
+        return out
+    any list = o[key]
+    bool is_list = globalThis.Array.isArray(list)
+    if !is_list:
+        return out
+    any text = globalThis.Function("x", "return typeof x === 'string' ? x : '';")
+    int n = list.length
+    for k in 0..<n:
+        string s = text(list[k])
+        out.append(s)
+    return out

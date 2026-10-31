@@ -2,78 +2,336 @@ class Executives
 
 import "imports:sdk/es"
 
-// (M3) Chief executives. Every listed company has one, with a name (Names)
-// and a trait that changes how it is run:
-//   aggressive  bids MARGIN lower, buys rivals with less money in hand
-//               (Market.seek_buyer), pays out less;
-//   prudent     bids higher, hoards cash (repays debt only far above its
-//               needs), pays out more, never buys a rival;
-//   visionary   its efficiency drifts more at each report, better on
-//               average, and its price is half again as volatile;
-//   crooked     books a little extra revenue at each report (good short-term
-//               earnings), its luck is worse, and now and then a scandal
-//               (SCANDAL a day) knocks its price down and costs it its chief.
-// A chief is fired after three losing reports in a row (together more than
-// BIG_LOSS days of upkeep) (once in office
-// FIRE_AFTER days), or after a scandal; the fired go to a pool of executives
-// (Market.executives, "name:trait", at most POOL), from which companies hire
-// first; with none free, a company may poach a rival's chief (POACH) or
-// appoint a newcomer. The news names them; so do the exchange's sidebar, the
-// earnings lines and the covert and tip jobs.
+// Chief executives. (0.4) A fixed pool of POOL_SIZE chiefs (Chief, kept in
+// Market.chiefs) serves every company, the player's included: enough for the
+// most companies the exchange lists (Market.MAX_LISTED) and the player's,
+// with spares always free. Each chief has hidden stats (Chief) that run its
+// company: drive moves bid margins (DRIVE_MARGIN); thrift its efficiency at
+// each report (THRIFT_DRIFT); vision how far its research spending goes
+// (VISION_RD); nerve its turns of fortune (NERVE_LUCK), what a crisis costs
+// (NERVE_CRISIS) and how fast reliability recovers (NERVE_RECOVER). Its
+// style (style(), from the stats, never shown) keeps the M3 levers:
+//   aggressive  (drive)      bids `margin` lower, buys rivals with less in
+//                            hand, pays out less, plans fast growth;
+//   prudent     (no drive)   bids higher, hoards cash, pays out more, never
+//                            buys a rival;
+//   visionary   (vision)     heavy research, efficiency drifts more, its
+//                            price half again as volatile;
+//   crooked     (integrity   books WINDOW extra revenue at each report, worse
+//               under CROOKED) luck, and now and then (SCANDAL a day) a
+//                            scandal that costs it its post.
+// Nothing labels a chief good or bad: its record (Chief.n, Chief.sum, the
+// stints) is what its companies earned while it ran them, against their
+// sectors (score), and that is all anyone hiring sees.
+//
+// Price: a chief asks SALARY_BASE a year at an average record, times
+// e^(RATING_K × rating), times OUSTER_CUT for each time a board voted it out
+// (SALARY_MIN to SALARY_MAX); a company pays SIGN of a year's salary to sign
+// it, and the salary daily as a cost (Market.finances).
+// Hiring (pick): a company looks at the free chiefs it can afford (budget:
+// BUDGET_UPKEEP of a year's upkeep and BUDGET_CASH of its cash) and takes
+// the one with the most experience (EXP_W, years in office up to EXP_CAP)
+// and the best record (REC_W), far less willingly one ever voted out
+// (OUST_W each); none affordable, the cheapest.
+// Poaching: at a report, POACH_CHANCE of the time a company looks for a
+// sitting chief with POACH_MIN_N reports and a record POACH_EDGE better than
+// its own chief's that it can afford at POACH_RAISE of the asking price, and
+// pays its company POACH_BUYOUT of a year of that salary to let it go. The
+// company that lost its chief hires again. A chief of the player's is not
+// taken at once: the player has OFFER_DAYS to match the offer (paying
+// RETAIN of a year of it as a retention bonus).
+// Ousters: at a report, a board whose chief has run the company OUST_MIN_N
+// reports or more with a mean score under -(OUST_BASE + OUST_LENIENCY /
+// reports) votes (OUST_VOTE of the time) to throw it out. The ouster is in
+// the chief's record for good. The player's company: while the player
+// controls its board (private, or half its shares) their chief stays; listed
+// and controlled by others, the board can oust the player's chief too.
+// Careers last CAREER days (± CAREER_SPREAD); then the chief retires and a new
+// one, with no record, takes the place in the pool.
 
+int POOL_SIZE = 64
+int CAREER = 3650
+int CAREER_SPREAD = 365
+float STAT_SD = 0.45
+float CROOKED = -0.5
+float VISIONARY = 0.35
+float PRIOR = 6.0
+float SALARY_BASE = 40000.0
+float RATING_K = 35.0
+// The record counts toward the price up to this far either way.
+float RATING_CAP = 0.1
+float OUSTER_CUT = 0.55
+float SALARY_MIN = 6000.0
+float SALARY_MAX = 2000000.0
+float SIGN = 0.25
+float BUDGET_UPKEEP = 0.03
+float BUDGET_CASH = 0.02
+float EXP_W = 1.0
+float EXP_CAP = 10.0
+float REC_W = 8.0
+float OUST_W = 0.8
+float NOISE = 0.1
+float POACH_CHANCE = 3.0
+float POACH_RAISE = 1.3
+float POACH_BUYOUT = 1.0
+int POACH_MIN_N = 18
+float POACH_EDGE = 0.02
+int OFFER_DAYS = 10
+float RETAIN = 0.25
+int OUST_MIN_N = 6
+float OUST_BASE = 0.045
+float OUST_LENIENCY = 0.3
+float OUST_VOTE = 50.0
+int STINTS = 8
+float DRIVE_MARGIN = 0.02
+float THRIFT_DRIFT = 0.006
+float VISION_RD = 0.3
+float NERVE_LUCK = 0.08
+float NERVE_CRISIS = 0.35
+float NERVE_RECOVER = 0.4
+// How a stint ended (Chief.stints).
+int END_LEFT = 0
+int END_OUSTED = 1
+int END_SCANDAL = 2
+int END_POACHED = 3
+int END_LET_GO = 4
+int END_GONE = 5
+int END_REPLACED = 6
+int END_RETIRED = 7
+[]string end_names = ["left", "voted out by the board", "voted out after a scandal", "poached", "let go by the owner", "the company was gone", "replaced", "retired"]
+
+// By style: aggressive, prudent, visionary, crooked.
 []float margin = [-0.04, 0.03, 0.0, -0.01]
 []float payout_factor = [0.7, 1.5, 1.0, 1.0]
 // Added to the chance a turn of fortune is good (Market.random_events).
 []float luck = [0.0, 0.05, 0.0, -0.15]
 float SCANDAL = 0.0007
 float WINDOW = 0.03
-int FIRE_AFTER = 365
-float BIG_LOSS = 60.0
-int POOL = 8
-float POACH = 25.0
 
 // Counted since the mod started (not saved), for tests and tools.
 int fired = 0
 int hired = 0
 int poached = 0
 int scandals = 0
+int ousted = 0
+int retired = 0
 
 Names names = Names()
+// The chief who just left a company (release), whom its board will not take
+// straight back (pick); not saved.
+int leaving = 0
 
 string label(Company c):
-    return c.ceo + " (" + names.traits[c.trait] + ")"
+    return c.ceo
 
-// A new chief for `c`: from the pool, poached, or a newcomer. Answers a
-// phrase for the news ("Ada Bellamy, prudent, formerly of X").
-string appoint(Market m, Company c, int d, int want):
-    string from = ""
-    if m.executives.len() > 0 && m.rng.chance(70.0):
-        int i = m.rng.range(0, m.executives.len() - 1)
-        []string f = m.executives[i].split(":")
-        m.executives.remove_at(i)
-        c.ceo = f[0]
-        c.trait = f[1].to_int() if f.len() > 1 else 0
-        from = f[2] if f.len() > 2 else ""
-    else if m.rng.chance(POACH) && d > 0:
-        Company rival = Company()
-        for o in m.companies:
-            if o.listed() && o.id != c.id && o.owner == 0 && o.ceo != "" && (rival.id == 0 || o.norm > rival.norm):
-                rival = o
-        if rival.id != 0 && m.rng.chance(50.0):
-            c.ceo = rival.ceo
-            c.trait = rival.trait
-            from = rival.name
-            poached += 1
-            rival.ceo = ""
-            appoint(m, rival, d, -1)
-            m.say_tagged(d, rival.name + "'s chief executive leaves for " + c.name + "; " + label(rival) + " takes over.", "c" + string(rival.id))
-        else:
-            newcomer(m, c, want)
-    else:
-        newcomer(m, c, want)
-    if c.ceo == "":
-        newcomer(m, c, want)
+// ---- The pool ----
+
+Chief chief_of(Market m, Company c):
+    return m.chief_by_id.get(c.chief, Chief()) if c.chief != 0 else Chief()
+
+// A stat of the company's chief (0, the average, for none or the player).
+float stat(Market m, Company c, int k):
+    if c.chief == 0:
+        return 0.0
+    Chief ch = m.chief_by_id.get(c.chief, Chief())
+    return ch.stat(k)
+
+int style(Chief ch):
+    float drive = ch.stat(0)
+    float vision = ch.stat(2)
+    if ch.stat(4) < CROOKED:
+        return 3
+    float d = drive if drive >= 0.0 else -drive
+    if vision > VISIONARY && vision > d:
+        return 2
+    return 0 if drive >= 0.0 else 1
+
+// A stat to the thousandth, as it is saved (a reloaded market plays out the same).
+float milli(float x):
+    int k = globalThis.Math.round(x * 1000.0)
+    return float(k) / 1000.0
+
+// Whole credits, as salaries are kept.
+float whole(float x):
+    int k = globalThis.Math.round(x)
+    return float(k)
+
+float rating(Chief ch):
+    return ch.rating(PRIOR)
+
+// What a chief asks a year.
+float price(Chief ch):
+    float r = rating(ch)
+    r = RATING_CAP if r > RATING_CAP else (-RATING_CAP if r < -RATING_CAP else r)
+    float k = RATING_K * r
+    float e = globalThis.Math.exp(k)
+    float p = SALARY_BASE * e
+    for i in 0..<ch.ousters:
+        p = p * OUSTER_CUT
+    if p < SALARY_MIN:
+        return SALARY_MIN
+    return p if p < SALARY_MAX else SALARY_MAX
+
+float sign_fee(Chief ch):
+    return price(ch) * SIGN
+
+// What a company will pay its chief a year.
+float budget(Market m, Company c):
+    float cash = c.cash if c.cash > 0.0 else 0.0
+    return m.upkeep(c) * 365.0 * BUDGET_UPKEEP + cash * BUDGET_CASH
+
+// How much a company's board wants a chief (noise aside).
+float appeal(Chief ch):
+    float years = ch.years()
+    years = years if years < EXP_CAP else EXP_CAP
+    return EXP_W * years / EXP_CAP + REC_W * rating(ch) - OUST_W * float(ch.ousters)
+
+// The salary a chief of the company draws a year (0 for none).
+float salary_of(Market m, Company c):
+    if c.chief == 0:
+        return 0.0
+    Chief ch = m.chief_by_id.get(c.chief, Chief())
+    return ch.salary
+
+// A new chief, `age` days into a career that began then.
+Chief generate(Market m, int d, int age):
+    Rng r = m.chief_rng
+    Chief ch = Chief()
+    ch.id = m.next_chief
+    m.next_chief += 1
+    ch.name = unique_name(m)
+    ch.stats = []
+    for k in 0..<5:
+        ch.stats.append(milli(m.clamp(r.gauss() * STAT_SD, -1.0, 1.0)))
+    ch.joined = d - age
+    ch.retires = ch.joined + CAREER + r.range(-CAREER_SPREAD, CAREER_SPREAD)
+    if ch.retires < d + 30:
+        ch.retires = d + 30 + r.range(0, 365)
+    add(m, ch)
+    return ch
+
+void add(Market m, Chief ch):
+    m.chiefs.append(ch)
+    m.chief_by_id[ch.id] = ch
+
+string unique_name(Market m):
+    for attempt in 0..<40:
+        string name = names.person(m.chief_rng.range(0, 1000000))
+        if !taken(m, name):
+            return name
+    return names.person(m.chief_rng.range(0, 1000000)) + " " + string(m.next_chief)
+
+bool taken(Market m, string name):
+    for ch in m.chiefs:
+        if ch.name == name:
+            return true
+    return false
+
+// A new pool: careers already under way, some near their end.
+void seed_pool(Market m, int d):
+    for m.chiefs.len() < POOL_SIZE:
+        generate(m, d, m.chief_rng.range(0, CAREER * 9 / 10))
+
+// ---- Taking and leaving a post ----
+
+void bind(Market m, Company c, Chief ch, int d, float salary):
+    ch.company = c.id
+    ch.since = d
+    ch.salary = whole(salary)
+    ch.cur_n = 0
+    ch.cur_sum = 0.0
+    ch.base = ch.UNSET
+    c.chief = ch.id
+    c.ceo = ch.name
+    c.trait = style(ch)
     c.ceo_since = d
+
+// The stint ends; the chief is free.
+void close_stint(Market m, Chief ch, int end, int d):
+    if ch.company == 0:
+        return
+    Company c = m.by_id.get(ch.company, Company())
+    string where = c.name.replace_all("~", " ").replace_all(";", " ").replace_all("|", " ") if c.id != 0 else "a company"
+    ch.stints.append(where + "~" + string(ch.since) + "~" + string(d) + "~" + string(ch.cur_n) + "~" + ch.short(ch.cur_sum) + "~" + string(end))
+    if ch.stints.len() > STINTS:
+        ch.stints.remove_at(0)
+    if end == END_OUSTED || end == END_SCANDAL:
+        ch.ousters += 1
+    ch.company = 0
+    ch.salary = 0.0
+    ch.cur_n = 0
+    ch.cur_sum = 0.0
+
+// The company's chief leaves (end: how); the company has none until it hires.
+void release(Market m, Company c, int end, int d):
+    if c.chief != 0 && m.chief_by_id.has(c.chief):
+        Chief ch = m.chief_by_id[c.chief]
+        if ch.company == c.id:
+            close_stint(m, ch, end, d)
+            leaving = ch.id
+    c.chief = 0
+    c.ceo = ""
+
+// Whether the player runs the board of their own company (private, or half
+// its shares): then no board ousts their chief, and with none they run it.
+bool player_controls(Market m, Company c):
+    return c.owner == 1 && (!c.ipo || m.board.share(m, c) >= 0.5)
+
+// The player runs their company themselves.
+void player_runs(Company c, int d):
+    c.chief = 0
+    c.ceo = "you"
+    c.trait = 1
+    c.ceo_since = d
+
+// The free chief a company's board picks: the most appealing it can afford,
+// or else the cheapest. None (id 0) when every chief is taken.
+Chief pick(Market m, Company c):
+    float can = budget(m, c)
+    Chief best = Chief()
+    float best_score = 0.0
+    Chief cheapest = Chief()
+    for ch in m.chiefs:
+        if ch.company != 0 || ch.retires - m.today < 60 || ch.id == leaving:
+            continue
+        float p = price(ch)
+        if cheapest.id == 0 || p < price(cheapest):
+            cheapest = ch
+        if p > can:
+            continue
+        float s = appeal(ch) + m.chief_rng.between(-NOISE, NOISE)
+        if best.id == 0 || s > best_score:
+            best = ch
+            best_score = s
+    return best if best.id != 0 else cheapest
+
+// A new chief for `c` from the pool (its board's pick). Answers a phrase for
+// the news ("Ada Bellamy, formerly of X"). `want` is kept for callers from
+// before the pool and ignored.
+string appoint(Market m, Company c, int d, int want):
+    if c.chief != 0:
+        release(m, c, END_REPLACED, d)
+    Chief ch = pick(m, c)
+    leaving = 0
+    if ch.id == 0:
+        // No chief free (never with POOL_SIZE over the listing's cap): an
+        // acting one from its own ranks, until the next report.
+        c.chief = 0
+        c.ceo = names.person(m.chief_rng.range(0, 1000000))
+        c.trait = 1
+        c.ceo_since = d
+        return c.ceo + ", acting"
+    string from = last_company(ch)
+    // A chief no richer board wanted takes what a small company can pay.
+    float pay = price(ch)
+    float can = budget(m, c)
+    if pay > can:
+        pay = can if can > SALARY_MIN else SALARY_MIN
+    bind(m, c, ch, d, pay)
+    if d > 0:
+        float fee = pay * SIGN
+        c.cash -= fee
+        c.costs += fee
     c.payout = m.clamp(m.rng.between(0.15, 0.4) * payout_factor[c.trait], 0.05, 0.6)
     // (M3 review) A payout the player's board seat set stays while they hold the seat.
     if c.board_payout >= 0 && m.board.has_seat(m, c):
@@ -81,30 +339,52 @@ string appoint(Market m, Company c, int d, int want):
     else:
         c.board_payout = -1
     hired += 1
-    return c.ceo + ", " + names.traits[c.trait] + (", formerly of " + from if from != "" else "")
+    return ch.name + (", formerly of " + from if from != "" else (", new to the job" if ch.n == 0 else ""))
 
-void newcomer(Market m, Company c, int want):
-    c.ceo = names.person(m.rng.range(0, 100000))
-    c.trait = want if want >= 0 else m.rng.range(0, 3)
+string last_company(Chief ch):
+    if ch.stints.len() == 0:
+        return ""
+    return ch.stints[ch.stints.len() - 1].split("~")[0]
 
-// Fire the chief: to the pool, and a new one in.
+// The chief leaves (end: how) and someone takes over: the board's pick, or
+// the player, whose own board it is. Answers the phrase for the news.
+string replace(Market m, Company c, int end, int d):
+    release(m, c, end, d)
+    if player_controls(m, c):
+        player_runs(c, d)
+        return "the owner"
+    return appoint(m, c, d, -1)
+
+// Fire the chief after a scandal: it counts as an ouster.
 void fire(Market m, Company c, int d, string why):
     if c.ceo == "":
         return
     fired += 1
     string old = c.ceo
-    int old_trait = c.trait
-    // The new chief first (from the pool as it was), then the old one joins it.
-    string who = appoint(m, c, d, -1)
-    m.executives.append(old + ":" + string(old_trait) + ":" + c.name.replace_all(":", " "))
-    if m.executives.len() > POOL:
-        m.executives.remove_at(0)
+    string who = replace(m, c, END_SCANDAL, d)
     m.shock(c, 1.02)
-    m.say_tagged(d, c.name + " fires its chief executive, " + old + ", " + why + "; " + who + ", takes over.", "c" + string(c.id) + (",s" if c.sector == 0 else ""))
-    if m.holdings.get(c.id, 0) > 0:
-        m.player_events.append(c.name + ", whose shares you hold, has fired its chief executive " + old + ".")
+    m.say_tagged(d, c.name + " fires its chief executive, " + old + ", " + why + "; " + who + " takes over.", "c" + string(c.id) + (",s" if c.sector == 0 else ""))
+    if m.holdings.get(c.id, 0) > 0 || c.owner == 1:
+        m.player_events.append(("Your company " if c.owner == 1 else "") + c.name + (", whose shares you hold," if c.owner != 1 else "") + " has fired its chief executive " + old + ".")
 
-// Each day: crooked chiefs' scandals.
+// The board votes the chief out.
+void oust(Market m, Company c, int d):
+    Chief ch = chief_of(m, c)
+    if ch.id == 0:
+        return
+    ousted += 1
+    string old = ch.name
+    int months = ch.cur_n
+    string who = replace(m, c, END_OUSTED, d)
+    m.shock(c, 1.01)
+    m.say_tagged(d, c.name + "'s board votes out its chief executive, " + old + ", after " + string(months) + " months of poor results; " + who + " takes over.", "c" + string(c.id))
+    if m.holdings.get(c.id, 0) > 0 || c.owner == 1:
+        m.player_events.append(("The board of your company " if c.owner == 1 else "The board of ") + c.name + " has voted out its chief executive, " + old + ".")
+
+// ---- Each day ----
+
+// Crooked chiefs' scandals; careers that end; chiefs of companies gone; a
+// company left without one; an offer for the player's chief that runs out.
 void daily(es.Game game, Market m, int d):
     for c in m.companies:
         // (M3 review) The player's company too: a crooked chief's books are its risk.
@@ -117,22 +397,283 @@ void daily(es.Game game, Market m, int d):
         string ceo = c.ceo
         m.say_tagged(d, "Scandal at " + c.name + ": its chief executive, " + ceo + ", is accused of cooking the books; its shares slide.", "c" + string(c.id))
         fire(m, c, d, "after the scandal")
+    int i = 0
+    for i < m.chiefs.len():
+        Chief ch = m.chiefs[i]
+        if ch.company != 0:
+            Company c = m.by_id.get(ch.company, Company())
+            if c.id == 0 || !c.listed() || c.chief != ch.id:
+                close_stint(m, ch, END_GONE, d)
+                if c.id != 0 && c.chief == ch.id:
+                    c.chief = 0
+        if d >= ch.retires:
+            retire(m, ch, d)
+            continue
+        i += 1
+    seed_pool(m, d)
+    for c in m.companies:
+        if c.chief == 0 && c.ceo != "you" && c.listed() && (c.owner == 0 || !player_controls(m, c)) && (c.ceo == "" || d % 30 == c.report_at):
+            appoint(m, c, d, -1)
+    if m.offer_chief != 0 && d >= m.offer_until:
+        settle_offer(m, d)
 
-// At a report, before the earnings are booked: a crooked chief's window
-// dressing. After: a chief two losing reports in a row is fired; a
-// visionary's efficiency drifts.
+// A career ends: the chief leaves the pool for good, a new one comes in,
+// and its company (if any) hires again.
+void retire(Market m, Chief ch, int d):
+    retired += 1
+    Company c = m.by_id.get(ch.company, Company()) if ch.company != 0 else Company()
+    if c.id != 0 && c.chief == ch.id:
+        release(m, c, END_RETIRED, d)
+    else:
+        close_stint(m, ch, END_RETIRED, d)
+    if m.offer_chief == ch.id:
+        m.offer_chief = 0
+    for k in 0..<m.chiefs.len():
+        if m.chiefs[k].id == ch.id:
+            m.chiefs.remove_at(k)
+            break
+    m.chief_by_id.delete(ch.id)
+    generate(m, d, 0)
+    if c.id == 0 || !c.listed() || c.chief != 0:
+        return
+    string who = ""
+    if player_controls(m, c):
+        player_runs(c, d)
+        who = "the owner"
+    else:
+        who = appoint(m, c, d, -1)
+    m.say_tagged(d, c.name + "'s chief executive, " + ch.name + ", retires after " + m.fmt.one_decimal(float(d - ch.joined) / 365.0) + " years; " + who + " takes over.", "c" + string(c.id))
+    if c.owner == 1:
+        m.player_events.append(ch.name + ", chief executive of your company " + c.name + ", retires." + (" You run it yourself until you hire another (the exchange's Chiefs tab)." if c.ceo == "you" else ""))
+
+// ---- Reports ----
+
+// At a report, before the earnings are booked: a crooked chief's window dressing.
 void before_report(Market m, Company c):
     if c.trait == 3 && c.revenue > 0.0:
         c.revenue += c.revenue * WINDOW
 
+// Where a company stands: its normal earnings (Company.norm: smoothed, with
+// research added back, as the market counts them) per unit of effective
+// capacity against its sector's, a year's worth over a unit's book value.
+float standing(Market m, Company c):
+    float cap = m.eff(c)
+    if cap <= 0.0 || m.sector_rate.len() <= c.sector:
+        return 0.0
+    return 12.0 * (c.norm / cap - m.sector_rate[c.sector]) / m.CAPITAL
+
+// A report's score: how far the company's standing has moved since the
+// stint's first report (what it was handed is not the chief's doing).
+float score(Market m, Company c, Chief ch):
+    float now = standing(m, c)
+    return m.clamp(now - ch.base, -0.5, 0.5)
+
+// After a report: a visionary's efficiency drifts; the chief's record; the
+// board may vote it out; the company may poach a better chief.
 void after_report(Market m, Company c, int d):
     if c.trait == 2:
         c.efficiency = m.clamp(c.efficiency + m.rng.gauss() * 0.02 - 0.004, 0.75, 1.3)
-    // (M3 review: two losing reports fired a chief a company every 14 months.)
-    int n = c.earnings.len()
-    // Three losing reports, adding up to more than BIG_LOSS days of upkeep.
-    if c.owner == 0 && n >= 3 && c.earnings[n - 1] < 0.0 && c.earnings[n - 2] < 0.0 && c.earnings[n - 3] < 0.0 && c.earnings[n - 1] + c.earnings[n - 2] + c.earnings[n - 3] < -m.upkeep(c) * BIG_LOSS && d - c.ceo_since >= FIRE_AFTER:
-        fire(m, c, d, "after three losing reports")
+    if c.chief == 0 || !m.chief_by_id.has(c.chief):
+        return
+    Chief ch = m.chief_by_id[c.chief]
+    if ch.base == ch.UNSET:
+        ch.base = standing(m, c)
+        return
+    float s = score(m, c, ch)
+    ch.cur_n += 1
+    ch.cur_sum += s
+    ch.n += 1
+    ch.sum += s
+    if may_oust(m, c) && ch.cur_n >= OUST_MIN_N && ch.cur_mean() < -(OUST_BASE + OUST_LENIENCY / float(ch.cur_n)) && m.chief_rng.chance(OUST_VOTE):
+        oust(m, c, d)
+        return
+    if c.owner == 0 && c.status == c.LISTED && m.chief_rng.chance(POACH_CHANCE):
+        ai_poach(m, c, d)
+
+// A board may oust its chief: any company's but the player's while they control it.
+bool may_oust(Market m, Company c):
+    return c.chief != 0 && !player_controls(m, c)
+
+// ---- Poaching ----
+
+// The salary a chief is lured with, and what its company is paid to let it go.
+float lure(Chief ch):
+    return price(ch) * POACH_RAISE
+
+float buyout(Chief ch):
+    return lure(ch) * POACH_BUYOUT
+
+// The best sitting chief at another company that `c` can afford and would
+// rather have than its own; none (id 0).
+Chief poach_target(Market m, Company c):
+    Chief mine = chief_of(m, c)
+    float own = rating(mine) if mine.id != 0 else 0.0
+    float can = budget(m, c)
+    Chief best = Chief()
+    for ch in m.chiefs:
+        if ch.company == 0 || ch.company == c.id || ch.n < POACH_MIN_N || ch.ousters > 0 || ch.id == m.offer_chief:
+            continue
+        float r = rating(ch)
+        if r < own + POACH_EDGE || r <= POACH_EDGE || lure(ch) > can || c.cash < buyout(ch) + m.upkeep(c) * 60.0:
+            continue
+        if ch.retires - m.day < 365:
+            continue
+        if best.id == 0 || r > rating(best):
+            best = ch
+    return best
+
+void ai_poach(Market m, Company c, int d):
+    Chief ch = poach_target(m, c)
+    if ch.id == 0:
+        return
+    Company from = m.by_id.get(ch.company, Company())
+    if from.id == 0:
+        return
+    if from.owner == 1:
+        // The player's chief: an offer they may match.
+        if m.offer_chief == 0:
+            m.offer_chief = ch.id
+            m.offer_from = c.id
+            m.offer_salary = whole(lure(ch))
+            m.offer_until = d + OFFER_DAYS
+            m.player_events.append(c.name + " offers " + ch.name + ", chief executive of your company " + from.name + ", " + m.fmt.short_credits(m.offer_salary) + " a year (" + m.fmt.short_credits(ch.salary) + " now). Match it at an exchange (the Chiefs tab) by " + m.fmt.date(m.offer_until) + ", or " + ch.name + " leaves.")
+        return
+    take(m, c, ch, lure(ch), d)
+
+// `c` takes `ch` from its company at `salary`, paying that company the
+// buyout; its own chief goes back to the pool; the company that lost its
+// chief hires again. The buyer pays from its cash (the player's company: the
+// caller charges the player).
+void take(Market m, Company c, Chief ch, float salary, int d):
+    Company from = m.by_id.get(ch.company, Company())
+    if from.id == 0:
+        return
+    float paid = salary * POACH_BUYOUT
+    if c.owner == 0:
+        c.cash -= paid + salary * SIGN
+        c.costs += paid + salary * SIGN
+    from.cash += paid
+    poached += 1
+    release(m, from, END_POACHED, d)
+    if c.chief != 0:
+        release(m, c, END_REPLACED, d)
+    bind(m, c, ch, d, salary)
+    string who = ""
+    if player_controls(m, from):
+        player_runs(from, d)
+        who = "its owner"
+        m.player_events.append(c.name + " has hired away " + ch.name + ", chief executive of your company " + from.name + ", and paid it " + m.fmt.short_credits(paid) + " to let them go. You run it yourself until you hire another (the exchange's Chiefs tab).")
+    else:
+        who = appoint(m, from, d, -1)
+    m.say_tagged(d, c.name + " hires away " + from.name + "'s chief executive, " + ch.name + "; " + who + " takes over at " + from.name + ".", "c" + string(c.id) + ",c" + string(from.id))
+
+// The offer for the player's chief runs out: the chief goes, if the suitor still wants it.
+void settle_offer(Market m, int d):
+    Chief ch = m.chief_by_id.get(m.offer_chief, Chief())
+    Company buyer = m.by_id.get(m.offer_from, Company())
+    float salary = m.offer_salary
+    m.offer_chief = 0
+    if ch.id == 0 || buyer.id == 0 || !buyer.listed() || ch.company == 0 || ch.company == buyer.id:
+        return
+    Company from = m.by_id.get(ch.company, Company())
+    if from.owner != 1 || ch.salary >= salary:
+        return
+    take(m, buyer, ch, salary, d)
+
+// ---- The player ----
+
+// The player's company hires a free chief: the player pays the signing fee.
+bool player_hire(es.Game game, Market m, Company c, Chief ch, int d):
+    if c.id == 0 || c.owner != 1 || ch.id == 0 || ch.company != 0:
+        return false
+    float fee = sign_fee(ch)
+    if float(game.condition("credits")) < fee:
+        return false
+    m.credit(game, -fee)
+    if c.chief != 0:
+        release(m, c, END_LET_GO, d)
+    bind(m, c, ch, d, price(ch))
+    hired += 1
+    m.say_tagged(d, c.name + " hires " + ch.name + " as its chief executive.", "c" + string(c.id))
+    return true
+
+// What poaching a sitting chief costs the player: the buyout and the signing fee.
+float poach_cost(Chief ch):
+    return buyout(ch) + lure(ch) * SIGN
+
+bool may_poach(Market m, Company mine, Chief ch):
+    if mine.id == 0 || ch.id == 0 || ch.company == 0 || ch.company == mine.id:
+        return false
+    Company from = m.by_id.get(ch.company, Company())
+    return from.id != 0 && from.listed() && from.owner == 0
+
+bool player_poach(es.Game game, Market m, Company mine, Chief ch, int d):
+    if !may_poach(m, mine, ch):
+        return false
+    float cost = poach_cost(ch)
+    if float(game.condition("credits")) < cost:
+        return false
+    m.credit(game, -cost)
+    if ch.id == m.offer_chief:
+        m.offer_chief = 0
+    take(m, mine, ch, lure(ch), d)
+    return true
+
+// The player lets their chief go: they run the company themselves.
+void player_fire(Market m, Company c, int d):
+    if c.owner != 1 || c.chief == 0:
+        return
+    string old = c.ceo
+    release(m, c, END_LET_GO, d)
+    player_runs(c, d)
+    m.say_tagged(d, c.name + " lets its chief executive, " + old + ", go.", "c" + string(c.id))
+
+float retention(Market m):
+    return m.offer_salary * RETAIN
+
+// The player matches an offer for their chief: its salary rises to the
+// offer, and the player pays the retention bonus.
+bool match_offer(es.Game game, Market m, int d):
+    Chief ch = m.chief_by_id.get(m.offer_chief, Chief())
+    if ch.id == 0:
+        m.offer_chief = 0
+        return false
+    float bonus = retention(m)
+    if float(game.condition("credits")) < bonus:
+        return false
+    m.credit(game, -bonus)
+    ch.salary = m.offer_salary
+    m.offer_chief = 0
+    return true
+
+// ---- What the chief's stats do (Market, Research, Crises, Fleets) ----
+
+float margin_of(Market m, Company c):
+    float base = margin[c.trait] if c.trait >= 0 && c.trait < margin.len() else 0.0
+    return base - DRIVE_MARGIN * stat(m, c, 0)
+
+// Added to its efficiency's drift at each report (lower is cheaper).
+float cost_drift(Market m, Company c):
+    return -THRIFT_DRIFT * stat(m, c, 1)
+
+// What its research spending counts for.
+float rd_factor(Market m, Company c):
+    return 1.0 + VISION_RD * stat(m, c, 2)
+
+// Added to the chance a turn of fortune is good.
+float luck_of(Market m, Company c):
+    float base = luck[c.trait] if c.trait >= 0 && c.trait < luck.len() else 0.0
+    return base + NERVE_LUCK * stat(m, c, 3)
+
+// What a crisis costs it, against the average.
+float crisis_factor(Market m, Company c):
+    return 1.0 - NERVE_CRISIS * stat(m, c, 3)
+
+// How fast its reliability comes back, against the average.
+float recover_factor(Market m, Company c):
+    return 1.0 + NERVE_RECOVER * stat(m, c, 3)
+
+// ---- Saves from before the pool ----
 
 // A save from before M3: a chief for every company, from its id (no dice,
 // so loading a save twice gives the same chiefs).
@@ -142,3 +683,65 @@ void ensure(Market m, Company c):
     c.ceo = names.person(c.id * 7919 + c.name.len() * 31)
     c.trait = c.id % 4
     c.ceo_since = m.day
+
+// A save from before 0.4 (no "i|" lines): the companies' chiefs and the
+// executives out of work ("name:trait:last company", m.executives) join the
+// pool with stats that fit the traits they had, then new chiefs fill it.
+// The market's own dice draw them (saved), so a save loads the same way twice.
+void migrate(Market m):
+    m.chief_rng.seed(m.rng.state + 7)
+    for c in m.companies:
+        c.chief = 0
+        if !c.listed() || c.ceo == "" || c.ceo == "you":
+            continue
+        if m.chiefs.len() >= POOL_SIZE:
+            break
+        Chief ch = carried(m, c.ceo, c.trait, c.ceo_since)
+        int since = c.ceo_since
+        bind(m, c, ch, since, price(ch))
+    for e in m.executives:
+        if m.chiefs.len() >= POOL_SIZE:
+            break
+        []string f = e.split(":")
+        if f[0] == "" || taken(m, f[0]):
+            continue
+        Chief ch = carried(m, f[0], f[1].to_int() if f.len() > 1 else 0, m.day)
+        if f.len() > 2 && f[2] != "":
+            ch.stints.append(f[2].replace_all("~", " ").replace_all(";", " ") + "~" + string(m.day) + "~" + string(m.day) + "~0~0~" + string(END_LEFT))
+    m.executives = []
+    seed_pool(m, m.day)
+
+// A chief carried over: its name, stats that give its old trait, a career
+// some years along (never ending within a month).
+Chief carried(Market m, string name, int trait, int since):
+    Rng r = m.chief_rng
+    Chief ch = Chief()
+    ch.id = m.next_chief
+    m.next_chief += 1
+    ch.name = name
+    ch.stats = []
+    for k in 0..<5:
+        ch.stats.append(m.clamp(r.gauss() * STAT_SD, -1.0, 1.0))
+    // Stats that keep the trait it had (style() gives it back).
+    ch.stats[4] = m.clamp(ch.stats[4], CROOKED + 0.05, 1.0)
+    if trait == 0:
+        ch.stats[0] = r.between(0.1, 0.8)
+        ch.stats[2] = m.clamp(ch.stats[2], -1.0, ch.stats[0])
+    else if trait == 1:
+        ch.stats[0] = r.between(-0.8, -0.1)
+        ch.stats[2] = m.clamp(ch.stats[2], -1.0, -ch.stats[0])
+    else if trait == 2:
+        ch.stats[2] = r.between(0.5, 0.9)
+        ch.stats[0] = r.between(-0.4, 0.4)
+    else:
+        ch.stats[4] = r.between(-0.95, CROOKED - 0.05)
+    for k in 0..<5:
+        ch.stats[k] = milli(ch.stats[k])
+    int age = r.range(365, CAREER * 3 / 4)
+    int start = since if since < m.day else m.day
+    ch.joined = start - age
+    ch.retires = ch.joined + CAREER + r.range(-CAREER_SPREAD, CAREER_SPREAD)
+    if ch.retires < m.day + 30:
+        ch.retires = m.day + 30 + r.range(0, 730)
+    add(m, ch)
+    return ch

@@ -1,0 +1,9 @@
+name "Racing League and Corporations"
+version "0.1.0"
+authors
+	"Anaxarchus"
+tags
+	"gameplay"
+	"scripting"
+about "Joins The Racing League and Corporations: the exchange's companies sponsor the racing teams out of their racing budgets, and a deal whose team meets its target pays the company back in brand exposure, booked in its earnings and so in its share price. If you own a company of your own, its Sponsorship button at any bank offers deals to any team, your own included. Needs both The Racing League and Corporations; without either it does nothing."
+about "It needs the Dado mod loader (mod API 10 or newer) in the game's modloaders folder."

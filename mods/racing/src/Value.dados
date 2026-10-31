@@ -1,0 +1,246 @@
+class Value
+
+// What the player's team sells for (World.sale_value): its assets, plus a
+// premium for its standings and one for its marketability. A champion team
+// is worth far more than its franchise slot and its cash; a team that loses
+// and that sponsors shun is worth about its assets.
+//
+//   assets         the franchise slot at SALE of the league's franchise
+//                  (FIRE_SALE in a forced sale), plus the team's cash (less
+//                  any overdraft)
+//   standings      each season of the last SEASONS: the franchise of the
+//                  league it was played in x (STAND_K x q^STAND_POW, plus
+//                  TITLE_K for a title), q = 1 first .. 0 last; the season
+//                  under way counts by its table so far x the share of it run
+//                  (not for a team bought this season: none of that is its own)
+//   marketability  MKT_K x what sponsors paid each season (weekly pay and
+//                  bonuses) net of the penalties paid back, less what any team
+//                  in that league gets (MKT_BASE x the league's scale a
+//                  season, pro rata for the season under way, or for the weeks
+//                  since a team bought this season was bought); never less than
+//                  -MKT_FLOOR of the franchise. Money from a related party (the
+//                  owner's own company: a sponsor known to Racing only by its
+//                  direct offers, to the player's team) counts RELATED_K (0).
+//                  Plus the fame of the team's people (fame: at most
+//                  FAME_K of the franchise).
+//
+// Every season's term is weighted DECAY^(age in seasons), age measured from
+// now: seasons are counted as they are run (a round a tenth), so a value
+// falls smoothly as titles grow old instead of at the new season's turn.
+// A forced sale (deep debt) pays the assets only: a distressed seller gets
+// no premium.
+
+float DECAY = 0.5
+int SEASONS = 5
+float STAND_K = 0.8
+float STAND_POW = 3.0
+float TITLE_K = 0.6
+float MKT_K = 1.5
+float MKT_BASE = 250000.0
+float MKT_FLOOR = 0.05
+float RELATED_K = 0.0
+float FAME_K = 0.12
+float FAME_HALF = 100.0
+float FAME_CREW = 0.35
+// Prestige (World.prestige, 0 .. 100) as PRESTIGE_K of the franchise at 100.
+float PRESTIGE_K = 0.2
+
+Names names = Names()
+
+// ---- Sponsor money, booked as it is paid ----
+
+// Is a sponsor the team's owner in another guise? Racing knows no other mod:
+// a sponsor it knows only by its direct offers ("racing.sponsor_offer";
+// source "direct") is, through the Corporations bridge, the player's own
+// company, and to the player's team it is a related party.
+bool related(World w, Team t, string sponsor):
+    return t.player && w.sponsor(sponsor).source == "direct"
+
+// Sponsor money for a team: pay and bonuses (positive), penalties paid back
+// (negative).
+void book(World w, Team t, string sponsor, float amount):
+    if related(w, t, sponsor):
+        t.sponsor_related += amount
+    else:
+        t.sponsor_net += amount
+
+// The season's end (World.end_season, after the sponsors' clauses): this
+// season's sponsor money goes into the history.
+void close_season(World w, Team t):
+    string e = string(w.season) + ":" + names.league_short[t.league] + ":" + string(t.sponsor_net) + ":" + string(t.sponsor_related)
+    []string parts = t.sponsor_history.split(",") if t.sponsor_history != "" else []
+    parts.append(e)
+    for parts.len() > SEASONS:
+        parts.remove_at(0)
+    t.sponsor_history = parts.join(",")
+    t.sponsor_net = 0.0
+    t.sponsor_related = 0.0
+
+// A save from before sponsor histories: estimated from the team's deals still
+// running. What they paid this season is this season's (exact for them);
+// what they paid before goes to the season before (all of it, though a deal
+// may span two); deals that have ended and penalties paid are not known, so
+// the estimate errs low (a lower price, never an inflated one).
+void migrate(World w, Team t):
+    t.sponsor_known = true
+    t.sponsor_net = 0.0
+    t.sponsor_related = 0.0
+    t.sponsor_history = ""
+    float past = 0.0
+    float past_rel = 0.0
+    for d in w.deals:
+        if d.team != t.id || d.offer:
+            continue
+        float before = d.paid - d.season_paid
+        before = before if before > 0.0 else 0.0
+        if related(w, t, d.sponsor):
+            t.sponsor_related += d.season_paid
+            past_rel += before
+        else:
+            t.sponsor_net += d.season_paid
+            past += before
+    // In the off-season the season just ended is closed: its deals' payments
+    // since are next season's; all before is the season just ended.
+    int s = w.season if closed(w) else w.season - 1
+    if s >= 1 && (past > 0.0 || past_rel > 0.0):
+        int l = league_in(t, s)
+        t.sponsor_history = string(s) + ":" + names.league_short[l] + ":" + string(past) + ":" + string(past_rel)
+
+// ---- Time ----
+
+// The season under way has ended (its titles are in the history).
+bool closed(World w):
+    return w.finals_season == w.season
+
+// Now, in seasons: season s ended at s. The season under way counts its
+// rounds run.
+float now(World w, Team t):
+    if closed(w):
+        return float(w.season)
+    float e = float(t.finishes.len()) / float(w.ROUNDS)
+    e = e if e < 1.0 else 1.0
+    return float(w.season - 1) + e
+
+float weight(float now, int season):
+    float age = now - float(season)
+    if age < 0.0:
+        age = 0.0
+    if age >= float(SEASONS):
+        return 0.0
+    return float(globalThis.Math.pow(DECAY, age))
+
+int league_of(string short):
+    for l in 0..<3:
+        if names.league_short[l] == short:
+            return l
+    return 0
+
+// The league a team played a season in (its history), else its league now.
+int league_in(Team t, int season):
+    if t.history != "":
+        for part in t.history.split(","):
+            []string f = part.split(":")
+            if f.len() >= 3 && f[0].to_int() == season:
+                return league_of(f[1])
+    return t.league
+
+// ---- The parts of the price ----
+
+float assets(World w, Team t, bool forced):
+    return w.franchise[t.league] * (w.FIRE_SALE if forced else w.SALE) + t.cash
+
+// One season's standing: the league's franchise x (STAND_K x q^STAND_POW,
+// plus TITLE_K for the title).
+float season_score(World w, int league, int pos, bool title):
+    int n = w.size(league)
+    float q = float(n - pos) / float(n - 1)
+    q = 0.0 if q < 0.0 else (1.0 if q > 1.0 else q)
+    float v = STAND_K * float(globalThis.Math.pow(q, STAND_POW)) + (TITLE_K if title else 0.0)
+    return w.franchise[league] * v
+
+float standings(World w, Team t):
+    float n = now(w, t)
+    float sum = 0.0
+    if t.history != "":
+        for part in t.history.split(","):
+            []string f = part.split(":")
+            if f.len() < 3:
+                continue
+            int pos = f[2].to_int()
+            if pos > 0:
+                sum += weight(n, f[0].to_int()) * season_score(w, league_of(f[1]), pos, pos == 1)
+    if !closed(w) && !t.protect:
+        int pos = w.position(t)
+        float e = n - float(w.season - 1)
+        if pos > 0 && e > 0.0:
+            sum += e * season_score(w, t.league, pos, false)
+    return sum
+
+// What sponsors paid at arm's length (net of penalties), over what any team
+// in the league gets, weighted by age; related parties' at RELATED_K.
+float sponsor_record(World w, Team t):
+    float n = now(w, t)
+    float sum = 0.0
+    if t.sponsor_history != "":
+        for part in t.sponsor_history.split(","):
+            []string f = part.split(":")
+            if f.len() < 4:
+                continue
+            int l = league_of(f[1])
+            float money = f[2].to_float() + RELATED_K * f[3].to_float()
+            sum += weight(n, f[0].to_int()) * (money - MKT_BASE * w.scale[l])
+    sum += t.sponsor_net + RELATED_K * t.sponsor_related - owned(w, t) * MKT_BASE * w.scale[t.league]
+    return sum
+
+// The share of the season under way that counts against the league's usual
+// sponsor money: its rounds run, or for a team bought this season those since
+// it was bought (so buying a team, signing its offers and selling it weeks
+// later earns no premium).
+float owned(World w, Team t):
+    if closed(w):
+        return 0.0
+    float e = now(w, t) - float(w.season - 1)
+    if t.protect:
+        float since = float(w.day - t.founded) / float(7 * w.ROUNDS)
+        since = since if since > 0.0 else 0.0
+        e = since if since < e else e
+    return e
+
+// What the team's people are worth to sponsors and fans (Lore): their fame,
+// the pilots' as one (World.pilot_fame: the better one's and half the
+// other's, at most 100) and the crew's at FAME_CREW, F, as FAME_K of the
+// league's franchise x F / (F + FAME_HALF). Bounded: never FAME_K of the
+// franchise (a household-name pilot alone, fame 100, is half of it), so
+// fame adds to a price and never makes it.
+float fame(World w, Team t):
+    float f = w.pilot_fame(t)
+    for role in 1..<5:
+        Person p = w.seat(t, role)
+        if p.id != 0:
+            f += p.fame * FAME_CREW
+    return FAME_K * w.franchise[t.league] * f / (f + FAME_HALF)
+
+float marketability(World w, Team t):
+    float m = MKT_K * sponsor_record(w, t) + fame(w, t)
+    float least = -MKT_FLOOR * w.franchise[t.league]
+    return m if m > least else least
+
+// The team's prestige (its age and lifetime record, World.prestige) as a
+// buyer pays for it: PRESTIGE_K of the league's franchise at prestige 100.
+// Lifetime, unlike the standings: it neither decays nor drops at a season's turn.
+float prestige_value(World w, int league, float p):
+    return PRESTIGE_K * w.franchise[league] * p / 100.0
+
+float prestige(World w, Team t):
+    return prestige_value(w, t.league, w.prestige(t))
+
+float sale_value(World w, Team t, bool forced):
+    if forced:
+        return assets(w, t, true)
+    float s = standings(w, t)
+    return assets(w, t, false) + (s if s > 0.0 else 0.0) + marketability(w, t) + prestige(w, t)
+
+// The price, part by part, for the office.
+string breakdown(World w, Team t):
+    float slot = w.franchise[t.league] * w.SALE
+    return "assets " + w.fmt.credits(slot + t.cash) + " (the franchise " + w.fmt.credits(slot) + ", cash " + w.fmt.credits(t.cash) + "), standings " + w.fmt.credits(standings(w, t)) + " (places and titles, recent seasons most), marketability " + w.fmt.credits(marketability(w, t)) + " (sponsor money net of penalties against the league's usual, recent seasons most; the owner's own company's money does not count; " + w.fmt.credits(fame(w, t)) + " of it the fame of its people), prestige " + w.fmt.credits(prestige(w, t)) + " (" + w.prestige_label(w.prestige(t)) + ": its age and lifetime trophies)"

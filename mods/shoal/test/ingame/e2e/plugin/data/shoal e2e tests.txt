@@ -1,0 +1,456 @@
+# The Shoal v0.3 end to end, run by mods/shoal/test/ingame/e2e/run.sh with
+# The Shoal (built with the mod SDK), the Dado loader and the real game.
+# A pilot landed on Breaker's Rest with raw materials in the hold and in
+# storage refines them and has the yard upgrade an installed stock outfit,
+# the D14-RN Shield Generator, to its Mk I; the variant survives taking off
+# (which saves) and loading that save. Then (mod API 12) it has the yard
+# upgrade a gun this plugin defines, which the yard's stock Catalog does not
+# know, to its Mk I; that too survives a save and a reload, and run.sh checks
+# the saved variant's scaled weapon stats.
+
+# A plugin outfit: the yard finds it on the flagship (ship_outfit_kinds) and
+# reads its weapon block (outfit_weapon_attribute). Mk I: damage x1.10
+# (shield 33, hull 22, ion 4.4), firing energy and heat x1.04 (10.4, 20.8).
+outfit "E2E Sleetgun"
+	category "Guns"
+	cost 40000
+	thumbnail "outfit/blaster"
+	"mass" 8
+	"outfit space" -12
+	"weapon capacity" -12
+	"gun ports" -1
+	weapon
+		sprite "projectile/blaster"
+		sound "blaster"
+		"hit effect" "blaster impact"
+		"inaccuracy" 1
+		"velocity" 10
+		"lifetime" 40
+		"reload" 20
+		"firing energy" 10
+		"firing heat" 20
+		"shield damage" 30
+		"hull damage" 20
+		"ion damage" 4
+	description "A test gun from The Shoal's end-to-end test plugin."
+
+test-data "Shoal Yard E2E Save"
+	category "savegame"
+	contents
+		pilot Yard Tester
+		date 16 11 3013
+		system "~The Shoal"
+		planet "Breaker's Rest"
+		clearance
+		"reputation with"
+			Pirate 1
+		ship "Star Barge"
+			name "Glass Barge"
+			sprite "ship/star barge"
+			attributes
+				category "Light Freighter"
+				cost 190000
+				mass 70
+				bunks 3
+				"cargo space" 80
+				drag 2.1
+				"engine capacity" 400
+				"fuel capacity" 300
+				"heat dissipation" 0.8
+				hull 50000
+				"outfit space" 1300
+				"required crew" 1
+				shields 50000
+				"weapon capacity" 200
+			outfits
+				"X1700 Ion Thruster"
+				"X1200 Ion Steering"
+				Hyperdrive
+				"nGVF-BB Fuel Cell"
+				"LP036a Battery Pack"
+				"D14-RN Shield Generator"
+				"E2E Sleetgun"
+			cargo
+				outfits
+					"Shoal Glass" 25
+					"Warden Core" 7
+			crew 1
+			fuel 300
+			shields 50000
+			hull 50000
+			position 0 0
+			engine -9 38 1
+			engine 9 38 1
+			gun 0 -30 "E2E Sleetgun"
+			system "~The Shoal"
+			planet "Breaker's Rest"
+		account
+			credits 1000000
+			score 400
+			history
+		storage
+			planet "Breaker's Rest"
+				cargo
+					outfits
+						"Shoal Glass" 10
+						"Refined Shoal Glass" 1
+		conditions
+			"shoal: charted"
+			"shoal: welcomed"
+			"shoal: maw told"
+		visited Arneb
+		visited "~The Shoal"
+		"visited planet" "Breaker's Rest"
+		changes
+			link Arneb "~The Shoal"
+
+
+test "Shoal Yard E2E"
+	status active
+	description "The Shoal v0.3 through the Dado loader: refine at Breaker's Rest, upgrade an installed stock outfit and a plugin's gun to Mk I at the Breakers' Yard, take off and load the save again."
+	sequence
+		inject "Shoal Yard E2E Save"
+		call "Load First Savegame"
+		assert
+			"mod loaders" >= 1
+			"mods loaded" >= 1
+			"shoal: refinery jobs" == 0
+			"outfit (cargo): Shoal Glass" == 25
+			"outfit (storage): Shoal Glass" == 10
+			"outfit (cargo): Warden Core" == 7
+			"outfit (flagship installed): D14-RN Shield Generator" == 1
+			"flagship attribute: shield generation" == 200
+		# The planet button opens the yard; 1 and 2 press its refinery buttons.
+		input
+			key k
+		input
+			key 1
+		assert
+			"outfit (cargo): Refined Shoal Glass" == 3
+			"outfit (cargo): Shoal Glass" == 0
+			"outfit (storage): Shoal Glass" == 5
+		input
+			key 2
+		assert
+			"outfit (cargo): Refined Warden Core" == 2
+			"outfit (cargo): Warden Core" == 1
+		# The arrow key clicks the first row (the shield generator): the yard
+		# asks to confirm, with Cancel chosen; Right chooses OK.
+		input
+			key Down
+		input
+			key Right
+		input
+			key Return
+		assert
+			"outfit (flagship installed): D14-RN Shield Generator" == 0
+			"outfit (flagship installed): D14-RN Shield Generator (Breakers Mk I)" == 1
+			"flagship attribute: shield generation" > 210
+			"flagship attribute: shield generation" < 230
+			"outfit (cargo): Refined Shoal Glass" == 1
+			"credits" == 999000
+		input
+			key escape
+		# Taking off saves the pilot.
+		call "Depart"
+		assert
+			"outfit (flagship installed): D14-RN Shield Generator (Breakers Mk I)" == 1
+			"flagship attribute: shield generation" > 210
+		input
+			key escape
+		call "Load First Savegame"
+		assert
+			"outfit (flagship installed): D14-RN Shield Generator" == 0
+			"outfit (flagship installed): D14-RN Shield Generator (Breakers Mk I)" == 1
+			"outfit (cargo): Refined Shoal Glass" == 1
+			"outfit (cargo): Refined Warden Core" == 2
+			"outfit (storage): Shoal Glass" == 5
+			"outfit (flagship installed): E2E Sleetgun" == 1
+		# Mod API 12: the plugin's gun. The rows are by name: the shield
+		# generator's Mk I, then the gun. Down clicks the first row, whose
+		# Mk II needs more glass than there is (the yard says so, no confirm,
+		# and the row stays chosen); Down clicks the next row, the gun; Right
+		# and Return: OK. It costs 2 Refined Shoal Glass (the 1 in the hold,
+		# then 1 from storage) and 2,000 credits.
+		input
+			key k
+		input
+			key Down
+		assert
+			"outfit (flagship installed): E2E Sleetgun" == 1
+			"credits" == 999000
+		input
+			key Down
+		input
+			key Right
+		input
+			key Return
+		assert
+			"outfit (flagship installed): E2E Sleetgun" == 0
+			"outfit (flagship installed): E2E Sleetgun (Breakers Mk I)" == 1
+			"outfit (cargo): Refined Shoal Glass" == 0
+			"outfit (storage): Refined Shoal Glass" == 0
+			"credits" == 997000
+		input
+			key escape
+		call "Depart"
+		assert
+			"flagship attribute: shield generation" > 210
+			"flagship attribute: shield generation" < 230
+			"outfit (flagship installed): E2E Sleetgun (Breakers Mk I)" == 1
+		input
+			key escape
+		call "Load First Savegame"
+		assert
+			"outfit (flagship installed): E2E Sleetgun" == 0
+			"outfit (flagship installed): E2E Sleetgun (Breakers Mk I)" == 1
+			"outfit (flagship installed): D14-RN Shield Generator (Breakers Mk I)" == 1
+			"outfit (cargo): Refined Shoal Glass" == 0
+			"credits" == 997000
+
+
+# The Shoal 0.5.0 end to end (DESIGN.md section 22): a run is in the Deep. A
+# pilot at Breaker's Rest flies down through the Maw (a run starts), lands at
+# Breakers' Haven (the run goes on), jumps one system deeper (the depth
+# conditions follow), and comes back up through the Upwell (the run ends and
+# is counted). Run by run.sh after "Shoal Yard E2E", in a config of its own.
+
+test-data "Shoal Deep E2E Save"
+	category "savegame"
+	contents
+		pilot Deep Tester
+		date 16 11 3013
+		system "~The Shoal"
+		planet "Breaker's Rest"
+		clearance
+		"reputation with"
+			Pirate 1
+		ship "Star Barge"
+			name "Sounding Line"
+			sprite "ship/star barge"
+			attributes
+				category "Light Freighter"
+				cost 190000
+				mass 70
+				bunks 3
+				"cargo space" 80
+				drag 2.1
+				"engine capacity" 400
+				"fuel capacity" 600
+				"heat dissipation" 0.8
+				hull 200000
+				"hull repair rate" 50
+				"outfit space" 1300
+				"required crew" 1
+				shields 200000
+				"shield generation" 100
+				"weapon capacity" 200
+			outfits
+				"X1700 Ion Thruster"
+				"X1200 Ion Steering"
+				Hyperdrive
+				"nGVF-BB Fuel Cell"
+				"LP036a Battery Pack"
+			crew 1
+			fuel 600
+			shields 200000
+			hull 200000
+			position 0 0
+			engine -9 38 1
+			engine 9 38 1
+			system "~The Shoal"
+			planet "Breaker's Rest"
+		account
+			credits 1000000
+			score 400
+			history
+		conditions
+			"shoal: charted"
+			"shoal: welcomed"
+			"shoal: maw told"
+			"shoal: ambush next" 1000000000
+			"shoal: hunter next" 1000000000
+			"shoal: tow next" 1000000000
+			"shoal: lead freighter next" 1000000000
+			"shoal: lead warship next" 1000000000
+			"shoal: lead deep next" 1000000000
+		visited Arneb
+		visited "~The Shoal"
+		"visited planet" "Breaker's Rest"
+		changes
+			link Arneb "~The Shoal"
+
+
+test "Shoal E2E Takeoff"
+	status partial
+	description "Depart (pressing the depart key again every 100 frames) until the flagship is in space."
+	sequence
+		apply
+			"test: takeoff frames" = 0
+		label press
+		call "Depart"
+		label wait
+		apply
+			"test: takeoff frames" += 1
+		branch done
+			"flagship landed" == 0
+		branch press
+			"test: takeoff frames" % 100 == 0
+			"test: takeoff frames" < 1000
+		branch wait
+			"test: takeoff frames" < 1000
+		label done
+		assert
+			"flagship landed" == 0
+
+
+test "Shoal E2E Land"
+	status partial
+	description "Land on the travel destination, giving up after 5000 frames."
+	sequence
+		apply
+			"test: land frames" = 0
+		input
+			command land
+		label landing
+		apply
+			"test: land frames" += 1
+		branch landing
+			"flagship landed" == 0
+			"test: land frames" < 5000
+		assert
+			"flagship landed" == 1
+
+
+test "Shoal E2E Through The Maw"
+	status partial
+	description "In flight in Breakers' Rest: land on The Maw until the flagship is in the hub."
+	sequence
+		apply
+			"test: maw frames" = 0
+		navigate
+			"travel destination" "The Maw"
+		label press
+		input
+			command land
+		label wait
+		apply
+			"test: maw frames" += 1
+		branch done
+			"flagship system: ~~Shoal The Sounding" == 1
+		branch press
+			"test: maw frames" % 200 == 0
+			"test: maw frames" < 8000
+		branch wait
+			"test: maw frames" < 8000
+		label done
+		assert
+			"flagship system: ~~Shoal The Sounding" == 1
+
+
+test "Shoal E2E Up The Upwell"
+	status partial
+	description "In flight in the hub: land on The Upwell until the flagship is back in Breakers' Rest."
+	sequence
+		apply
+			"test: upwell frames" = 0
+		navigate
+			"travel destination" "The Upwell"
+		label press
+		input
+			command land
+		label wait
+		apply
+			"test: upwell frames" += 1
+		branch done
+			"flagship system: ~The Shoal" == 1
+		branch press
+			"test: upwell frames" % 200 == 0
+			"test: upwell frames" < 8000
+		branch wait
+			"test: upwell frames" < 8000
+		label done
+		assert
+			"flagship system: ~The Shoal" == 1
+
+
+test "Shoal Deep E2E"
+	status active
+	description "The Shoal 0.5.0 through the Dado loader: entering the Deep through the Maw starts a run, landing at Breakers' Haven keeps it, a jump deeper sets the depth, and coming back up through the Upwell ends and counts it."
+	sequence
+		inject "Shoal Deep E2E Save"
+		call "Load First Savegame"
+		assert
+			"mod loaders" >= 1
+			"mods loaded" >= 1
+			"shoal: in run" == 0
+			"shoal: runs" == 0
+		call "Shoal E2E Takeoff"
+		assert
+			"flagship system: ~The Shoal" == 1
+			"shoal: in run" == 0
+		call "Shoal E2E Through The Maw"
+		assert
+			"shoal: in run" == 1
+			"shoal: depth" == 0
+		navigate
+			"travel destination" "Breakers' Haven"
+		call "Shoal E2E Land"
+		assert
+			"flagship planet: Breakers' Haven" == 1
+			"shoal: in run" == 1
+		call "Shoal E2E Takeoff"
+		assert
+			"flagship system: ~~Shoal The Sounding" == 1
+			"shoal: in run" == 1
+		navigate
+			travel "~~Shoal Kelpwater"
+		apply
+			"test: jump frames" = 0
+		label jumpdown
+		input
+			command jump
+		label jumpingdown
+		apply
+			"test: jump frames" += 1
+		branch down
+			"flagship system: ~~Shoal Kelpwater" == 1
+		branch jumpdown
+			"test: jump frames" % 200 == 0
+			"test: jump frames" < 6000
+		branch jumpingdown
+			"test: jump frames" < 6000
+		label down
+		assert
+			"flagship system: ~~Shoal Kelpwater" == 1
+			"shoal: in run" == 1
+			"shoal: depth" == 1
+			"shoal: deepest depth" == 1
+		navigate
+			travel "~~Shoal The Sounding"
+		apply
+			"test: jump frames" = 0
+		label jumpup
+		input
+			command jump
+		label jumpingup
+		apply
+			"test: jump frames" += 1
+		branch up
+			"flagship system: ~~Shoal The Sounding" == 1
+		branch jumpup
+			"test: jump frames" % 200 == 0
+			"test: jump frames" < 6000
+		branch jumpingup
+			"test: jump frames" < 6000
+		label up
+		assert
+			"shoal: in run" == 1
+			"shoal: depth" == 0
+		call "Shoal E2E Up The Upwell"
+		assert
+			"flagship system: ~The Shoal" == 1
+			"shoal: in run" == 0
+			"shoal: runs" == 1
+			"shoal: depth" == 0
+			"shoal: deepest depth" == 1

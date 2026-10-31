@@ -87,7 +87,7 @@ Company sponsor_for(es.Game game, Market m, Company t):
 
 bool tendering(Market m, Company t):
     for k in m.contracts:
-        if k.kind == k.TENDER && ((k.status == k.RUNNING && k.winner == t.id && k.convoy == 0) || (k.status == k.OPEN && t.load + k.load <= t.capacity)):
+        if k.kind == k.TENDER && ((k.status == k.RUNNING && k.winner == t.id && k.convoy == 0) || (k.status == k.OPEN && t.load + k.load <= m.eff(t))):
             return true
     return false
 

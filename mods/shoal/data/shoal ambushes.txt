@@ -1,0 +1,46 @@
+# Copyright (c) 2026 by Anaxarchus
+#
+# Endless Sky is free software: you can redistribute it and/or modify it under the
+# terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later version.
+#
+# Endless Sky is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+# PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+# The names of the Breakers' ships and of the hunters in the combat jobs
+# (DESIGN.md section 17). The jobs themselves are, since 0.5.0, one per target
+# system in the Deep: "shoal deep jobs.txt" (tools/deep/gen.py; DESIGN.md
+# section 22). The ambushers are the fleets "Shoal Ambushers" and "Shoal Ambush
+# Hunter" ("shoal fleets.txt").
+
+
+phrase "shoal breakers ships"
+	word
+		"Patience"
+		"Cold Comfort"
+		"Second Wind"
+		"Low Water"
+		"Old Grudge"
+		"Saltcutter"
+		"Hesper's Due"
+		"Fair Salvage"
+		"Last Lamp"
+		"Glass Halfway"
+		"Slow Mercy"
+		"Ballast"
+
+phrase "shoal hunter"
+	word
+		"Lantern"
+		"Salt Widow"
+		"Mourning Bell"
+		"Gravewake"
+		"Lowtide"
+		"Undermourn"
+		"Brine Choir"
+		"Long Silence"
+		"Pale Keel"
+		"Hollow Tide"
+		"Drowsing Knife"
+		"Wake of Ash"

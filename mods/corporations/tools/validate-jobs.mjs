@@ -1,5 +1,6 @@
 // Validates every kind of job text Corporations writes (parts, convoy escort
-// and intercept, relief cargo, covert plans and sabotage) with the real
+// and intercept, relief cargo, covert plans and sabotage, (M4) sweeps
+// against pirates) with the real
 // game's data parser. It runs the market against FakeGame, lands on every
 // planet now and then (with standings that make covert jobs appear, and a
 // crisis forced for relief jobs), collects the job bodies as offer_job
@@ -52,6 +53,11 @@ for (let round = 0; round < rounds; round++) {
 		const c = mod.market.companies.find((x) => x.listed() && [0, 1, 3, 4, 5].includes(x.sector));
 		mod.market.crisis_desk.begin(game, mod.galaxy, mod.market, c, mod.market.day);
 	}
+	// (M4) A sweep against pirates at the strongest security company's home.
+	if (round % 5 === 0) {
+		const sec = mod.market.companies.filter((x) => x.listed() && x.sector === 7).sort((a, b) => b.capacity - a.capacity)[0];
+		if (sec) mod.market.fleets.post(game, mod.galaxy, mod.market, sec.system, 5000000, "pirates", mod.market.day);
+	}
 	for (const p of planets) {
 		game.landed = true; game.planet_ = p; game.here_ = game.planets[p].system; game.jobs = new Map();
 		mod.on_enter(game, game.here_);
@@ -84,7 +90,7 @@ try {
 const log = existsSync(join(config, "errors.txt")) ? readFileSync(join(config, "errors.txt"), "utf8") : "";
 // Warnings come in blocks: a heading line, then "file <path>" and the lines.
 const blocks = log.split(/\n(?=\S+ \S+ \| W \| (?!file |L\d))/).filter((b) => b.includes(plugin));
-const missing = ["parts", "escort", "intercept", "relief", "covert plans", "covert sabotage", "tip", "blockade"].filter((k) => !kinds[k]);
+const missing = ["parts", "escort", "intercept", "relief", "covert plans", "covert sabotage", "tip", "blockade", "sweep"].filter((k) => !kinds[k]);
 console.log(`${[...jobs.values()].reduce((s, l) => s + l.length, 0)} job texts checked by ${bin}: ${blocks.length} warning(s) about them`);
 for (const b of blocks) console.log(b.replaceAll(config, "<config>"));
 if (missing.length) console.log("kinds not seen (raise the rounds):", missing.join(", "));

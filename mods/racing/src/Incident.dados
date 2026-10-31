@@ -1,0 +1,39 @@
+class Incident
+
+// One event waiting for the player (Events): which template, the hidden roll
+// that decides which approach was right (0 .. 2, never shown), the person in
+// the responsible seat when it happened (0 a stand-in), the names it was told
+// with, and the day after which the chief handles it alone. Saved as one
+// "i|" line.
+
+int id = 0
+int template = 0
+int roll = 0
+int chief = 0
+int day = 0
+int deadline = 0
+// A sponsor, a rival team and a circuit, for the text.
+string sponsor = ""
+string rival = ""
+string circuit = ""
+// A department the event touches (Names.dept_names).
+int dept = 0
+// The player has seen it on a planet (its dialog opened).
+bool shown = false
+
+string encode():
+    return [string(id), string(template), string(roll), string(chief), string(day), string(deadline), sponsor, rival, circuit, string(dept), "1" if shown else "0"].join("|")
+
+void decode(string line):
+    []string f = line.split("|")
+    id = f[0].to_int()
+    template = f[1].to_int()
+    roll = f[2].to_int()
+    chief = f[3].to_int()
+    day = f[4].to_int()
+    deadline = f[5].to_int()
+    sponsor = f[6]
+    rival = f[7]
+    circuit = f[8]
+    dept = f[9].to_int()
+    shown = f[10] == "1"

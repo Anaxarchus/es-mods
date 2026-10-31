@@ -1,0 +1,604 @@
+class Fleets
+
+import "imports:sdk/es"
+
+// (M4) Security companies' fleets and their strikes on pirates.
+//
+// A security company's work is done by real ships: Company.fleet, "model:n;...",
+// warships from the hull table (warship and interceptor categories, not the
+// military's). Its capacity is still what it has paid for (yards for other
+// sectors, ships for this one), and the fleet follows it (reconcile, daily):
+// short of its capacity by a ship or more, it takes a hull from a human
+// shipyard's stock (never the last one there: the player may want it; the
+// design's owner earns its royalty, as on any sale), choosing by its chief
+// (QUALITY_TRAITS buy the best they can, others more and cheaper hulls); over
+// it, it retires its cheapest ship. A ship's capacity is its price over a
+// unit of capacity's book value (Market.CAPITAL). Ships the player hands over
+// to their own security company join its fleet as they are (Charter.contribute).
+//
+// Strikes (contract kind OPERATION): now and then, where pirates are active
+// (Diplomacy's pirate raids, or a region near pirates with a high loss index),
+// a government or a shipping line pays a security company to deal with a
+// pirate force of `threat` credits of warships (Contract.units, in 100k).
+// Companies whose ships at home are worth STRENGTH_NEED of the threat bid;
+// the winner sends a flotilla (Contract.model, "model:n;...", from its best
+// ships, worth its chief's FORCE of the threat), which reaches the target
+// (Contract.system) after a day a jump and fights:
+//   strength = sum of each ship's price × (0.7 + 0.6 × quality),
+//   quality  = how well built a hull is, from its price (quality()),
+//   won with chance r² / (r² + 1), r = strength / threat;
+//   each ship is lost with chance LOSS × (1 / r) × (1.4 − 0.9 × quality)
+//   (and more in a defeat). Lost ships and their capacity are gone for good;
+//   survivors come home. A win pays the price, lifts the company and quiets
+//   the pirates' region (Losses.suppress); a defeat pays a share, costs
+//   reliability and some of its share price, and makes the news.
+// The player can fight beside the flotilla: a job on boards within JOB_REACH
+// of the target while the flotilla is on its way. Taken, the strike waits for
+// them (to the job's deadline): the flotilla's ships (the best MAX_SPAWN of
+// them) and the pirates are real ships in the target system, each company
+// ship with its own "on destroy" ("corporations: op <id> lost <k>"); the
+// pirates destroyed ("corporations: op <id> won") is a win, and only the
+// ships that died there are lost. A job failed or abandoned: the strike is
+// fought without the player.
+
+float LOSS = 0.25
+float STRENGTH_NEED = 1.2
+// The force each trait sends against a threat: aggressive, prudent, visionary, crooked.
+[]float FORCE = [1.2, 2.0, 1.5, 1.3]
+// Traits that buy the best hulls they can: prudent and visionary.
+[]bool QUALITY_TRAITS = [false, true, true, false]
+// Strikes: the chance a day one is issued where pirates are active (each
+// region with a loss index of HOT or more and pirates near, and each of
+// Diplomacy's pirate raids), its threat (credits of pirate warships) and
+// pay against the threat; Diplomacy's strength points in credits.
+float CHANCE = 0.012
+float HOT = 1.8
+float THREAT_LO = 8000000.0
+float THREAT_HI = 60000000.0
+float PAY = 0.45
+float POINT = 200000.0
+int REACH = 6
+int JOB_REACH = 4
+int MAX_SPAWN = 6
+int JOB_PAY = 40000
+float SUPPRESS = 0.4
+
+int OPERATION = 6
+
+// Counted since the mod started (not saved), for tests and tools.
+int issued = 0
+int won = 0
+int lost_strikes = 0
+int ships_lost = 0
+int ships_bought = 0
+
+// ---- The hull table's warships ----
+
+[]int warships = []
+
+[]int warship_rows(Market m):
+    if warships.len() == 0:
+        for r in 0..<m.hulls.models.len():
+            string cat = m.hulls.categories[r]
+            if m.hulls.military(r):
+                continue
+            if cat.contains("Warship") || cat == "Interceptor":
+                warships.append(r)
+    return warships
+
+// How well built a hull is, 0 to 1, from its price: about 0 at 300k, 1 at 10M.
+float quality(Market m, int row):
+    float cost = float(m.hulls.costs[row])
+    float q = (float(globalThis.Math.log10(cost if cost > 1.0 else 1.0)) - 5.5) / 1.5
+    return m.clamp(q, 0.0, 1.0)
+
+float ship_cap(Market m, int row):
+    return float(m.hulls.costs[row]) / m.CAPITAL
+
+// ---- A fleet as text ----
+
+{string: int} parse(string text):
+    {string: int} out = {}
+    if text == "":
+        return out
+    for part in text.split(";"):
+        []string f = part.split(":")
+        if f.len() == 2 && f[1].to_int() > 0:
+            out[f[0]] = out.get(f[0], 0) + f[1].to_int()
+    return out
+
+string text({string: int} ships):
+    []string out = []
+    []string keys = ships.keys()
+    keys.sort(bool(string a, string b): return m_alphabetical(a, b))
+    for model in keys:
+        if ships[model] > 0:
+            out.append(model + ":" + string(ships[model]))
+    return out.join(";")
+
+bool m_alphabetical(string a, string b):
+    int n = a.len() if a.len() < b.len() else b.len()
+    for i in 0..<n:
+        int x = a.code_point_at(i)
+        int y = b.code_point_at(i)
+        if x != y:
+            return x < y
+    return a.len() < b.len()
+
+// The capacity of a fleet text.
+float cap_of(Market m, string fleet):
+    float sum = 0.0
+    for model, n in parse(fleet):
+        int r = m.hulls.find(model)
+        if r >= 0:
+            sum += ship_cap(m, r) * float(n)
+    return sum
+
+// The strength of a fleet text (credits, quality-weighted).
+float strength_of(Market m, string fleet):
+    float sum = 0.0
+    for model, n in parse(fleet):
+        int r = m.hulls.find(model)
+        if r >= 0:
+            sum += float(m.hulls.costs[r]) * (0.7 + 0.6 * quality(m, r)) * float(n)
+    return sum
+
+int count_of(string fleet):
+    int n = 0
+    for model, k in parse(fleet):
+        n += k
+    return n
+
+void add(Company c, string model, int n):
+    {string: int} ships = parse(c.fleet)
+    ships[model] = ships.get(model, 0) + n
+    c.fleet = text(ships)
+
+// A word for a fleet: "12 ships (4 Heavy Warships...)" kept short: "12 ships".
+string describe(Market m, string fleet):
+    int n = count_of(fleet)
+    if n == 0:
+        return "no ships"
+    {string: int} ships = parse(fleet)
+    string best = ""
+    int most = 0
+    for model, k in ships:
+        if k > most:
+            best = model
+            most = k
+    if most == n:
+        return (string(n) + " " + m.model_label(best, n)) if n > 1 else ("a " + best)
+    return string(n) + " ships (mostly " + m.model_label(best, most) + ")"
+
+// ---- Keeping the fleet in step with what the company has paid for ----
+
+bool security(Company c):
+    return c.sector == 7
+
+// A new market or a company that has none: its fleet from the table at once
+// (no shipyard needed), by its chief's taste.
+void seed(Market m, Company c):
+    if !security(c) || c.fleet != "":
+        return
+    float want = c.capacity
+    int guard = 0
+    for want > 0.0 && guard < 200:
+        guard += 1
+        int r = choose(m, c, want, false)
+        if r < 0:
+            break
+        add(c, m.hulls.models[r], 1)
+        want -= ship_cap(m, r)
+
+// A hull for `want` capacity: the best the company's budget allows if its
+// chief values quality, else a cheaper one (half the budget). With `stocked`,
+// only hulls some shipyard has two or more of. -1 for none.
+int choose(Market m, Company c, float want, bool stocked):
+    bool best = c.trait >= 0 && c.trait < QUALITY_TRAITS.len() && QUALITY_TRAITS[c.trait]
+    float budget = want * m.CAPITAL * (1.0 if best else 0.5)
+    int pick = -1
+    for r in warship_rows(m):
+        float cost = float(m.hulls.costs[r])
+        if cost > budget && pick >= 0:
+            continue
+        if stocked && shelf(m, m.hulls.models[r]).planet == "":
+            continue
+        if pick < 0:
+            pick = r
+            continue
+        float pc = float(m.hulls.costs[pick])
+        // Within the budget, the dearest; over it (nothing fits yet), the cheapest.
+        if (cost <= budget && (pc > budget || cost > pc)) || (pc > budget && cost < pc):
+            pick = r
+    return pick
+
+// A shelf with two or more of a model (the most stocked), or none. The
+// warships' best shelves are found once a day (shelf_day).
+{string: Shelf} best_shelf = {}
+int shelf_day = -1
+
+Shelf shelf(Market m, string model):
+    if shelf_day != m.today:
+        shelf_day = m.today
+        best_shelf = {}
+        for s in m.shelves:
+            if s.count < 2:
+                continue
+            if !best_shelf.has(s.model) || s.count > best_shelf[s.model].count:
+                best_shelf[s.model] = s
+    Shelf s = best_shelf.get(model, Shelf())
+    // Bought from today: still two or more?
+    return s if s.count >= 2 else Shelf()
+
+// Each day: every listed security company's fleet toward its capacity, a
+// hull at a time; ships at sea (strikes) count as its own.
+void reconcile(es.Game game, Market m, int d):
+    for c in m.companies:
+        if !c.listed() || !security(c):
+            continue
+        if c.fleet == "" && c.capacity > 0.0 && !away(m, c):
+            seed(m, c)
+            continue
+        float have = cap_of(m, c.fleet) + away_cap(m, c)
+        float smallest = smallest_cap(m, c.fleet)
+        if have < c.capacity - (smallest if smallest > 0.0 else 0.001):
+            buy(game, m, c, c.capacity - have)
+        else if have > c.capacity + smallest && smallest > 0.0:
+            retire(m, c)
+
+float smallest_cap(Market m, string fleet):
+    float least = 0.0
+    for model, n in parse(fleet):
+        int r = m.hulls.find(model)
+        if r >= 0 && (least == 0.0 || ship_cap(m, r) < least):
+            least = ship_cap(m, r)
+    return least
+
+void buy(es.Game game, Market m, Company c, float want):
+    int r = choose(m, c, want, true)
+    if r < 0:
+        return
+    string model = m.hulls.models[r]
+    Shelf s = shelf(m, model)
+    if s.planet == "":
+        return
+    // A hull off the shelf, as an NPC captain buys one (the owner's royalty).
+    m.npc_sell(game, s)
+    add(c, model, 1)
+    ships_bought += 1
+
+void retire(Market m, Company c):
+    {string: int} ships = parse(c.fleet)
+    string cheapest = ""
+    float least = 0.0
+    for model, n in ships:
+        int r = m.hulls.find(model)
+        if r >= 0 && (cheapest == "" || float(m.hulls.costs[r]) < least):
+            cheapest = model
+            least = float(m.hulls.costs[r])
+    if cheapest != "":
+        ships[cheapest] = ships[cheapest] - 1
+        c.fleet = text(ships)
+
+bool away(Market m, Company c):
+    for k in m.contracts:
+        if k.kind == OPERATION && k.status == k.RUNNING && k.winner == c.id:
+            return true
+    return false
+
+float away_cap(Market m, Company c):
+    float sum = 0.0
+    for k in m.contracts:
+        if k.kind == OPERATION && k.status == k.RUNNING && k.winner == c.id:
+            sum += cap_of(m, k.model)
+    return sum
+
+// ---- Strikes ----
+
+// Each day: new strikes where pirates are active; strikes due are fought.
+void daily(es.Game game, Galaxy galaxy, Market m, int d):
+    reconcile(game, m, d)
+    issue(game, galaxy, m, d)
+    for k in m.contracts:
+        if k.kind != OPERATION || k.status != k.RUNNING:
+            continue
+        settle(game, galaxy, m, k, d)
+
+// Whether a strike is open or running against a system.
+bool targeted(Market m, string system):
+    for k in m.contracts:
+        if k.kind == OPERATION && (k.status == k.OPEN || k.status == k.RUNNING) && k.system == system:
+            return true
+    return false
+
+void issue(es.Game game, Galaxy galaxy, Market m, int d):
+    // Diplomacy's pirate raids: each a force of its strength.
+    if game.condition("diplomacy: active") != 0:
+        for slot in 1..=m.losses.MAX_SLOTS:
+            string pre = "diplomacy: flotilla 4." + string(slot) + " "
+            int strength = game.condition(pre + "strength")
+            if strength <= 0:
+                break
+            if game.condition(pre + "kind") != 2:
+                continue
+            int at = game.condition(pre + "at") - 1
+            if at < 0:
+                continue
+            string sys = game.system_at(at)
+            if !targeted(m, sys) && m.rng.chance(CHANCE * 400.0):
+                post(game, galaxy, m, sys, float(strength) * POINT, "a pirate raid", d)
+    // Regions near pirates where ships are being lost.
+    for r in 0..<m.losses.regions.len():
+        if m.losses.static_pirate[r] <= 0.0 || m.losses.index(r) < HOT || !m.rng.chance(CHANCE * 100.0):
+            continue
+        string sys = pirate_spot(game, galaxy, m, r)
+        if sys == "" || targeted(m, sys):
+            continue
+        float threat = m.rng.between(THREAT_LO, THREAT_HI) * m.clamp(m.losses.index(r) / 2.0, 0.6, 2.0)
+        post(game, galaxy, m, sys, threat, "pirates preying on shipping", d)
+
+// A system of region r where pirates gather: a human system next to a
+// pirate one (the region's), else the region's shipyard system.
+string pirate_spot(es.Game game, Galaxy galaxy, Market m, int r):
+    []string spots = []
+    for i in m.losses.members[r]:
+        string sys = galaxy.systems[i]
+        if game.system_government(sys) != "Pirate" && m.convoys.pirate_next(game, galaxy, sys):
+            spots.append(sys)
+    if spots.len() == 0:
+        return ""
+    return spots[m.rng.range(0, spots.len() - 1)]
+
+void post(es.Game game, Galaxy galaxy, Market m, string system, float threat, string why, int d):
+    string gov = game.system_government(system)
+    Contract k = Contract()
+    k.id = m.next_contract
+    m.next_contract += 1
+    k.kind = OPERATION
+    k.sector = 7
+    k.client = gov if gov != "" && gov != "Pirate" else "shipping lines"
+    k.system = system
+    k.units = int(threat / 100000.0)
+    k.load = threat / m.CAPITAL * 1.5
+    k.days = 10
+    k.budget = threat * PAY * m.budget_by_cycle[m.cycle]
+    k.issued = d
+    k.closes = d + 2
+    m.contracts.append(k)
+    issued += 1
+    m.say_tagged(d, "The " + k.client + " offers " + m.fmt.short_credits(k.budget) + " for a sweep against " + why + " around " + system + " (about " + m.fmt.short_credits(threat) + " of pirate warships).", "w")
+
+float threat(Contract k):
+    return float(k.units) * 100000.0
+
+// Bids close: the security companies whose ships at home are strong enough,
+// in reach, bid; the strongest, most reliable, cheapest wins.
+void award(es.Game game, Galaxy galaxy, Market m, Contract k, int d):
+    float t = threat(k)
+    Company best = Company()
+    float best_score = -1.0
+    float best_bid = 0.0
+    int bidders = 0
+    for c in m.companies:
+        if !c.listed() || !security(c) || c.status != c.LISTED || c.fleet == "":
+            continue
+        int j = galaxy.jumps(c.system, k.system)
+        if j < 0 || j > REACH + m.reach(c):
+            continue
+        float s = strength_of(m, c.fleet)
+        if s < t * STRENGTH_NEED:
+            continue
+        bidders += 1
+        float margin = 0.8 + m.rng.between(-0.1, 0.1) + m.execs.margin_of(m, c) + m.bias_margin(c)
+        float bid = k.budget * m.clamp(margin, 0.55, 1.0)
+        float score = bid / (0.5 + 0.5 * c.reliability) / m.clamp(s / t / 2.0, 0.6, 1.5)
+        if best_score < 0.0 || score < best_score:
+            best = c
+            best_score = score
+            best_bid = bid
+    k.bidders = bidders
+    if best.id == 0:
+        if !k.reissued:
+            k.reissued = true
+            k.budget = k.budget * 1.3
+            k.closes = d + 2
+        else:
+            k.status = k.LAPSED
+        return
+    dispatch(game, galaxy, m, k, best, best_bid, d)
+
+// The winner sends its flotilla: its best ships until it is worth its
+// chief's force of the threat.
+void dispatch(es.Game game, Galaxy galaxy, Market m, Contract k, Company c, float bid, int d):
+    float want = threat(k) * (FORCE[c.trait] if c.trait >= 0 && c.trait < FORCE.len() else 1.5)
+    {string: int} ships = parse(c.fleet)
+    []string order = ships.keys()
+    order.sort(bool(string a, string b): return m.hulls.costs[m.hulls.find(a)] > m.hulls.costs[m.hulls.find(b)])
+    {string: int} sent = {}
+    float have = 0.0
+    for model in order:
+        int r = m.hulls.find(model)
+        for ships[model] > 0 && have < want:
+            ships[model] = ships[model] - 1
+            sent[model] = sent.get(model, 0) + 1
+            have += float(m.hulls.costs[r]) * (0.7 + 0.6 * quality(m, r))
+    c.fleet = text(ships)
+    k.model = text(sent)
+    k.status = k.RUNNING
+    k.winner = c.id
+    k.price = bid
+    k.start = d
+    k.depart = d
+    k.origin = c.system
+    int j = galaxy.jumps(c.system, k.system)
+    k.days = (j if j > 0 else 0) + 1
+    k.ends = d + k.days
+    k.load = cap_of(m, k.model)
+    c.load += k.load
+    float advance = bid * 0.3
+    c.cash += advance
+    m.say_tagged(d, c.name + " sends " + describe(m, k.model) + " against the pirates around " + k.system + "; they arrive in " + string(k.days) + (" day." if k.days == 1 else " days."), "w,c" + string(c.id))
+    if c.owner == 1:
+        m.player_events.append("Your company " + c.name + " has won a sweep against the pirates around " + k.system + " and sends " + describe(m, k.model) + "; they arrive in " + string(k.days) + " days.")
+
+// A running strike: fought on its day, unless the player is in it.
+void settle(es.Game game, Galaxy galaxy, Market m, Contract k, int d):
+    string key = "corporations: op " + string(k.id)
+    int joined = game.condition(key)
+    if joined == 1:
+        if game.condition(key + " won") == 1:
+            fight(game, galaxy, m, k, d, 1)
+            clear(game, k)
+        else if game.condition(key + " failed") == 1:
+            game.set_condition(key, 0)
+            game.set_condition(key + " failed", 0)
+            fight(game, galaxy, m, k, d, 0)
+            clear(game, k)
+        return
+    if d >= k.ends:
+        fight(game, galaxy, m, k, d, 0)
+
+void clear(es.Game game, Contract k):
+    string key = "corporations: op " + string(k.id)
+    game.set_condition(key, 0)
+    game.set_condition(key + " won", 0)
+    game.set_condition(key + " failed", 0)
+    for i in 0..<MAX_SPAWN:
+        game.set_condition(key + " lost " + string(i), 0)
+
+// The battle. `player` 1: the player was there and the pirates were destroyed
+// (the ships that died there are the losses); 0: fought without them.
+void fight(es.Game game, Galaxy galaxy, Market m, Contract k, int d, int player):
+    Company c = m.by_id.get(k.winner, Company())
+    float t = threat(k)
+    float s = strength_of(m, k.model)
+    float r = s / t if t > 0.0 else 10.0
+    bool win = player == 1 || m.rng.chance(r * r / (r * r + 1.0) * 100.0)
+    {string: int} sent = parse(k.model)
+    {string: int} lost = {}
+    if player == 1:
+        []string spawned = spawn_list(m, k)
+        for i in 0..<spawned.len():
+            if game.condition("corporations: op " + string(k.id) + " lost " + string(i)) == 1:
+                lost[spawned[i]] = lost.get(spawned[i], 0) + 1
+    else:
+        for model, n in sent:
+            int row = m.hulls.find(model)
+            float p = LOSS / (r if r > 0.2 else 0.2) * (1.4 - 0.9 * quality(m, row)) * (1.0 if win else 2.0)
+            p = m.clamp(p, 0.0, 0.95)
+            for i in 0..<n:
+                if m.rng.chance(p * 100.0):
+                    lost[model] = lost.get(model, 0) + 1
+    int n_lost = 0
+    float cap_lost = 0.0
+    for model, n in lost:
+        sent[model] = sent[model] - n
+        n_lost += n
+        int row = m.hulls.find(model)
+        if row >= 0:
+            cap_lost += ship_cap(m, row) * float(n)
+    ships_lost += n_lost
+    k.load = 0.0
+    if c.id != 0 && c.listed():
+        c.load -= cap_of(m, k.model)
+        // Survivors home; the lost and their capacity gone for good.
+        for model, n in sent:
+            if n > 0:
+                add(c, model, n)
+        c.capacity = c.capacity - cap_lost if c.capacity > cap_lost else 0.0
+        float pay = k.price * (0.7 if win else 0.0)
+        c.cash += pay
+        c.revenue += k.price * (1.0 if win else 0.3)
+        if win:
+            c.reliability = m.clamp(c.reliability + 0.03, 0.0, 0.99)
+            m.shock(c, 1.02)
+        else:
+            c.reliability = m.clamp(c.reliability - 0.08, 0.0, 0.99)
+            m.shock(c, 0.93)
+        c.note(("after routing pirates around " if win else "after a defeat around ") + k.system)
+    k.status = k.DELIVERED if win else k.FAILED
+    k.model = text(sent)
+    string who = c.name if c.id != 0 else "A security company"
+    string losses = (", losing " + string(n_lost) + (" ship" if n_lost == 1 else " ships")) if n_lost > 0 else " without loss"
+    if win:
+        won += 1
+        m.losses.suppress(galaxy, k.system, SUPPRESS)
+        m.say_tagged(d, who + "'s flotilla routs the pirates around " + k.system + losses + (", with an independent captain at its side" if player == 1 else "") + ".", "w,c" + string(c.id))
+    else:
+        lost_strikes += 1
+        m.say_tagged(d, who + "'s flotilla is driven off by the pirates around " + k.system + losses + "; its shares fall.", "w,c" + string(c.id))
+    m.post_bus("corporations.sweep", "{\"company\":" + m.json(who) + ",\"system\":" + m.json(k.system) + ",\"won\":" + ("true" if win else "false") + ",\"ships_lost\":" + string(n_lost) + "}")
+    if c.owner == 1:
+        m.player_events.append("Your company's sweep around " + k.system + (" succeeds" if win else " fails") + losses + ".")
+    else if m.holdings.get(c.id, 0) > 0 && n_lost > 0:
+        m.player_events.append(who + (" wins" if win else " loses") + " a fight with pirates around " + k.system + losses + ".")
+    m.must_save = true
+
+// The company's ships the player meets in person: the flotilla's best
+// MAX_SPAWN, one name per ship (a model repeated for each).
+[]string spawn_list(Market m, Contract k):
+    {string: int} ships = parse(k.model)
+    []string order = ships.keys()
+    order.sort(bool(string a, string b): return m.hulls.costs[m.hulls.find(a)] > m.hulls.costs[m.hulls.find(b)])
+    []string out = []
+    for model in order:
+        for i in 0..<ships[model]:
+            if out.len() < MAX_SPAWN:
+                out.append(model)
+    return out
+
+// ---- The player's job ----
+
+// Landed within JOB_REACH of a strike's target while its flotilla is on the
+// way: a job to fight beside it.
+void offer(es.Game game, Galaxy galaxy, Market m):
+    string planet = game.planet()
+    if planet == "":
+        return
+    string here = galaxy.system_of(game, planet)
+    for k in m.contracts:
+        if k.kind != OPERATION || k.status != k.RUNNING || game.condition("corporations: op " + string(k.id)) != 0:
+            continue
+        int j = galaxy.jumps(here, k.system)
+        if j < 0 || j > JOB_REACH || k.ends - m.day < 1:
+            continue
+        if offer_job(game, galaxy, m, k, j):
+            return
+
+bool offer_job(es.Game game, Galaxy galaxy, Market m, Contract k, int jumps):
+    Company c = m.by_id.get(k.winner, Company())
+    if c.id == 0:
+        return false
+    string id = string(k.id)
+    string key = "corporations: op " + id
+    float t = threat(k)
+    int pay = JOB_PAY + int(t * 0.002)
+    []string lines = []
+    lines.append("name \"Pirate sweep around " + k.system + "\"")
+    lines.append("description \"" + c.name + " is sending " + describe(m, k.model) + " against the pirates around " + k.system + " for the " + k.client + ". Fight beside them: destroy the pirates there by <date> for <payment>. The flotilla will wait for you.\"")
+    lines.append("deadline " + string(jumps * 2 + 6))
+    lines.append("on accept")
+    lines.append("\t\"" + key + "\" = 1")
+    // The pirates, waiting.
+    lines.append("npc kill")
+    lines.append("\tgovernment \"Pirate\"")
+    lines.append("\tpersonality staying heroic")
+    lines.append("\tsystem \"" + k.system + "\"")
+    lines.append("\tfleet \"" + ("Large Core Pirates" if t > 30000000.0 else "Small Core Pirates") + "\"" + (" 2" if t > 80000000.0 else ""))
+    lines.append("\ton kill")
+    lines.append("\t\tpayment " + string(pay))
+    lines.append("\t\t\"" + key + " won\" = 1")
+    lines.append("\t\tdialog \"The last pirate breaks apart. " + c.name + "'s commander hails you with thanks, and <payment> arrives from the " + k.client + ".\"")
+    // The company's ships, one each, so the game says which of them died.
+    []string ships = spawn_list(m, k)
+    for i in 0..<ships.len():
+        lines.append("npc")
+        lines.append("\tgovernment \"Merchant\"")
+        lines.append("\tpersonality heroic staying")
+        lines.append("\tsystem \"" + k.system + "\"")
+        lines.append("\tship \"" + ships[i] + "\" \"" + c.name + " " + string(i + 1) + "\"")
+        lines.append("\ton destroy")
+        lines.append("\t\t\"" + key + " lost " + string(i) + "\" = 1")
+    lines.append("on fail")
+    lines.append("\t\"" + key + " failed\" = 1")
+    return game.offer_job("sweep " + id, lines.join("\n"))

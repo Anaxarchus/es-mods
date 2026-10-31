@@ -1,0 +1,104 @@
+class Chief
+
+// (0.4) One chief executive of the galaxy's talent pool (Executives). The
+// pool has a fixed size; a chief is free or runs one company. Each has five
+// hidden stats, drawn once (about a normal draw × 0.45, within -1 to 1):
+//   0 drive      appetite for work and risk: bid margins; with the others,
+//                its style (Executives.style), which sets buyouts, payout,
+//                growth plan, borrowing, research budget and fleet force;
+//   1 thrift     cost control: its company's efficiency drifts down;
+//   2 vision     research: its labs' spending goes further;
+//   3 nerve      crisis handling: better turns of fortune, cheaper crises,
+//                reliability restored sooner;
+//   4 integrity  low: crooked (window dressing, scandals, worse luck).
+// None of them is shown. Its record is what its companies did while it ran
+// them: at each report, how far the company's normal earnings per unit of
+// effective capacity, against its sector's, have moved since the stint
+// began, a year's worth over a unit's book value (Executives.score). Kept for the whole career, stint by stint;
+// careers last about ten years, then the chief retires for good and a new
+// one takes the place in the pool. Saved as one "i|" line.
+
+int DRIVE = 0
+int THRIFT = 1
+int VISION = 2
+int NERVE = 3
+int INTEGRITY = 4
+
+int id = 0
+string name = ""
+[]float stats = [0.0, 0.0, 0.0, 0.0, 0.0]
+// The day the career began, and the day it ends.
+int joined = 0
+int retires = 0
+// The company it runs (its id; 0 free), since when, and its salary a year.
+int company = 0
+int since = 0
+float salary = 0.0
+// The reports of the stint under way, and their summed scores.
+int cur_n = 0
+float cur_sum = 0.0
+// Every report of the career (the stint under way included), and their summed scores.
+int n = 0
+float sum = 0.0
+// Times a board voted it out (a scandal counts).
+int ousters = 0
+// Where the company stood against its sector at the stint's first report
+// (Executives.standing): later reports score the change from it. UNSET before.
+float base = -9.0
+float UNSET = -9.0
+// Stints that ended, oldest first: "company~from~to~reports~sum~end"
+// (Executives.end_names); at most Executives.STINTS kept.
+[]string stints = []
+
+float stat(int k):
+    return stats[k] if k >= 0 && k < stats.len() else 0.0
+
+bool free():
+    return company == 0
+
+// The scores' mean, pulled toward 0 (the average) by PRIOR reports' worth:
+// an unknown is average, a long record speaks for itself.
+float rating(float prior):
+    return sum / (float(n) + prior)
+
+float cur_mean():
+    return cur_sum / float(cur_n) if cur_n > 0 else 0.0
+
+// Years in office over the career.
+float years():
+    return float(n) / 12.0
+
+string encode():
+    []string s = []
+    for x in stats:
+        int k = globalThis.Math.round(x * 1000.0)
+        s.append(string(k))
+    []string f = [string(id), name, s.join(","), string(joined), string(retires), string(company), string(since), string(salary), string(cur_n), string(cur_sum), string(n), string(sum), string(ousters), string(base), stints.join(";")]
+    return f.join("|")
+
+void decode(string rest):
+    []string f = rest.split("|")
+    id = f[0].to_int()
+    name = f[1]
+    stats = []
+    for part in f[2].split(","):
+        stats.append(float(part.to_int()) / 1000.0)
+    for stats.len() < 5:
+        stats.append(0.0)
+    joined = f[3].to_int()
+    retires = f[4].to_int()
+    company = f[5].to_int()
+    since = f[6].to_int()
+    salary = f[7].to_float()
+    cur_n = f[8].to_int()
+    cur_sum = f[9].to_float()
+    n = f[10].to_int()
+    sum = f[11].to_float()
+    ousters = f[12].to_int()
+    base = f[13].to_float()
+    stints = f[14].split(";") if f.len() > 14 && f[14] != "" else []
+
+// A score to five decimals, for a stint's line.
+string short(float x):
+    int k = globalThis.Math.round(x * 100000.0)
+    return string(float(k) / 100000.0)

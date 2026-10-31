@@ -60,7 +60,7 @@ test("integrating asks first, then charges a quarter of the cost and makes it 25
 	assert.equal(game.confirms.length, 1);
 	const { text, token } = game.confirms[0];
 	assert.match(text, /^Integrate one Energy Blaster into the Flagship\?/);
-	assert.match(text, /25% lighter and take up 25% less outfit space \(3 tons, 3 outfit space\)/);
+	assert.match(text, /25% lighter and take up 25% less space \(3 tons, 3 outfit space, 3 weapon capacity\)/);
 	assert.match(text, /never be uninstalled, sold or plundered/);
 	assert.match(text, /fee is 3,500 credits\./);
 	// Nothing happens until the player says OK.
@@ -70,7 +70,7 @@ test("integrating asks first, then charges a quarter of the cost and makes it 25
 	mod.on_confirm(game, token);
 	assert.equal(flagship.integrated["Energy Blaster"], 1);
 	assert.equal(flagship.massSaved, 3);
-	assert.deepEqual(flagship.spaceSaved, { "outfit space": 3 }, "capacities stay as they are");
+	assert.deepEqual(flagship.spaceSaved, { "outfit space": 3, "weapon capacity": 3 }, "weapon capacity is saved too");
 	assert.equal(game.condition("credits"), 1000000 - 3500);
 	assert.equal(game.condition("outfit integration: integrated"), 1);
 	assert.equal(game.condition("outfit integration: fees paid"), 3500);

@@ -1,0 +1,270 @@
+class Team
+
+// One team: a franchise in a league, its car (five departments' levels), its
+// staff (one person per seat; 0 empty), its money, and its season. It races
+// two cars of the same design, F1 style: seat 0 is the #1 pilot's, seat
+// SECOND (5) the #2 pilot's; seats 1 .. 4 are the crew (Person.role order),
+// who work for both cars. The season's points, wins and podiums are the
+// teams' championship's (both cars'); the drivers' championship is the
+// pilots' own (Person.d_*).
+// AI teams have owners who put in `backing` a week and a development rate
+// (the share of what they can spend that goes to R&D). The player's team has
+// neither: the player sets each department's weekly budget and puts money in
+// or takes it out. Saved as one "t|" line.
+
+int id = 0
+string name = ""
+int league = 0
+bool player = false
+float cash = 0.0
+float backing = 0.0
+float dev_rate = 0.7
+// How well an AI team turns R&D money into speed (its owners' organisation, 0.6 .. 1;
+// the player's team is 1: a well-run team).
+float org = 1.0
+// Department levels (Names.dept_names), the weekly budgets, and last week's gains.
+[]float levels = [20.0, 20.0, 20.0, 20.0, 20.0]
+[]float budgets = [0.0, 0.0, 0.0, 0.0, 0.0]
+[]float gains = [0.0, 0.0, 0.0, 0.0, 0.0]
+// Person ids by seat (Person.role order, then the #2 pilot); 0 empty.
+int SEATS = 6
+int SECOND = 5
+[]int seats = [0, 0, 0, 0, 0, 0]
+// This season (the teams' championship: both cars).
+int points = 0
+int wins = 0
+int podiums = 0
+int races = 0
+int dnfs = 0
+// The team's place in each race this season, in order: its best car's place
+// among the teams (1 .. TEAMS), so it reads against a sponsor's target.
+[]int finishes = []
+// Last season's final position in its league (0 none), and its league then.
+int last_pos = 0
+int last_league = 0
+// A franchise bought this season cannot be relegated in it.
+bool protect = false
+// The race approach (0 conservative, 1 balanced, 2 aggressive).
+int approach = 1
+// The pilots' form for the next race (a lap-time factor, from events; 0 none).
+float form = 0.0
+// The day it was founded (or bought) and the planet it is run from (player).
+int founded = 0
+string hq = ""
+// Money this week, for the player's ledger: what came in and what went out.
+float week_in = 0.0
+float week_out = 0.0
+// Weeks in a row with cash under its overdraft warning (forced sale).
+int debt_weeks = 0
+// Seasons in a row in the red (AI owners lose heart).
+int red_seasons = 0
+// Titles won, and the history: "season:league:position" separated by ",".
+int titles = 0
+string history = ""
+// Sponsor money (Value): this season's so far, net of penalties paid back, at
+// arm's length and from related parties (the owner's own company); and past
+// seasons' as "season:league:net:related" separated by "," (the last
+// Value.SEASONS kept). Saves from before have none: `sponsor_known` is false
+// until World.decode estimates them (Value.migrate).
+float sponsor_net = 0.0
+float sponsor_related = 0.0
+string sponsor_history = ""
+bool sponsor_known = true
+// Read from a save before two cars (World.decode migrates it).
+bool one_car = false
+// The team's lifetime (World: prestige), tied to its id through renames and
+// owners: the season it was founded (`born`; teams of the first season have a
+// history from before the records, so earlier), and its record: LIFE fields.
+int born = 1
+int L_RACES = 0
+int L_WINS = 1
+int L_PODIUMS = 2
+// Teams' titles by league (B, A, S), drivers' titles its pilots won with it,
+// promotions, and seasons in each league (B, A, S).
+int L_TITLE = 3
+int L_DRIVERS = 6
+int L_PROMOTIONS = 7
+int L_SEASONS = 8
+int LIFE = 11
+[]int life = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+// The names it has raced under, oldest first: "season:stamp:why:name"
+// joined by ";" (World.name_log; stamp = rounds run when it took the name,
+// 11 after the season's end). Read from a save before them: empty until
+// World.decode starts it with the name it has.
+string names_log = ""
+// A revived brand's prestige comes back in part and recovers with results
+// (World.revive): the share of its record's prestige it has now (1 whole).
+float revival = 1.0
+// Read from a save before lifetimes (World.decode estimates them).
+bool life_known = true
+// Promotion (World.eligible): the first season it raced wholly in its
+// league (`since`; World.first_full_season), and whether it came down into it
+// (`rebound`: eligible at once, until it leaves the league again). Read from
+// a save before them: `stay_known` is false until World.decode estimates them.
+int since = 1
+bool rebound = false
+bool stay_known = true
+
+// A defunct team (World.archive): the season it went, and why (World.fate_names).
+int died = 0
+int fate = 0
+
+// A defunct team's line in the save ("x|").
+string archive_encode():
+    return [string(id), name, string(league), string(born), string(died), string(fate), ints(life), names_log].join("|")
+
+void archive_decode(string line):
+    []string f = line.split("|")
+    id = f[0].to_int()
+    name = f[1]
+    league = f[2].to_int()
+    born = f[3].to_int()
+    died = f[4].to_int()
+    fate = f[5].to_int()
+    life = read_ints(f[6])
+    for life.len() < LIFE:
+        life.append(0)
+    names_log = f[7] if f.len() > 7 else ""
+
+int life_titles():
+    return life[L_TITLE] + life[L_TITLE + 1] + life[L_TITLE + 2]
+
+// The role a seat is for: the five roles, then the #2 pilot's seat.
+int seat_role(int s):
+    return 0 if s == SECOND else s
+
+// The seats of a role: a pilot has two.
+[]int role_seats(int role):
+    return [0, SECOND] if role == 0 else [role]
+
+// The seat a person holds (-1 none).
+int seat_of(int person):
+    if person == 0:
+        return -1
+    for s in 0..<seats.len():
+        if seats[s] == person:
+            return s
+    return -1
+
+// Where someone hired for a role sits: the first empty seat of the role,
+// else the role's first (the #1's, for a pilot).
+int free_seat(int role):
+    for s in role_seats(role):
+        if seats[s] == 0:
+            return s
+    return role
+
+// Pace weights' dot product with the logs of the levels (Race.pace).
+float level(int d):
+    return levels[d] if d >= 0 && d < levels.len() else 0.0
+
+// A rough rating of the car, the mean of the four racing departments.
+float rating():
+    return (levels[0] + levels[1] + levels[2] + levels[3]) / 4.0
+
+float average_finish():
+    int n = 0
+    int sum = 0
+    for p in finishes:
+        if p > 0:
+            n += 1
+            sum += p
+    return float(sum) / float(n) if n > 0 else 0.0
+
+void new_season():
+    points = 0
+    wins = 0
+    podiums = 0
+    races = 0
+    dnfs = 0
+    finishes = []
+    protect = false
+
+// Floats are saved exactly (the shortest text that reads back the same), so a
+// loaded world plays on exactly as the one in memory would have.
+string floats([]float v):
+    []string s = []
+    for x in v:
+        s.append(string(x))
+    return s.join(",")
+
+[]float read_floats(string s, int n):
+    []float out = []
+    if s != "":
+        for part in s.split(","):
+            out.append(part.to_float())
+    for out.len() < n:
+        out.append(0.0)
+    return out
+
+[]int read_ints(string s):
+    []int out = []
+    if s != "":
+        for part in s.split(","):
+            out.append(part.to_int())
+    return out
+
+string ints([]int v):
+    []string s = []
+    for x in v:
+        s.append(string(x))
+    return s.join(",")
+
+string encode():
+    []string f = [string(id), name, string(league), "1" if player else "0", string(cash), string(backing), string(dev_rate), floats(levels), floats(budgets), floats(gains), ints(seats), string(points), string(wins), string(podiums), string(races), string(dnfs), ints(finishes), string(last_pos), string(last_league), "1" if protect else "0", string(approach), string(form), string(founded), hq, string(week_in), string(week_out), string(debt_weeks), string(red_seasons), string(titles), history, string(org), string(sponsor_net), string(sponsor_related), sponsor_history, string(born), ints(life), names_log, string(revival), string(since), "1" if rebound else "0"]
+    return f.join("|")
+
+void decode(string line):
+    []string f = line.split("|")
+    id = f[0].to_int()
+    name = f[1]
+    league = f[2].to_int()
+    player = f[3] == "1"
+    cash = f[4].to_float()
+    backing = f[5].to_float()
+    dev_rate = f[6].to_float()
+    levels = read_floats(f[7], 5)
+    budgets = read_floats(f[8], 5)
+    gains = read_floats(f[9], 5)
+    seats = read_ints(f[10])
+    one_car = seats.len() < SEATS
+    // A save from before two cars: the second pilot's seat is empty
+    // (World.decode fills it).
+    for seats.len() < SEATS:
+        seats.append(0)
+    points = f[11].to_int()
+    wins = f[12].to_int()
+    podiums = f[13].to_int()
+    races = f[14].to_int()
+    dnfs = f[15].to_int()
+    finishes = read_ints(f[16])
+    last_pos = f[17].to_int()
+    last_league = f[18].to_int()
+    protect = f[19] == "1"
+    approach = f[20].to_int()
+    form = f[21].to_float()
+    founded = f[22].to_int()
+    hq = f[23]
+    week_in = f[24].to_float()
+    week_out = f[25].to_float()
+    debt_weeks = f[26].to_int()
+    red_seasons = f[27].to_int()
+    titles = f[28].to_int()
+    history = f[29] if f.len() > 29 else ""
+    org = f[30].to_float() if f.len() > 30 else 1.0
+    sponsor_known = f.len() > 33
+    sponsor_net = f[31].to_float() if sponsor_known else 0.0
+    sponsor_related = f[32].to_float() if sponsor_known else 0.0
+    sponsor_history = f[33] if sponsor_known else ""
+    life_known = f.len() > 37
+    if life_known:
+        born = f[34].to_int()
+        life = read_ints(f[35])
+        for life.len() < LIFE:
+            life.append(0)
+        names_log = f[36]
+        revival = f[37].to_float()
+    stay_known = f.len() > 39
+    if stay_known:
+        since = f[38].to_int()
+        rebound = f[39] == "1"

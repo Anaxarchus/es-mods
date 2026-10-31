@@ -1,0 +1,273 @@
+class Capital
+
+import "imports:sdk/es"
+
+// (M4) Corporate finance: growing, raising money, giving it back.
+//
+// Growth. At each report a company busier than BUSY (its effective capacity),
+// in profit and clear of the antitrust line, adds yards by its plan (hold,
+// steady, fast: plan_rates; the chief's trait chooses unless the owner has).
+// It pays from money raised and not yet spent (Company.raised), then from
+// cash above RESERVE days of upkeep, then by borrowing up to its trait's
+// share of the debt limit (debt_share). Short of that, with its shares at
+// fair value or better, it sells new shares (an offering) for the rest.
+// Idle yards are sold off as before (Market.report).
+// Offerings: at most MAX_ISSUE of the shares, DISCOUNT under the price, at
+// least OFFER_GAP days apart; the announcement costs ANNOUNCE of the price
+// (the market's habit with new paper). The money is `raised` until spent on
+// yards, and fair value counts it (Market.fair). A company deep in debt
+// (DELEVER of its limit) with dear shares sells shares to repay it.
+// Buybacks: a company with more than BUYBACK_CASH days of upkeep in hand,
+// little to build and its shares under BUYBACK_BELOW of fair value buys back
+// up to BUYBACK_MAX of them.
+// Splits: a price over SPLIT_AT becomes a tenth with ten times the shares;
+// the player's holdings, shorts, basis and the price history follow.
+// The player's own company: injections (private: cash; listed: new shares
+// to the player at the price), offerings and buybacks when the player says.
+// A board seat (Board) can forbid offerings (Company.capital_policy -1).
+
+float BUSY = 0.8
+[]float plan_rates = [0.0, 0.03, 0.06]
+[]string plan_names = ["hold", "steady", "fast"]
+// The plan each trait follows: aggressive, prudent, visionary, crooked.
+[]int trait_plan = [2, 1, 2, 1]
+// The share of its debt limit each trait will borrow to grow.
+[]float debt_share = [0.5, 0.2, 0.35, 0.4]
+float RESERVE = 60.0
+float MAX_ISSUE = 0.15
+float DISCOUNT = 0.04
+int OFFER_GAP = 180
+float ANNOUNCE = 0.97
+float DELEVER = 0.8
+float BUYBACK_CASH = 240.0
+float BUYBACK_BELOW = 0.92
+float BUYBACK_MAX = 0.03
+int BUYBACK_GAP = 90
+float SPLIT_AT = 800.0
+int SPLIT = 10
+// The player's offerings: at most this much of the shares, this often.
+float PLAYER_ISSUE = 0.2
+int PLAYER_GAP = 60
+
+// Counted since the mod started (not saved), for tests and tools.
+int offerings = 0
+int buybacks = 0
+int splits = 0
+float built = 0.0
+
+int plan_of(Company c):
+    if c.plan >= 0 && c.plan <= 2:
+        return c.plan
+    return trait_plan[c.trait] if c.trait >= 0 && c.trait < trait_plan.len() else 1
+
+float reserve(Market m, Company c):
+    return m.upkeep(c) * RESERVE
+
+// The cash a company can spend on yards now: what it raised, its cash above
+// its reserve, and (borrow) what its chief will borrow.
+float means(Market m, Company c, bool borrow):
+    float spare = c.cash - reserve(m, c)
+    spare = spare if spare > 0.0 else 0.0
+    float r = c.raised if c.raised < c.cash else c.cash
+    r = r if r > 0.0 else 0.0
+    float have = spare if spare > r else r
+    if borrow:
+        float share = debt_share[c.trait] if c.trait >= 0 && c.trait < debt_share.len() else 0.3
+        float room = m.debt_limit(c) * share - c.debt
+        have += room if room > 0.0 else 0.0
+    return have
+
+// Spend up to `amount` on yards: from cash (raised money first), borrowing
+// what cash does not cover when `borrow`. Answers what was spent.
+float build(Market m, Company c, float amount, bool borrow):
+    float can = means(m, c, borrow)
+    float spend = amount if amount < can else can
+    if spend <= 0.0:
+        return 0.0
+    // (M4 review) What its spare cash does not cover is borrowed: the reserve stays.
+    float own = means(m, c, false)
+    if spend > own:
+        float need = spend - own
+        c.debt += need
+        c.cash += need
+    c.cash -= spend
+    c.raised = c.raised - spend if c.raised > spend else 0.0
+    c.capacity += spend / m.CAPITAL
+    built += spend
+    return spend
+
+// At a report: grow when busy (Market.report calls this before shrinking idle yards).
+// Answers whether it grew.
+bool grow(es.Game game, Market m, Company c, float e, float util, bool room, int d):
+    int plan = plan_of(c)
+    if plan <= 0 || util <= BUSY || c.status != c.LISTED || e <= 0.0 || !room:
+        return false
+    float add = c.capacity * plan_rates[plan]
+    float want = add * m.CAPITAL
+    // The player's company borrows to grow only on the fast plan.
+    float spent = build(m, c, want, c.owner == 0 || plan == 2)
+    if spent < want * 0.5 && may_offer(m, c, d) && c.price >= m.fair(c) * 0.98:
+        offer(game, m, c, want - spent, d, "to pay for new yards")
+        spent += build(m, c, want - spent, false)
+    return spent > 0.0
+
+// Whether the company may sell new shares now.
+// (M4 review) Never the player's company: it sells shares only at their word.
+bool may_offer(Market m, Company c, int d):
+    return c.listed() && c.owner == 0 && c.status == c.LISTED && c.capital_policy >= 0 && d - c.last_offer >= OFFER_GAP && c.price > 0.0 && c.shares > 0
+
+// Sell new shares for about `want` credits (at most MAX_ISSUE of the shares).
+// Answers what was raised.
+float offer(es.Game game, Market m, Company c, float want, int d, string why):
+    return issue(game, m, c, want, MAX_ISSUE, d, why)
+
+float issue(es.Game game, Market m, Company c, float want, float most, int d, string why):
+    float at = c.price * (1.0 - DISCOUNT)
+    int n = int(want / at)
+    int cap = int(float(c.shares) * most)
+    n = n if n < cap else cap
+    if n <= 0 || at <= 0.0:
+        return 0.0
+    float money = at * float(n)
+    float before = float(c.shares)
+    c.shares += n
+    c.cash += money
+    c.raised += money
+    c.last_offer = d
+    m.shock(c, ANNOUNCE)
+    offerings += 1
+    float diluted = float(n) / (before + float(n))
+    m.say_tagged(d, c.name + " sells " + m.fmt.whole_percent(float(n) / before) + " new shares at " + m.fmt.price(at) + ", raising " + m.fmt.short_credits(money) + " " + why + ".", "c" + string(c.id) + (",s" if c.sector == 0 else ""))
+    c.note("after raising " + m.fmt.short_credits(money) + " in new shares")
+    int held = m.holdings.get(c.id, 0)
+    if held > 0 && c.owner != 1:
+        m.player_events.append(c.name + " sells new shares: your " + m.fmt.whole_percent(float(held) / before) + " stake is now " + m.fmt.whole_percent(float(held) / float(c.shares)) + " (" + m.fmt.whole_percent(diluted) + " diluted).")
+    return money
+
+// A company deep in debt with dear shares sells shares to repay some of it.
+void delever(es.Game game, Market m, Company c, int d):
+    if c.debt <= m.debt_limit(c) * DELEVER || !may_offer(m, c, d) || c.price < m.fair(c):
+        return
+    float got = offer(game, m, c, c.debt * 0.5, d, "to pay down its debt")
+    float repay = got if got < c.debt else c.debt
+    c.debt -= repay
+    c.cash -= repay
+    c.raised = c.raised - repay if c.raised > repay else 0.0
+
+// A cash-rich company with cheap shares and little to build buys some back.
+void maybe_buyback(es.Game game, Market m, Company c, float util, int d):
+    if c.owner == 1 || c.trait == 0 || c.status != c.LISTED || util > 0.75 || d - c.last_offer < BUYBACK_GAP:
+        return
+    float spare = c.cash - m.upkeep(c) * BUYBACK_CASH
+    if spare <= 0.0 || c.price >= m.fair(c) * BUYBACK_BELOW:
+        return
+    buyback(game, m, c, spare * 0.5, BUYBACK_MAX, d)
+
+// Buy back up to `most` of the shares for at most `money`. Answers the shares bought.
+int buyback(es.Game game, Market m, Company c, float money, float most, int d):
+    float at = c.price * 1.01
+    int n = int(money / at)
+    int cap = int(float(c.shares) * most)
+    n = n if n < cap else cap
+    // Never fewer shares than the player and a suitor hold, with room to spare.
+    int floor = int(float(m.holdings.get(c.id, 0) + c.suitor_stake + m.shorts.get(c.id, 0)) / 0.8) + 1
+    int room = c.shares - floor
+    n = n if n < room else room
+    if n <= 0 || at <= 0.0:
+        return 0
+    float before = float(c.shares)
+    c.cash -= at * float(n)
+    c.shares -= n
+    c.last_offer = d
+    m.shock(c, 1.01)
+    buybacks += 1
+    m.say_tagged(d, c.name + " buys back " + m.fmt.whole_percent(float(n) / before) + " of its shares for " + m.fmt.short_credits(at * float(n)) + ".", "c" + string(c.id) + (",s" if c.sector == 0 else ""))
+    return n
+
+// A price over SPLIT_AT: ten shares for one.
+void maybe_split(es.Game game, Market m, Company c, int d):
+    if c.price < SPLIT_AT || !c.listed():
+        return
+    split(m, c, SPLIT, d)
+
+void split(Market m, Company c, int k, int d):
+    float f = float(k)
+    c.shares = c.shares * k
+    c.price = c.price / f
+    c.offer = c.offer / f
+    c.pre_offer = c.pre_offer / f
+    c.dividend = c.dividend / f
+    c.suitor_stake = c.suitor_stake * k
+    for i in 0..<c.history.len():
+        int h = globalThis.Math.round(float(c.history[i]) / f)
+        c.history[i] = h
+    if m.holdings.has(c.id):
+        m.holdings[c.id] = m.holdings[c.id] * k
+    if m.shorts.has(c.id):
+        m.shorts[c.id] = m.shorts[c.id] * k
+    splits += 1
+    m.say_tagged(d, c.name + " splits its shares " + string(k) + " for 1; they now trade at " + m.fmt.price(c.price) + ".", "c" + string(c.id))
+    if m.holdings.get(c.id, 0) > 0:
+        m.player_events.append(c.name + " splits its shares " + string(k) + " for 1: you now hold " + m.fmt.credits(float(m.holdings[c.id])) + ".")
+
+// After a report: money matters beyond growth.
+void after_report(es.Game game, Market m, Company c, float util, int d):
+    // (M4 review) A board's word on new shares lapses with the player's seat.
+    if c.capital_policy != 0 && c.owner == 0 && !m.board.has_seat(m, c):
+        c.capital_policy = 0
+    delever(game, m, c, d)
+    maybe_buyback(game, m, c, util, d)
+    maybe_split(game, m, c, d)
+
+// ---- The player's own company ----
+
+// The player puts `amount` credits into their company: cash while private;
+// once listed, new shares to the player at the price. Answers whether it went in.
+bool inject(es.Game game, Market m, Company c, float amount, int d):
+    // (M4 review) Not while a rival bids for it: new shares at the bid's
+    // price would be bought at the offer a week later.
+    if c.id == 0 || c.owner != 1 || !c.listed() || amount <= 0.0 || float(game.condition("credits")) < amount || c.suitor > 0:
+        return false
+    float at = inject_price(m, c)
+    m.credit(game, -amount)
+    c.cash += amount
+    c.raised += amount
+    m.basis[c.id] = m.basis.get(c.id, 0.0) + amount
+    if c.ipo && at > 0.0:
+        int n = int(amount / at)
+        c.shares += n
+        m.holdings[c.id] = m.holdings.get(c.id, 0) + n
+    m.must_save = true
+    m.say_tagged(d, "An independent captain puts " + m.fmt.short_credits(amount) + " into " + c.name + ".", "c" + string(c.id))
+    return true
+
+// The price new shares go to the player at (money or a ship put in): the
+// price, or fair value if that is more (the market's mood never sells the
+// player the cash behind each share cheap), and never under what dissolving
+// would pay a share (its cash less its debt, its yards at half their value).
+float inject_price(Market m, Company c):
+    float at = c.price
+    if c.ipo && c.shares > 0:
+        float f = m.fair(c)
+        at = f if f > at else at
+        float wind = (c.cash - c.debt + m.charter.firm(c) * m.CAPITAL * 0.5) / float(c.shares)
+        at = wind if wind > at else at
+    return at
+
+// The player's listed company sells new shares to the market (`share` of
+// the shares, at most PLAYER_ISSUE, PLAYER_GAP days apart). Answers the money.
+float player_offer(es.Game game, Market m, Company c, float share, int d):
+    if c.owner != 1 || !c.ipo || c.status != c.LISTED || d - c.last_offer < PLAYER_GAP:
+        return 0.0
+    float s = share if share < PLAYER_ISSUE else PLAYER_ISSUE
+    float want = c.price * (1.0 - DISCOUNT) * float(c.shares) * s
+    return issue(game, m, c, want, s, d, "at its owner's word")
+
+// The player's listed company buys back `share` of its shares with its cash.
+int player_buyback(es.Game game, Market m, Company c, float share, int d):
+    if c.owner != 1 || !c.ipo || c.status != c.LISTED || d - c.last_offer < PLAYER_GAP:
+        return 0
+    float spare = c.cash - reserve(m, c)
+    if spare <= 0.0:
+        return 0
+    return buyback(game, m, c, spare, share, d)

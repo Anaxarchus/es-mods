@@ -78,8 +78,9 @@ float pre_offer = 0.0
 float norm = 0.0
 bool has_norm = false
 // ---- M3 ----
-// Its chief executive (Executives): a name, a trait (Names.traits: 0
-// aggressive, 1 prudent, 2 visionary, 3 crooked) and the day they took over.
+// Its chief executive (Executives): a name, a style (Names.traits: 0
+// aggressive, 1 prudent, 2 visionary, 3 crooked; 0.4: from the chief's hidden
+// stats, Executives.style) and the day they took over.
 string ceo = ""
 int trait = 0
 int ceo_since = 0
@@ -110,6 +111,39 @@ int board_payout = -1
 int payout_day = -1000000
 int suitor_stake = 0
 int captured = -1000000
+// ---- M4 ----
+// Technology levels (Research): process (costs), scale (work from the same
+// yards) and quality (reliability), permanent once reached.
+[]int tech = [0, 0, 0]
+// Research: the budget level (Research.rd_rates: 0 none .. 4 heavy), the
+// focus (0 process, 1 scale, 2 quality), what it has spent toward the next
+// level of the focus, and the hidden draw that level's cost is multiplied by.
+int rd = 0
+int focus = 0
+float progress = 0.0
+float luck = 1.0
+// R&D spent since the last report (booked as costs; the market adds part back).
+float rd_spent = 0.0
+// Money raised (an offering, the player's injection) not yet spent on yards:
+// fair value counts it (Capital).
+float raised = 0.0
+// Smoothed yearly growth of its effective capacity, and its effective
+// capacity at the last report (for the next update).
+float growth = 0.0
+float cap_mark = 0.0
+// The day of its last offering, buyback or split.
+int last_offer = -1000000
+// Board or owner choices: offerings allowed (1), forbidden (-1) or the
+// chief's call (0); research set by the player's board seat (1) or not (0);
+// the growth plan (0 hold, 1 steady, 2 fast; -1 the chief's call).
+int capital_policy = 0
+int board_rd = 0
+int plan = -1
+// (M4) A security company's ships at home, "model:n;..." (Fleets).
+string fleet = ""
+// (0.4) Its chief from the pool (Chief.id in Market.chiefs); 0 for none (the
+// player running their own company, or a save from before the pool).
+int chief = 0
 
 bool listed():
     return status == LISTED || status == DISTRESSED || status == FOR_SALE
@@ -120,7 +154,7 @@ float market_value():
 // A company gone from the listing a month or more keeps no price history or
 // reports in its line (nothing reads them; a spin-off starts afresh).
 string encode(bool full):
-    []string f = [string(id), name, "1" if canon else "0", string(sector), home, system, string(status), string(since), string(cash), string(debt), string(capacity), string(efficiency), string(reliability), string(shares), string(price), string(revenue), string(costs), floats(earnings) if full else "", string(report_at), string(payout), string(dividend), deltas(history) if full else "", string(parent), ints(acquired), string(brought), string(review), string(rescued), string(suitor), string(offer_day), string(offer), string(founded), string(mood), string(busy), string(busy_days), string(hull_income), cause, string(pre_offer), string(norm), ceo, string(trait), string(ceo_since), string(owner), ships, string(bias), string(bias_until), home_gov, "1" if ipo else "0", string(policy), string(surprise), string(surprise_at), string(board_payout), string(payout_day), string(suitor_stake), string(captured)]
+    []string f = [string(id), name, "1" if canon else "0", string(sector), home, system, string(status), string(since), string(cash), string(debt), string(capacity), string(efficiency), string(reliability), string(shares), string(price), string(revenue), string(costs), floats(earnings) if full else "", string(report_at), string(payout), string(dividend), deltas(history) if full else "", string(parent), ints(acquired), string(brought), string(review), string(rescued), string(suitor), string(offer_day), string(offer), string(founded), string(mood), string(busy), string(busy_days), string(hull_income), cause, string(pre_offer), string(norm), ceo, string(trait), string(ceo_since), string(owner), ships, string(bias), string(bias_until), home_gov, "1" if ipo else "0", string(policy), string(surprise), string(surprise_at), string(board_payout), string(payout_day), string(suitor_stake), string(captured), ints(tech), string(rd), string(focus), string(progress), string(luck), string(rd_spent), string(raised), string(growth), string(cap_mark), string(last_offer), string(capital_policy), string(board_rd), string(plan), fleet, string(chief)]
     return f.join("|")
 
 void decode(string line):
@@ -187,6 +221,26 @@ void decode(string line):
         payout_day = f[51].to_int()
         suitor_stake = f[52].to_int()
         captured = f[53].to_int()
+    if f.len() > 66:
+        tech = read_ints(f[54])
+        for tech.len() < 3:
+            tech.append(0)
+        rd = f[55].to_int()
+        focus = f[56].to_int()
+        progress = f[57].to_float()
+        luck = f[58].to_float()
+        rd_spent = f[59].to_float()
+        raised = f[60].to_float()
+        growth = f[61].to_float()
+        cap_mark = f[62].to_float()
+        last_offer = f[63].to_int()
+        capital_policy = f[64].to_int()
+        board_rd = f[65].to_int()
+        plan = f[66].to_int()
+    if f.len() > 67:
+        fleet = f[67]
+    if f.len() > 68:
+        chief = f[68].to_int()
 
 // The player's own company, not yet offered to the market: not traded on the
 // exchange, not a takeover target.

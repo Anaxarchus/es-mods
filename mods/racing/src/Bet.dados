@@ -1,0 +1,74 @@
+class Bet
+
+// One bet with the league's bookmaker (Book), or one price on its board (an
+// offer: stake 0, with the book's own chance). Markets by `kind`:
+//   race (the league's next round): WIN the race's winner (a pilot),
+//     PODIUM a pilot in the top three, TEAM the winning team, H2H a pilot
+//     ahead of their teammate at the flag (`sel2`);
+//   season: DRIVERS the drivers' champion, TEAMS the teams' champion, UP
+//     promoted (the top eligible teams, World.movers), DOWN relegated (as
+//     many as go up from below, the bottom not spared).
+// Odds are decimal (a winning stake returns stake x odds). Saved as one "b|"
+// line; the label is the bet as told.
+
+int WIN = 0
+int PODIUM = 1
+int TEAM = 2
+int H2H = 3
+int DRIVERS = 4
+int TEAMS = 5
+int UP = 6
+int DOWN = 7
+
+int OPEN = 0
+int WON = 1
+int LOST = 2
+int VOID = 3
+
+int id = 0
+int kind = 0
+int league = 0
+int season = 0
+// The race's round (race markets; -1 a season's).
+int round = -1
+// The selection: a pilot's or a team's id, and the head-to-head's other pilot.
+int sel = 0
+int sel2 = 0
+float stake = 0.0
+float odds = 0.0
+int day = 0
+int status = 0
+float payout = 0.0
+int settled = 0
+string label = ""
+// An offer's: the book's fair chance (not saved), and whether it is priced.
+float chance = 0.0
+bool priced = true
+
+bool race_market():
+    return kind <= H2H
+
+bool open():
+    return status == OPEN
+
+string encode():
+    string l = label.replace_all("|", "/").replace_all("\n", " ")
+    []string f = [string(id), string(kind), string(league), string(season), string(round), string(sel), string(sel2), string(stake), string(odds), string(day), string(status), string(payout), string(settled), l]
+    return f.join("|")
+
+void decode(string line):
+    []string f = line.split("|")
+    id = f[0].to_int()
+    kind = f[1].to_int()
+    league = f[2].to_int()
+    season = f[3].to_int()
+    round = f[4].to_int()
+    sel = f[5].to_int()
+    sel2 = f[6].to_int()
+    stake = f[7].to_float()
+    odds = f[8].to_float()
+    day = f[9].to_int()
+    status = f[10].to_int()
+    payout = f[11].to_float()
+    settled = f[12].to_int()
+    label = f[13] if f.len() > 13 else ""

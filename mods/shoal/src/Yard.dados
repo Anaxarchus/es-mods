@@ -1,0 +1,783 @@
+class Yard
+
+// The Breakers' Yard (v0.3): a full screen on Breaker's Rest, Haven and
+// Farpoint, opened from the planet button once the player is welcomed. It
+// refines raw materials (Breaker's Rest only) and upgrades outfits installed
+// on the player's ships, mark by mark, for refined materials and credits.
+// Every number is in Tuning.
+//
+// With mod API 12 (can_list) the yard works on ANY installed outfit: stock,
+// any plugin's, or any mod's runtime definition. It takes the player's ships
+// landed or parked on this planet (fleet_ship_planet), lists each one's
+// outfits (ship_outfit_kinds, ship_outfit_at, less ship_integrated_count),
+// classifies each by its attributes and weapon stats
+// (outfit_weapon_attribute), and builds the marks from those values. Its own
+// marks are recognised by name ("<base> (Breakers Mk N)") and always derive
+// from that original base; the Shoal's lines by their authored names.
+//
+// FALLBACK, for games before mod API 12 (the API 11 release): the API can
+// list neither a ship's outfits nor read a weapon block, so the yard asks,
+// for each outfit in Catalog (the game data's generated shortlist) and the
+// Shoal's own lines, and each mark's variant of them, whether ships here
+// carry it (the conditions "outfit (installed): " and "outfit (parked): "),
+// counts it on each of the player's ships (ship_outfit_count), and takes a
+// weapon's stats from Catalog. Only stock outfits are offered there.
+
+import "imports:sdk/es"
+
+class Offer:
+    // The ship (UUID), its index in the fleet and its name.
+    string ship = ""
+    int ship_index = 0
+    string ship_name = ""
+    // The outfit installed (`from`), how many of it can be replaced, and
+    // what it becomes (`to`).
+    string from = ""
+    int count = 0
+    string to = ""
+    // The original outfit (the base of every mark; a Shoal line's Mk I) and
+    // the installed mark: 0 for the original, 1 for Mk I, ...
+    string base = ""
+    int mark = 0
+    // Its kind (an index into Tuning.kinds; -1 when unknown, for a line).
+    int kind = -1
+    // One of the Shoal's own lines, upgraded to its authored next mark.
+    bool line = false
+
+Tuning tune = Tuning()
+// (Fallback, before mod API 12) the stock shortlist and its weapon stats.
+Catalog catalog = Catalog()
+
+// What the game offers (set by the mod from Game.has): moving outfits (the
+// refinery), and defining, replacing and moving them (the upgrades).
+bool can_refine = false
+bool can_upgrade = false
+// (Mod API 12) Listing a ship's outfits, where it is, and weapon stats: any
+// outfit is upgradable. Without it, the Catalog fallback.
+bool can_list = false
+
+// (Fallback) The weapon stats by outfit, read from Catalog once.
+{string: string} stats_of = {}
+bool indexed = false
+
+// The screen: the offers its rows show, its buttons' actions, the offer
+// waiting for its confirm, and a line about what just happened.
+[]Offer offers = []
+[]string actions = []
+Offer pending = Offer()
+bool has_pending = false
+string note = ""
+
+int UPGRADE_OK = 1
+// The ask_number token for casting Glass Lampreys.
+int CAST_COUNT = 2
+
+void wire(Tuning t):
+    tune = t
+
+void index():
+    if indexed:
+        return
+    indexed = true
+    for k in 0..<catalog.names.len():
+        if catalog.stats[k] != "":
+            stats_of[catalog.names[k]] = catalog.stats[k]
+
+// A weapon's stats the yard scales (damage of every type, anti-missile
+// strength, firing costs), as keys and values set ({} when none): from the
+// game (mod API 12), else from Catalog.
+{string: float} weapon_stats(es.Game game, string outfit):
+    {string: float} out = {}
+    if can_list:
+        for k in tune.weapon_keys:
+            float v = game.outfit_weapon_attribute(outfit, k)
+            if v != 0.0:
+                out[k] = v
+        return out
+    index()
+    string text = stats_of.get(outfit, "")
+    if text == "":
+        return out
+    for part in text.split(";"):
+        []string kv = part.split("=")
+        if kv.len() == 2:
+            out[kv[0]] = kv[1].to_float()
+    return out
+
+bool is_headline_stat(string key):
+    return key.ends_with(" damage") || key == "anti-missile"
+
+// (Mod API 12) Whether a weapon's damage comes partly from submunitions: the
+// game answers damage including theirs, which a mark's weapon block would
+// add to the weapon's own. Seen from its range, longer than its own
+// velocity times its own lifetime (unless a range override hides it).
+bool fires_submunitions(es.Game game, string outfit):
+    if !can_list || !game.outfit_is_weapon(outfit):
+        return false
+    if game.outfit_weapon_attribute(outfit, "exclude submunition damage") > 0.0:
+        return false
+    if game.outfit_weapon_attribute(outfit, "range override") > 0.0:
+        return false
+    float v = game.outfit_weapon_attribute(outfit, "velocity override")
+    if v <= 0.0:
+        v = game.outfit_weapon_attribute(outfit, "velocity")
+    float own = v * game.outfit_weapon_attribute(outfit, "lifetime")
+    return game.outfit_weapon_attribute(outfit, "range") > own + 0.000001 * (1.0 + own)
+
+// ---- Classification (by attributes, not names) ----
+
+// Why an outfit cannot be upgraded, or "" when it can.
+string refusal(es.Game game, string outfit):
+    if game.outfit_name(outfit) == "":
+        return "unknown outfit"
+    if game.outfit_attribute(outfit, "required crew") < 0.0:
+        return "crew reduction is the Shoal's alone"
+    string category = game.outfit_category(outfit)
+    if tune.refused_categories.contains(category):
+        return "not upgradable (" + category + ")"
+    for a in tune.refused_attributes:
+        if game.outfit_attribute(outfit, a) > 0.0:
+            return "not upgradable (" + a + ")"
+    // (Fallback) Before mod API 12 the yard knows only Catalog's stock
+    // outfits; with it, another mod's runtime outfit is upgradable too.
+    if can_upgrade && !can_list && game.defined("outfit", outfit) == 2:
+        return "defined at run time by a mod"
+    if fires_submunitions(game, outfit):
+        return "its submunitions cannot be reworked"
+    if kind_of(game, outfit) < 0:
+        return "no kind the yard upgrades"
+    return ""
+
+// The outfit's kind (an index into Tuning.kinds), the first that fits, or -1;
+// refusals aside.
+int kind_of(es.Game game, string outfit):
+    if game.outfit_is_weapon(outfit):
+        {string: float} s = weapon_stats(game, outfit)
+        bool headline = false
+        for k, v in s:
+            if is_headline_stat(k) && v > 0.0:
+                headline = true
+        if !headline:
+            return -1
+        if game.outfit_attribute(outfit, "gun ports") < 0.0:
+            return 0
+        if game.outfit_attribute(outfit, "turret mounts") < 0.0:
+            return 1
+        return -1
+    for k in 2..<tune.kinds.len():
+        for a in tune.kind_test[k]:
+            if game.outfit_attribute(outfit, a) > 0.0:
+                return k
+    return -1
+
+// The kind's name, or "" when the outfit cannot be upgraded.
+string classify(es.Game game, string outfit):
+    if refusal(game, outfit) != "":
+        return ""
+    return tune.kinds[kind_of(game, outfit)]
+
+// ---- Marks ----
+
+int max_mark():
+    return tune.mark_roman.len()
+
+string roman(int mark):
+    return tune.mark_roman[mark - 1] if mark >= 1 && mark <= max_mark() else ""
+
+// The true name of a stock outfit's mark (1 ..= max_mark).
+string variant_name(string base, int mark):
+    return base + tune.mark_suffix + roman(mark) + ")"
+
+string line_name(string line, int mark):
+    return line + " Mk " + roman(mark)
+
+// A line's name from its Mk I's.
+string family(string first):
+    string tail = " Mk " + roman(1)
+    return first[0..<first.len() - tail.len()] if first.ends_with(tail) else first
+
+// A number as the data writes it, to a millionth.
+string num(float x):
+    float scaled = globalThis.Math.round(x * 1000000.0)
+    float back = scaled / 1000000.0
+    int whole = int(back)
+    if float(whole) == back:
+        return string(whole)
+    return string(back)
+
+string quote(string s):
+    if s.contains("\""):
+        return "`" + s + "`"
+    return "\"" + s + "\""
+
+// The changes that make mark `mark` of `base`: a pure function of the two,
+// so defining it again is the same text (define_outfit_variant is then a
+// no-op). Its kind's headline stats and the cost scale by the mark's
+// headline factor, their energy, heat and fuel costs by its drawback factor;
+// the mass stays.
+string changes(es.Game game, string base, int kind, int mark):
+    float up = tune.mark_headline[mark - 1]
+    float down = tune.mark_drawback[mark - 1]
+    []string out = []
+    out.append("\"display name\" " + quote(game.outfit_name(base) + " Mk " + roman(mark)))
+    float cost = game.outfit_attribute(base, "cost")
+    float scaled_cost = globalThis.Math.round(cost * up)
+    out.append("cost " + num(scaled_cost))
+    if kind >= 2:
+        for a in tune.kind_headline[kind]:
+            float v = game.outfit_attribute(base, a)
+            if v != 0.0:
+                out.append(quote(a) + " " + num(v * up))
+        for a in tune.kind_costs[kind]:
+            float v = game.outfit_attribute(base, a)
+            if v != 0.0:
+                out.append(quote(a) + " " + num(v * down))
+    else:
+        {string: float} s = weapon_stats(game, base)
+        out.append("weapon")
+        for k, v in s:
+            if is_headline_stat(k):
+                out.append("\t" + quote(k) + " " + num(v * up))
+            else if tune.weapon_costs.contains(k):
+                out.append("\t" + quote(k) + " " + num(v * down))
+    return out.join("\n") + "\n"
+
+// Define a stock outfit's mark (or find it defined already, from a save).
+bool define_mark(es.Game game, string base, int kind, int mark):
+    string name = variant_name(base, mark)
+    if game.define_outfit_variant(name, base, changes(game, base, kind, mark)):
+        return true
+    // Defined for this pilot before, from other text (the base changed since).
+    return game.defined("outfit", name) == 2
+
+// ---- Prices ----
+
+// An outfit's size in units: one per size_unit outfit space, rounded up, at least one.
+int units(es.Game game, string outfit):
+    float space = game.outfit_attribute(outfit, "outfit space")
+    if space < 0.0:
+        space = -space
+    float n = globalThis.Math.ceil(space / tune.size_unit)
+    int u = int(n)
+    return u if u > 1 else 1
+
+// What going to `mark` costs, per price item, for an outfit of this many units.
+[]int materials(int mark, int size):
+    []int out = []
+    for k in 0..<tune.price_items.len():
+        out.append(tune.price_per_unit[mark - 1][k] * size + tune.price_flat[mark - 1][k])
+    return out
+
+// The credits for going to `mark`: a share of the original outfit's cost.
+int credits(es.Game game, string base, int mark):
+    float c = game.outfit_attribute(base, "cost") * tune.price_credit_share[mark - 1]
+    float r = globalThis.Math.round(c)
+    return int(r)
+
+[]int offer_materials(es.Game game, Offer o):
+    return materials(o.mark + 1, units(game, o.base))
+
+int offer_credits(es.Game game, Offer o):
+    return credits(game, o.base, o.mark + 1)
+
+// ---- Counting what the player has ----
+
+// In cargo (pooled while landed) and in this planet's storage.
+int held(es.Game game, string outfit):
+    int n = game.condition("outfit (cargo): " + outfit) + game.condition("outfit (storage): " + outfit)
+    return n if n > 0 else 0
+
+// Installed on the player's ships here, parked or not.
+int here(es.Game game, string outfit):
+    return game.condition("outfit (installed): " + outfit) + game.condition("outfit (parked): " + outfit)
+
+// ---- Finding the offers ----
+
+// What an installed outfit is to the yard: its original (base), its mark (0
+// for the original), and whether it is one of the Shoal's lines. A yard mark
+// is "<base> (Breakers Mk N)" of a base the game knows; any other name in
+// that pattern (a later release's mark, or an unknown base) gets base ""
+// and is not offered.
+class Identity:
+    string base = ""
+    int mark = 0
+    bool line = false
+
+Identity identify(es.Game game, string name):
+    Identity id = Identity()
+    for line in tune.lines:
+        for m in 1..<max_mark() + 1:
+            if name == line_name(line, m):
+                id.base = line_name(line, 1)
+                id.mark = m
+                id.line = true
+                return id
+    if name.ends_with(")") && name.contains(tune.mark_suffix):
+        int at = name.last_index_of(tune.mark_suffix)
+        string base = name[0..<at]
+        string numeral = name[at + tune.mark_suffix.len()..<name.len() - 1]
+        // Never a base itself: a yard mark of an unknown base, or of a mark
+        // this table lacks, is not offered.
+        if base == "" || game.outfit_name(base) == "":
+            return id
+        for m in 1..<max_mark() + 1:
+            if numeral == roman(m):
+                id.base = base
+                id.mark = m
+        return id
+    id.base = name
+    return id
+
+// (Mod API 12) Every upgradable outfit installed on the player's ships on
+// this planet (landed with the player, or parked here).
+void found_installed(es.Game game, []Offer out):
+    string planet = game.planet()
+    if planet == "":
+        return
+    {string: int} kinds = {}
+    for s in 0..<game.fleet_count():
+        string ship = game.fleet_ship(s)
+        if game.fleet_ship_planet(ship) != planet:
+            continue
+        for k in 0..<game.ship_outfit_kinds(ship):
+            string name = game.ship_outfit_at(ship, k)
+            if name == "":
+                continue
+            int free = game.ship_outfit_count(ship, name) - game.ship_integrated_count(ship, name)
+            if free <= 0:
+                continue
+            Identity id = identify(game, name)
+            if id.base == "":
+                continue
+            int kind = -1
+            if kinds.has(id.base):
+                kind = kinds[id.base]
+            else:
+                kind = kind_of(game, id.base) if id.line || refusal(game, id.base) == "" else -2
+                kinds[id.base] = kind
+            if kind == -2:
+                continue
+            Offer o = Offer()
+            o.ship = ship
+            o.ship_index = s
+            o.ship_name = game.fleet_ship_name(ship)
+            o.from = name
+            o.count = free
+            o.base = id.base
+            o.mark = id.mark
+            o.kind = kind
+            o.line = id.line
+            if o.mark < max_mark():
+                o.to = line_name(family(o.base), o.mark + 1) if o.line else variant_name(o.base, o.mark + 1)
+            out.append(o)
+
+// (Fallback, before mod API 12) The offers among the named outfits, on any of
+// the player's ships.
+void found(es.Game game, []Offer out, []string names, []string bases, []int marks, []bool lines):
+    {string: int} kinds = {}
+    for s in 0..<game.fleet_count():
+        string ship = game.fleet_ship(s)
+        for k in 0..<names.len():
+            int n = game.ship_outfit_count(ship, names[k])
+            if n <= 0:
+                continue
+            int free = n - game.ship_integrated_count(ship, names[k])
+            if free <= 0:
+                continue
+            int kind = -1
+            if kinds.has(bases[k]):
+                kind = kinds[bases[k]]
+            else:
+                kind = kind_of(game, bases[k]) if lines[k] || refusal(game, bases[k]) == "" else -2
+                kinds[bases[k]] = kind
+            if kind == -2:
+                continue
+            Offer o = Offer()
+            o.ship = ship
+            o.ship_index = s
+            o.ship_name = game.fleet_ship_name(ship)
+            o.from = names[k]
+            o.count = free
+            o.base = bases[k]
+            o.mark = marks[k]
+            o.kind = kind
+            o.line = lines[k]
+            if o.mark < max_mark():
+                o.to = line_name(family(o.base), o.mark + 1) if o.line else variant_name(o.base, o.mark + 1)
+            out.append(o)
+
+// The upgradable outfits on the player's ships here: the flagship's first,
+// then each ship's by name.
+[]Offer find(es.Game game):
+    []Offer out = []
+    if !can_upgrade:
+        return out
+    if can_list:
+        found_installed(game, out)
+        out.sort(bool(Offer a, Offer b): return before(game, a, b))
+        return out
+    // Fallback: Catalog's stock outfits and the Shoal's lines, by name.
+    []string names = []
+    []string bases = []
+    []int marks = []
+    []bool lines = []
+    for base in catalog.names:
+        for m in 0..<max_mark() + 1:
+            string name = base if m == 0 else variant_name(base, m)
+            if here(game, name) > 0:
+                names.append(name)
+                bases.append(base)
+                marks.append(m)
+                lines.append(false)
+    for line in tune.lines:
+        for m in 1..<max_mark() + 1:
+            string name = line_name(line, m)
+            if here(game, name) > 0:
+                names.append(name)
+                bases.append(line_name(line, 1))
+                marks.append(m)
+                lines.append(true)
+    found(game, out, names, bases, marks, lines)
+    out.sort(bool(Offer a, Offer b): return before(game, a, b))
+    return out
+
+bool before(es.Game game, Offer a, Offer b):
+    if a.ship_index != b.ship_index:
+        return a.ship_index < b.ship_index
+    string x = game.outfit_name(a.from)
+    string y = game.outfit_name(b.from)
+    if x != y:
+        return less(x, y)
+    return less(a.from, b.from)
+
+// Strings in code-unit order (DadoScript has no `<` on strings).
+any less_than = globalThis.Function("a", "b", "return a < b;")
+
+bool less(string a, string b):
+    bool r = less_than(a, b)
+    return r
+
+// ---- What an upgrade changes ----
+
+// The kind's key stat at a mark of a stock outfit (0 is the original).
+float stock_stat(es.Game game, Offer o, string key, int mark):
+    float factor = 1.0 if mark == 0 else tune.mark_headline[mark - 1]
+    if o.kind >= 2:
+        return game.outfit_attribute(o.base, key) * factor
+    {string: float} s = weapon_stats(game, o.base)
+    return s.get(key, 0.0) * factor
+
+// The stat an offer's change is shown by: the kind's first headline stat the
+// outfit has (for a weapon, its shield damage, else hull damage, else
+// anti-missile strength, else any damage).
+string key_stat(es.Game game, Offer o):
+    if o.kind >= 2:
+        for a in tune.kind_headline[o.kind]:
+            if game.outfit_attribute(o.base, a) != 0.0:
+                return a
+        return ""
+    if o.kind < 0:
+        return ""
+    {string: float} s = weapon_stats(game, o.base)
+    for k in ["shield damage", "hull damage", "anti-missile"]:
+        if s.get(k, 0.0) > 0.0:
+            return k
+    for k, v in s:
+        if is_headline_stat(k) && v > 0.0:
+            return k
+    return ""
+
+string short(float x):
+    float r = globalThis.Math.round(x * 1000.0)
+    return num(r / 1000.0)
+
+// "shield generation 0.2 -> 0.22", or what the next mark is for a weapon line.
+string change(es.Game game, Offer o):
+    if o.mark >= max_mark():
+        return "fully upgraded"
+    string key = key_stat(game, o)
+    if o.line:
+        if key == "":
+            return "as the Breakers build it"
+        if o.kind < 2:
+            return key + " " + short(weapon_stats(game, o.from).get(key, 0.0)) + " -> " + short(weapon_stats(game, o.to).get(key, 0.0))
+        return key + " " + short(game.outfit_attribute(o.from, key)) + " -> " + short(game.outfit_attribute(o.to, key))
+    if key == "":
+        return ""
+    return key + " " + short(stock_stat(game, o, key, o.mark)) + " -> " + short(stock_stat(game, o, key, o.mark + 1))
+
+// ---- Text ----
+
+string thousands(int n):
+    string digits = string(n if n >= 0 else -n)
+    string out = ""
+    int k = 0
+    for i in 0..<digits.len():
+        int at = digits.len() - 1 - i
+        if k > 0 && k % 3 == 0:
+            out = "," + out
+        out = digits[at] + out
+        k += 1
+    return ("-" if n < 0 else "") + out
+
+string amount(int n, string one, string many):
+    return thousands(n) + " " + (one if n == 1 else many)
+
+// "2 Refined Shoal Glass and 1,500 credits".
+string price_text(es.Game game, Offer o):
+    []int m = offer_materials(game, o)
+    []string parts = []
+    for k in 0..<m.len():
+        if m[k] > 0:
+            parts.append(amount(m[k], tune.price_items[k], tune.price_items_many[k]))
+    int c = offer_credits(game, o)
+    if c > 0:
+        parts.append(amount(c, "credit", "credits"))
+    if parts.len() == 0:
+        return "nothing"
+    if parts.len() == 1:
+        return parts[0]
+    return parts[0..<parts.len() - 1].join(", ") + " and " + parts[parts.len() - 1]
+
+// The cost column: "2 glass, 1 core, 1,500 cr".
+string price_cell(es.Game game, Offer o):
+    if o.mark >= max_mark():
+        return "-"
+    []string short_names = ["glass", "core", "lattice"]
+    []int m = offer_materials(game, o)
+    []string parts = []
+    for k in 0..<m.len():
+        if m[k] > 0:
+            string what = short_names[k] if k < short_names.len() else tune.price_items[k]
+            parts.append(string(m[k]) + " " + what)
+    parts.append(thousands(offer_credits(game, o)) + " cr")
+    return parts.join(", ")
+
+string mark_cell(int mark):
+    return "-" if mark == 0 else "Mk " + roman(mark)
+
+string next_cell(int mark):
+    return "max" if mark >= max_mark() else "Mk " + roman(mark + 1)
+
+// ---- The screen ----
+
+bool at_refinery(es.Game game):
+    return game.planet() == tune.outpost
+
+void open(es.Game game):
+    note = ""
+    has_pending = false
+    show(game)
+
+void show(es.Game game):
+    actions = []
+    offers = find(game)
+    game.screen_open(tune.yard_label, sidebar(game))
+    if offers.len() > 0:
+        game.panel_columns("Outfit\tShip\tMark\tNext\tCost\tChange")
+        for o in offers:
+            string what = game.outfit_name(o.from) + (" x" + string(o.count) if o.count > 1 else "")
+            game.panel_row(what + "\t" + o.ship_name + "\t" + mark_cell(o.mark) + "\t" + next_cell(o.mark) + "\t" + price_cell(game, o) + "\t" + change(game, o))
+    game.panel_select(-1)
+    if at_refinery(game) && can_refine:
+        button(game, "Refine glass", "glass")
+        button(game, "Refine cores", "cores")
+        button(game, "Cast lampreys", "cast")
+    button(game, "Leave", "leave")
+
+void button(es.Game game, string label, string action):
+    game.panel_button(label)
+    actions.append(action)
+
+string sidebar(es.Game game):
+    []string t = []
+    t.append("The Breakers rebuild salvaged gear here, a mark at a time, for refined Shoal stock and credits.")
+    if at_refinery(game):
+        if can_refine:
+            t.append("Refinery: " + string(tune.refine_ratio[0]) + " " + tune.raw[0] + " make 1 " + tune.refined[0] + ", " + string(tune.refine_ratio[1]) + " " + tune.raw_many[1] + " 1 " + tune.refined[1] + ". It takes from your hold and your storage here.")
+        else:
+            t.append("Refinery: the Breakers take refining work on the job board here: " + string(tune.refine_ratio[0]) + " " + tune.raw[0] + " make 1 " + tune.refined[0] + ", " + string(tune.refine_ratio[1]) + " " + tune.raw_many[1] + " 1 " + tune.refined[1] + ".")
+        if can_refine:
+            t.append("Lamprey casting: one " + tune.raw[0] + " makes one " + tune.lamprey + " for a Lamprey Launcher.")
+        for k in 0..<tune.raw.len():
+            t.append(tune.raw_many[k] + ": " + thousands(held(game, tune.raw[k])))
+        t.append(tune.lamprey_many + ": " + thousands(held(game, tune.lamprey)))
+    for k in 0..<tune.price_items.len():
+        t.append(tune.price_items_many[k] + ": " + thousands(held(game, tune.price_items[k])))
+    t.append("Credits: " + thousands(game.condition("credits")))
+    if !can_upgrade:
+        t.append("Upgrades need a newer game (mod API 11).")
+    else if offers.len() == 0:
+        t.append("Nothing installed on your ships here can be upgraded.")
+    else:
+        t.append("Click an outfit to upgrade one of it to the next mark.")
+    if note != "":
+        t.append(note)
+    return t.join("\n\n")
+
+void press(es.Game game, int button):
+    if button < 0 || button >= actions.len():
+        return
+    string a = actions[button]
+    if a == "leave":
+        game.panel_close()
+        return
+    if a == "glass":
+        refine(game, 0)
+    else if a == "cores":
+        refine(game, 1)
+    else if a == "cast":
+        int have = held(game, tune.raw[0])
+        if can_refine && at_refinery(game) && have > 0:
+            game.ask_number("Cast how many " + tune.lamprey_many + "? Each takes one " + tune.raw[0] + " from your hold or your storage here. You have " + thousands(have) + ".", CAST_COUNT, have)
+            return
+        note = "Casting " + tune.lamprey_many + " takes " + tune.raw[0] + ", and you have none here."
+    show(game)
+
+// The answer to a number dialog this screen asked.
+void numbered(es.Game game, int token, int value):
+    if token == CAST_COUNT:
+        _ = cast(game, value)
+        show(game)
+
+// Cast up to n Glass Lampreys from Shoal Glass in the hold and storage here,
+// into the hold; answers how many were cast.
+int cast(es.Game game, int n):
+    if !can_refine || !at_refinery(game) || n <= 0:
+        return 0
+    string glass = tune.raw[0]
+    int took = game.outfit_take(glass, n, "any")
+    if took <= 0:
+        note = "The Breakers could not take your " + glass + "."
+        return 0
+    int given = game.outfit_give(tune.lamprey, took, "cargo")
+    if given < took:
+        _ = game.outfit_give(glass, took - given, "cargo")
+    if given <= 0:
+        note = "The Breakers could not cast any " + tune.lamprey_many + "."
+        return 0
+    note = "The Breakers cast " + amount(given, tune.lamprey, tune.lamprey_many) + " from " + amount(given, glass, glass) + "."
+    return given
+
+void choose(es.Game game, int row):
+    if row < 0 || row >= offers.len():
+        return
+    Offer o = offers[row]
+    if o.mark >= max_mark():
+        note = game.outfit_name(o.from) + " is as good as the Breakers can make it."
+        show(game)
+        return
+    // The row stays chosen after a click (while its confirm is open, after a
+    // Cancel, or with what it lacks shown), so the arrow keys step on from it.
+    string missing = shortfall(game, o)
+    if missing != "":
+        note = missing
+        show(game)
+        game.panel_select(row)
+        return
+    pending = o
+    has_pending = true
+    game.panel_select(row)
+    string text = "Upgrade one " + game.outfit_name(o.from) + " on " + o.ship_name + " to " + target_name(game, o) + "? It costs " + price_text(game, o) + "."
+    string c = change(game, o)
+    if c != "":
+        text = text + " (" + c + ")"
+    game.confirm(text, UPGRADE_OK)
+
+string target_name(es.Game game, Offer o):
+    if o.line:
+        return game.outfit_name(o.to)
+    return game.outfit_name(o.base) + " Mk " + roman(o.mark + 1)
+
+void confirmed(es.Game game, int token):
+    if token != UPGRADE_OK || !has_pending:
+        return
+    has_pending = false
+    _ = upgrade(game, pending)
+    show(game)
+
+// ---- The refinery ----
+
+// Refine every whole batch of raw material k in the hold and storage here;
+// answers how many refined units were made. What cannot make a whole batch
+// stays raw.
+int refine(es.Game game, int k):
+    if !can_refine || !at_refinery(game):
+        return 0
+    string raw = tune.raw[k]
+    int ratio = tune.refine_ratio[k]
+    int have = held(game, raw)
+    int want = have / ratio * ratio
+    if want <= 0:
+        note = "The refinery needs at least " + amount(ratio, raw, tune.raw_many[k]) + "; you have " + thousands(have) + "."
+        return 0
+    int took = game.outfit_take(raw, want, "any")
+    int made = took / ratio
+    int spare = took - made * ratio
+    if spare > 0:
+        _ = game.outfit_give(raw, spare, "cargo")
+    if made > 0:
+        int given = game.outfit_give(tune.refined[k], made, "cargo")
+        if given < made:
+            _ = game.outfit_give(raw, (made - given) * ratio, "cargo")
+            made = given
+    if made <= 0:
+        note = "The refinery could not take your " + tune.raw_many[k] + "."
+        return 0
+    note = "The Breakers refine " + amount(made * ratio, raw, tune.raw_many[k]) + " into " + amount(made, tune.refined[k], tune.refined_many[k]) + "."
+    return made
+
+// ---- Upgrading ----
+
+// What the player lacks for an offer, or "".
+string shortfall(es.Game game, Offer o):
+    []int m = offer_materials(game, o)
+    for k in 0..<m.len():
+        int have = held(game, tune.price_items[k])
+        if have < m[k]:
+            return "You need " + amount(m[k], tune.price_items[k], tune.price_items_many[k]) + " for that, here or in your hold; you have " + thousands(have) + "."
+    int c = offer_credits(game, o)
+    if game.condition("credits") < c:
+        return "You need " + amount(c, "credit", "credits") + " for that."
+    return ""
+
+void give_back(es.Game game, []int taken):
+    for k in 0..<taken.len():
+        if taken[k] > 0:
+            _ = game.outfit_give(tune.price_items[k], taken[k], "cargo")
+
+// Upgrade one of an offer's outfits: everything is checked first; the
+// materials are taken, the outfit replaced, and only then the credits paid.
+// If the replacement fails, the materials go back to the hold.
+bool upgrade(es.Game game, Offer o):
+    if !can_upgrade || o.mark >= max_mark():
+        return false
+    if game.ship_outfit_count(o.ship, o.from) - game.ship_integrated_count(o.ship, o.from) <= 0:
+        note = o.ship_name + " no longer carries a " + game.outfit_name(o.from) + " the yard can work on."
+        return false
+    string missing = shortfall(game, o)
+    if missing != "":
+        note = missing
+        return false
+    if !o.line && !define_mark(game, o.base, o.kind, o.mark + 1):
+        note = "The Breakers cannot work out how to improve the " + game.outfit_name(o.base) + "."
+        return false
+    []int m = offer_materials(game, o)
+    []int taken = []
+    for k in 0..<m.len():
+        int t = 0
+        if m[k] > 0:
+            t = game.outfit_take(tune.price_items[k], m[k], "any")
+        taken.append(t)
+        if t < m[k]:
+            give_back(game, taken)
+            note = "The yard could not take the " + tune.price_items_many[k] + "."
+            return false
+    if game.ship_replace_outfit(o.ship, o.from, o.to, 1) < 1:
+        give_back(game, taken)
+        note = "The yard could not fit the " + target_name(game, o) + " to " + o.ship_name + ": the ship must be landed here, with room for it. Nothing was charged."
+        return false
+    int c = offer_credits(game, o)
+    game.set_condition("credits", game.condition("credits") - c)
+    note = "The Breakers fit " + o.ship_name + " with the " + target_name(game, o) + "."
+    return true

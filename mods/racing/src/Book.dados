@@ -1,0 +1,724 @@
+class Book
+
+// The Paddock Book: the league's licensed bookmaker. A player who owns no
+// team may bet on every league's races (the next round: its winner, a podium,
+// the winning team, teammates head to head) and seasons (the drivers' and
+// teams' champions, promotion, relegation). Bets are Bet; the world keeps
+// them (World.bets), and the book settles them as races and seasons end,
+// paying through World.pending_payout with a message.
+//
+// Prices are what a sharp outsider could make of the public record: each
+// car's pace on the circuit's character (its design, which everyone sees on
+// track), its pilot's rating (the record the market prices: Staff.rating)
+// and the scouts' potential, the pilot's and the team's points this season
+// (form), and how often cars
+// retire at that kind of circuit. Never anyone's hidden skill or peak. A car
+// in a race is its strength plus a normal noise (NOISE), retiring at the
+// circuit kind's rate (DNF); the book plays the race RACE_SIMS times, and the
+// rest of the season SEASON_SIMS times (with a persistent error for what the
+// record does not show, PERSIST), from dice of its own seeded by the world's
+// start, the season, the league and the round, so pricing never touches the
+// world's dice and the same state always gives the same prices. Then it adds
+// its margin (MARGIN by market; more on the longshots: shape) and rounds
+// the odds down to the board's ticks. See DESIGN.md §12.
+
+// Stakes, by league (B, A, S): at least, at most, and the most a bet may win.
+[]float MIN_STAKE = [1000.0, 6000.0, 36000.0]
+[]float MAX_STAKE = [25000.0, 150000.0, 900000.0]
+[]float MAX_WIN = [500000.0, 3000000.0, 18000000.0]
+int MAX_OPEN = 10
+int HISTORY = 30
+// Season markets close with this many rounds to go.
+int CLOSE = 2
+// The book's model of a car's strength in a race.
+float W_PACE = 8.6
+float W_PILOT = 1.66
+float W_FORM = 0.135
+float W_TEAM = 0.047
+// The scouts' potential (Bio: shown to everyone), as (potential - 60) / 45.
+float W_POT = 0.78
+float SHRINK = 3.0
+float STANDIN = -0.8
+float NOISE = 1.15
+float PERSIST = 0.8
+// The season: how far a team's pace may wander from round to round (R&D,
+// regulations' aftermath, new staff), a step a round.
+float DRIFT = 0.2
+[]float DNF = [0.077, 0.087, 0.116, 0.089]
+// Team orders: a #1 is ahead of its #2 a little more often than their
+// records say (head to head only).
+float FIRST = 0.15
+// Measured against the races (tools/book-edge.mjs, DUMP): the model's head
+// to heads are a little too even (sharpened: H2H_SHARP, see sharpen), and
+// its winners and its relegations a little too sure (flattened: chance ^
+// GAMMA, by market: a team that falls apart mid-season is no rarity).
+float H2H_SHARP = 0.5
+[]float GAMMA = [0.97, 1.0, 0.9, 1.0, 1.0, 1.0, 1.0, 0.85]
+int RACE_SIMS = 2000
+int SEASON_SIMS = 400
+// The overround by market (Bet kinds), shaped toward the longshots.
+[]float MARGIN = [0.15, 0.12, 0.12, 0.08, 0.18, 0.15, 0.12, 0.15]
+// Selections in a market's outcome: one winner, three on the podium, two up, two down.
+[]int SLOTS = [1, 3, 1, 1, 1, 1, 2, 2]
+float MAX_ODDS = 200.0
+// The longest head to head the book lays.
+float H2H_MAX = 8.0
+float MIN_ODDS = 1.05
+[]string market_names = ["race winner", "podium", "winning team", "head to head", "drivers' champion", "teams' champion", "promotion", "relegation"]
+
+Names names = Names()
+Fmt fmt = Fmt()
+Race race = Race()
+
+// Prices worked out today, by league: the race's and the season's.
+int cache_day = -1
+[][]Bet race_cache = [[], [], []]
+[][]Bet season_cache = [[], [], []]
+[]bool race_done = [false, false, false]
+[]bool season_done = [false, false, false]
+
+// ---- When the book is open ----
+
+bool can_bet(World w):
+    return !w.has_team()
+
+// Rounds of a league's season run, today's race counted once the day is
+// played; -1 between a season's end and the next one's start (the book is
+// shut). The last week of the off-season already belongs to the new season.
+int run(World w, int league):
+    int sw = w.season_week()
+    if sw < 0 || sw == w.WEEKS - 1:
+        return 0
+    if sw >= w.ROUNDS:
+        return -1
+    return sw + (1 if w.weekday() >= league else 0)
+
+// The round the race markets are on (-1 none).
+int race_round(World w, int league):
+    int r = run(w, league)
+    return r if r >= 0 && r < w.ROUNDS else -1
+
+bool season_open(World w, int league):
+    int r = run(w, league)
+    return r >= 0 && r < w.ROUNDS - CLOSE
+
+// ---- The model ----
+
+float shrunk(float per, int n):
+    return per * float(n) / (float(n) + SHRINK)
+
+// A car's strength apart from its pace: its pilot's rating and the pilot's
+// and team's form this season.
+float base(World w, Team t, Person p, int league):
+    float s = W_PILOT * (w.staff.rating(p) if p.id != 0 else STANDIN)
+    if p.id != 0:
+        s += W_POT * (float(w.bio.potential(w, p)) - 60.0) / 45.0
+    if p.id != 0 && p.d_season == w.season && p.d_league == league && p.d_starts > 0:
+        s += W_FORM * shrunk(float(p.d_points) / float(p.d_starts), p.d_starts)
+    if t.races > 0:
+        s += W_TEAM * shrunk(float(t.points) / float(t.races), t.races)
+    return s
+
+// The field: two cars a team (the #1's, then the #2's), as the league is now.
+[]Team field_teams = []
+[]Person field_pilots = []
+[]float field_base = []
+
+void field(World w, int league):
+    field_teams = []
+    field_pilots = []
+    field_base = []
+    for t in w.league_teams(league):
+        for s in [0, t.SECOND]:
+            Person p = w.seat(t, s)
+            field_teams.append(t)
+            field_pilots.append(p)
+            field_base.append(base(w, t, p, league))
+
+// Each car's strength on a circuit of this kind.
+[]float strength(int kind):
+    []float pace = []
+    float mean = 0.0
+    for t in field_teams:
+        float p = race.pace(t, kind)
+        pace.append(p)
+        mean += p
+    mean = mean / float(pace.len() if pace.len() > 0 else 1)
+    []float out = []
+    for i in 0..<pace.len():
+        out.append(W_PACE * (pace[i] - mean) + field_base[i])
+    return out
+
+Rng dice(World w, int league, int round, int salt):
+    Rng r = Rng()
+    r.seed((w.start_day % 1000003) * 7919 + w.season * 104729 + league * 15485863 + round * 31337 + salt * 7727 + 5)
+    for k in 0..<3:
+        r.next()
+    return r
+
+// ---- Prices ----
+
+void refresh(World w):
+    if cache_day != w.day:
+        cache_day = w.day
+        race_done = [false, false, false]
+        season_done = [false, false, false]
+
+// The board for a league's market (Bet kinds): offers (stake 0), priced or
+// not (a near certainty is not offered); empty while the market is shut.
+[]Bet offers(World w, int league, int kind):
+    refresh(w)
+    []Bet all = []
+    if kind <= Bet().H2H:
+        if !race_done[league]:
+            race_cache[league] = race_offers(w, league)
+            race_done[league] = true
+        all = race_cache[league]
+    else:
+        if !season_done[league]:
+            season_cache[league] = season_offers(w, league)
+            season_done[league] = true
+        all = season_cache[league]
+    []Bet out = all.filter(bool(Bet b): return b.kind == kind)
+    // Favourites first (a near certainty, unpriced, at the top); head to
+    // heads stay in their pairs.
+    if kind != Bet().H2H:
+        out.sort(bool(Bet a, Bet b): return (a.odds if a.priced else 1.0) < (b.odds if b.priced else 1.0))
+    return out
+
+Bet offer(int kind, int league, int season, int round, int sel, int sel2, float chance, string label):
+    Bet b = Bet()
+    b.kind = kind
+    b.league = league
+    b.season = season
+    b.round = round
+    b.sel = sel
+    b.sel2 = sel2
+    b.chance = chance
+    b.label = label
+    return b
+
+string race_name(World w, int league, int round):
+    return "the " + names.circuit_titles[w.circuit_of(league, round)] + " (" + names.league_names[league] + ", round " + string(round + 1) + ")"
+
+[]Bet race_offers(World w, int league):
+    []Bet out = []
+    int round = race_round(w, league)
+    if round < 0:
+        return out
+    field(w, league)
+    int n = field_teams.len()
+    if n < 2:
+        return out
+    int kind = names.circuit_kinds[w.circuit_of(league, round)]
+    []float s = strength(kind)
+    float dnf = DNF[kind]
+    []int win = []
+    []int pod = []
+    []int ahead = []
+    []int pairs = []
+    for i in 0..<n:
+        win.append(0)
+        pod.append(0)
+        ahead.append(0)
+        pairs.append(0)
+    Rng r = dice(w, league, round, 1)
+    []float perf = []
+    for i in 0..<n:
+        perf.append(0.0)
+    for it in 0..<RACE_SIMS:
+        for i in 0..<n:
+            perf[i] = -1000.0 + s[i] if r.unit() < dnf else s[i] + NOISE * r.gauss()
+        // The first three (retired cars cannot be on the podium).
+        int a = -1
+        int b = -1
+        int c = -1
+        for i in 0..<n:
+            if a < 0 || perf[i] > perf[a]:
+                c = b
+                b = a
+                a = i
+            else if b < 0 || perf[i] > perf[b]:
+                c = b
+                b = i
+            else if c < 0 || perf[i] > perf[c]:
+                c = i
+        win[a] += 1
+        for k in [a, b, c]:
+            if k >= 0 && perf[k] > -500.0:
+                pod[k] += 1
+        // Teammates: cars 2k and 2k + 1; both retired is no result.
+        for i in 0..<n / 2:
+            int x = 2 * i
+            if perf[x] > -500.0 || perf[x + 1] > -500.0:
+                pairs[x] += 1
+                ahead[x if perf[x] + FIRST > perf[x + 1] else x + 1] += 1
+    float sims = float(RACE_SIMS)
+    string where = race_name(w, league, round)
+    []Bet wins = []
+    []Bet pods = []
+    []Bet teams = []
+    []Bet h2h = []
+    for i in 0..<n:
+        Person p = field_pilots[i]
+        if p.id == 0:
+            continue
+        wins.append(offer(Bet().WIN, league, w.season, round, p.id, 0, (float(win[i]) + 0.25) / (sims + 0.25 * float(n)), p.name + " to win " + where))
+        pods.append(offer(Bet().PODIUM, league, w.season, round, p.id, 0, (float(pod[i]) + 0.25) / (sims + 0.25 * float(n) / 3.0), p.name + " on the podium at " + where))
+    for i in 0..<n / 2:
+        Team t = field_teams[2 * i]
+        float tw = float(win[2 * i] + win[2 * i + 1])
+        teams.append(offer(Bet().TEAM, league, w.season, round, t.id, 0, (tw + 0.25) / (sims + 0.25 * float(n) / 2.0), t.name + " to win " + where))
+        Person a = field_pilots[2 * i]
+        Person b = field_pilots[2 * i + 1]
+        if a.id != 0 && b.id != 0 && pairs[2 * i] > 0:
+            float m = float(pairs[2 * i])
+            float pa = sharpen((float(ahead[2 * i]) + 0.5) / (m + 1.0))
+            h2h.append(offer(Bet().H2H, league, w.season, round, a.id, b.id, pa, a.name + " to beat " + b.name + " at " + where))
+            h2h.append(offer(Bet().H2H, league, w.season, round, b.id, a.id, 1.0 - pa, b.name + " to beat " + a.name + " at " + where))
+    price(wins)
+    price(pods)
+    price(teams)
+    // Each head to head is its own two-way market.
+    for k in 0..<h2h.len() / 2:
+        price([h2h[2 * k], h2h[2 * k + 1]])
+    for list in [wins, pods, teams, h2h]:
+        for b in list:
+            out.append(b)
+    return out
+
+[]Bet season_offers(World w, int league):
+    []Bet out = []
+    if !season_open(w, league):
+        return out
+    int done = run(w, league)
+    field(w, league)
+    int n = field_teams.len()
+    if n < 2:
+        return out
+    []Team tab = w.table(league)
+    int nt = tab.len()
+    // The teams in the table's order, and each car's team there.
+    []int tab_ids = []
+    for t in tab:
+        tab_ids.append(t.id)
+    []int car_team = []
+    for i in 0..<n:
+        car_team.append(tab_ids.index_of(field_teams[i].id))
+    // The drivers: everyone with points in this league this season, and every pilot in a seat.
+    []Person drivers = w.drivers_table(league)
+    []int driver_ids = []
+    for p in drivers:
+        driver_ids.append(p.id)
+    for p in field_pilots:
+        if p.id != 0 && !driver_ids.contains(p.id):
+            drivers.append(p)
+            driver_ids.append(p.id)
+    int nd = drivers.len()
+    []int car_driver = []
+    for i in 0..<n:
+        car_driver.append(driver_ids.index_of(field_pilots[i].id) if field_pilots[i].id != 0 else -1)
+    []float d_now = []
+    for p in drivers:
+        d_now.append(float(p.d_points) + 0.01 * float(p.d_wins) if p.d_season == w.season && p.d_league == league else 0.0)
+    // A team's points and its wins as a tie-break (and the table's order last).
+    []float t_now = []
+    for k in 0..<nt:
+        t_now.append(float(tab[k].points) + 0.01 * float(tab[k].wins) - 0.0001 * float(k))
+    // Each remaining round's circuit kind, and the cars' strength there.
+    [][]float by_kind = []
+    for kind in 0..<4:
+        by_kind.append(strength(kind))
+    []int kinds = []
+    for round in done..<w.ROUNDS:
+        kinds.append(names.circuit_kinds[w.circuit_of(league, round)])
+    float race_noise = float(globalThis.Math.sqrt(NOISE * NOISE - PERSIST * PERSIST))
+    // Promotion and relegation as the season's turn will have them
+    // (World.movers): how many go up (its eligible teams, at most MOVE) and
+    // down (as many as go up from the league below), known now.
+    int n_up = w.promotions(league, w.season)
+    int n_down = w.promotions(league - 1, w.season) if league > 0 else 0
+    []bool can_up = []
+    int n_can_up = 0
+    int n_can_down = 0
+    for t in tab:
+        can_up.append(w.eligible(t, w.season))
+        n_can_up += 1 if w.eligible(t, w.season) else 0
+        n_can_down += 0 if t.protect else 1
+    []int champs = []
+    []int t_champs = []
+    []int ups = []
+    []int downs = []
+    for k in 0..<nd:
+        champs.append(0)
+    for k in 0..<nt:
+        t_champs.append(0)
+        ups.append(0)
+        downs.append(0)
+    Rng r = dice(w, league, done, 2)
+    []float err = []
+    []float perf = []
+    []bool taken = []
+    for i in 0..<n:
+        err.append(0.0)
+        perf.append(0.0)
+        taken.append(false)
+    []float walk = []
+    for k in 0..<nt:
+        walk.append(0.0)
+    []float dp = d_now.copy()
+    []float tp = t_now.copy()
+    for it in 0..<SEASON_SIMS:
+        for i in 0..<n:
+            err[i] = PERSIST * r.gauss()
+        for k in 0..<nt:
+            walk[k] = 0.0
+        for k in 0..<nd:
+            dp[k] = d_now[k]
+        for k in 0..<nt:
+            tp[k] = t_now[k]
+        for kind in kinds:
+            []float s = by_kind[kind]
+            float dnf = DNF[kind]
+            for k in 0..<nt:
+                walk[k] += DRIFT * r.gauss()
+            for i in 0..<n:
+                perf[i] = -1000.0 if r.unit() < dnf else s[i] + err[i] + walk[car_team[i]] + race_noise * r.gauss()
+                taken[i] = false
+            // The points: the first ten finishers.
+            for k in 0..<race.points_table.len():
+                int best = -1
+                for i in 0..<n:
+                    if !taken[i] && perf[i] > -500.0 && (best < 0 || perf[i] > perf[best]):
+                        best = i
+                if best < 0:
+                    continue
+                taken[best] = true
+                float pts = float(race.points_table[k]) + (0.01 if k == 0 else 0.0)
+                tp[car_team[best]] += pts
+                if car_driver[best] >= 0:
+                    dp[car_driver[best]] += pts
+        int dc = 0
+        for k in 1..<nd:
+            if dp[k] > dp[dc]:
+                dc = k
+        champs[dc] += 1
+        // The final table: places by points.
+        []int order = []
+        for k in 0..<nt:
+            order.append(k)
+        order.sort(bool(int a, int b): return tp[a] > tp[b])
+        t_champs[order[0]] += 1
+        int up = 0
+        for k in 0..<nt:
+            if up < n_up && can_up[order[k]]:
+                ups[order[k]] += 1
+                up += 1
+        int down = 0
+        for k in 0..<nt:
+            int x = order[nt - 1 - k]
+            if down < n_down && !tab[x].protect:
+                downs[x] += 1
+                down += 1
+    float sims = float(SEASON_SIMS)
+    string when = names.league_names[league] + ", season " + string(w.season)
+    []Bet dl = []
+    for k in 0..<nd:
+        Person p = drivers[k]
+        dl.append(offer(Bet().DRIVERS, league, w.season, -1, p.id, 0, (float(champs[k]) + 0.25) / (sims + 0.25 * float(nd)), p.name + " to be drivers' champion (" + when + ")"))
+    []Bet tl = []
+    []Bet ul = []
+    []Bet rl = []
+    for k in 0..<nt:
+        Team t = tab[k]
+        tl.append(offer(Bet().TEAMS, league, w.season, -1, t.id, 0, (float(t_champs[k]) + 0.25) / (sims + 0.25 * float(nt)), t.name + " to be teams' champions (" + when + ")"))
+        // Only eligible teams can go up, only teams not spared down; no
+        // market where nobody can (no eligible team below: nobody goes down).
+        if n_up > 0 && can_up[k]:
+            ul.append(offer(Bet().UP, league, w.season, -1, t.id, 0, (float(ups[k]) + 0.25) / (sims + 0.25 * float(n_can_up) / float(n_up)), t.name + " to be promoted (" + when + ")"))
+        if n_down > 0 && !t.protect:
+            rl.append(offer(Bet().DOWN, league, w.season, -1, t.id, 0, (float(downs[k]) + 0.25) / (sims + 0.25 * float(n_can_down) / float(n_down)), t.name + " to be relegated (" + when + ")"))
+    price(dl)
+    price(tl)
+    price_in(ul, n_up)
+    price_in(rl, n_down)
+    for list in [dl, tl, ul, rl]:
+        for b in list:
+            out.append(b)
+    return out
+
+// The book's margin on a market: each chance p is raised by k x shape(p), so
+// the market's overround is its MARGIN, more of it on the longshots; then
+// the odds are rounded down to the board's ticks, at most MAX_ODDS. A near
+// certainty (odds under MIN_ODDS) is not offered.
+void price([]Bet list):
+    if list.len() == 0:
+        return
+    price_in(list, SLOTS[list[0].kind])
+
+// The same, for a market with `places` winners (promotion and relegation:
+// as many as go up or down this season).
+void price_in([]Bet list, int places):
+    if list.len() == 0 || places <= 0:
+        return
+    int kind = list[0].kind
+    if GAMMA[kind] != 1.0:
+        float before = 0.0
+        float after = 0.0
+        for b in list:
+            before += b.chance
+            b.chance = float(globalThis.Math.pow(b.chance, GAMMA[kind]))
+            after += b.chance
+        for b in list:
+            b.chance = b.chance * before / after
+    float slots = float(places)
+    float sum = 0.0
+    float shaped = 0.0
+    for b in list:
+        float x = b.chance / slots
+        x = 1.0 if x > 1.0 else x
+        sum += b.chance
+        shaped += b.chance * shape(x)
+    float k = MARGIN[kind] * sum / (shaped if shaped > 0.0 else 1.0)
+    for b in list:
+        float x = b.chance / slots
+        x = 1.0 if x > 1.0 else x
+        float q = b.chance * (1.0 + k * shape(x))
+        float o = tick(1.0 / q if q > 0.0 else MAX_ODDS)
+        if kind == b.H2H && o > H2H_MAX:
+            o = H2H_MAX
+        b.odds = o
+        b.priced = o >= MIN_ODDS
+
+// The head to head's measured correction: the favourite's chance moved up
+// by H2H_SHARP x (p - 1/2) x (4p(1 - p))^3 (up to 6 points near 70/30, little
+// at the extremes or at evens).
+float sharpen(float p):
+    float v = 4.0 * p * (1.0 - p)
+    return p + H2H_SHARP * (p - 0.5) * v * v * v
+
+float shape(float x):
+    return 0.4 + 1.1 * (1.0 - float(globalThis.Math.sqrt(x)))
+
+// Odds rounded down to the board's ticks: 0.01 under 2, 0.05 under 5, 0.1
+// under 10, 0.5 under 20, 1 under 50, 5 under 100, then 10; at most MAX_ODDS.
+float tick(float o):
+    if o >= MAX_ODDS:
+        return MAX_ODDS
+    float step = 0.01
+    if o >= 2.0:
+        step = 0.05
+    if o >= 5.0:
+        step = 0.1
+    if o >= 10.0:
+        step = 0.5
+    if o >= 20.0:
+        step = 1.0
+    if o >= 50.0:
+        step = 5.0
+    if o >= 100.0:
+        step = 10.0
+    int units = globalThis.Math.floor(o / step + 0.000001)
+    int cents = globalThis.Math.round(float(units) * step * 100.0)
+    return float(cents) / 100.0
+
+// "4.50", "12.5", "34".
+string odds_text(float o):
+    if o >= 20.0:
+        int n = globalThis.Math.round(o)
+        return string(n)
+    if o >= 10.0:
+        return fmt.one_decimal(o)
+    return fmt.price(o)
+
+// ---- Placing ----
+
+[]Bet open_bets(World w):
+    return w.bets.filter(bool(Bet b): return b.status == b.OPEN)
+
+[]Bet settled_bets(World w):
+    []Bet done = w.bets.filter(bool(Bet b): return b.status != b.OPEN)
+    []Bet out = []
+    for k in 0..<done.len():
+        out.append(done[done.len() - 1 - k])
+    return out
+
+// The most a bet on this offer may stake: the league's limit, and the most it may win.
+float max_stake(Bet o):
+    float most = MAX_STAKE[o.league]
+    float win = MAX_WIN[o.league] / (o.odds - 1.0 if o.odds > 1.0 else 1.0)
+    float m = most if most < win else win
+    // In whole thousands, as stakes are entered.
+    int k = globalThis.Math.floor(m / 1000.0)
+    return float(k) * 1000.0
+
+// The same offer on the board now (its odds may have moved), or an empty Bet.
+Bet current(World w, Bet o):
+    for b in offers(w, o.league, o.kind):
+        if b.sel == o.sel && b.sel2 == o.sel2 && b.season == o.season && b.round == o.round:
+            return b
+    return Bet()
+
+// Why a bet cannot be placed ("" it can).
+string refuse(World w, Bet o, float stake):
+    if !can_bet(w):
+        return "The league forbids team owners to bet."
+    Bet now = current(w, o)
+    if now.sel == 0 || !now.priced:
+        return "The book has no price on that now."
+    if now.odds != o.odds:
+        return "The price has moved to " + odds_text(now.odds) + "."
+    if open_bets(w).len() >= MAX_OPEN:
+        return "The book takes at most " + string(MAX_OPEN) + " open bets from one customer."
+    if stake < MIN_STAKE[o.league] - 0.5:
+        return "The least the book takes on the " + names.league_names[o.league] + " is " + fmt.credits(MIN_STAKE[o.league]) + " credits."
+    if stake > max_stake(o) + 0.5:
+        return "The most the book takes on that is " + fmt.credits(max_stake(o)) + " credits."
+    return ""
+
+// Place a bet (the player has paid the stake): answers it, or an empty Bet with the reason in `why`.
+string why = ""
+
+Bet place(World w, Bet o, float stake):
+    why = refuse(w, o, stake)
+    if why != "":
+        return Bet()
+    Bet b = Bet()
+    b.id = w.next_bet
+    w.next_bet += 1
+    b.kind = o.kind
+    b.league = o.league
+    b.season = o.season
+    b.round = o.round
+    b.sel = o.sel
+    b.sel2 = o.sel2
+    b.stake = stake
+    b.odds = o.odds
+    b.day = w.day
+    b.label = o.label
+    w.bets.append(b)
+    return b
+
+// ---- Settling ----
+
+[]string told = []
+
+void settle(World w, Bet b, int status):
+    b.status = status
+    b.settled = w.day
+    b.payout = b.stake * b.odds if status == b.WON else (b.stake if status == b.VOID else 0.0)
+    w.pending_payout += b.payout
+    w.bet_staked += b.stake
+    w.bet_returned += b.payout
+    if status == b.WON:
+        told.append(b.label + " at " + odds_text(b.odds) + " won: " + fmt.credits(b.payout) + " credits")
+    else if status == b.LOST:
+        told.append(b.label + " lost (" + fmt.credits(b.stake) + " staked)")
+    else:
+        told.append(b.label + " is void: " + fmt.credits(b.stake) + " refunded")
+
+// What was settled, as one message; and the history kept to HISTORY bets.
+void tell(World w, string head):
+    if told.len() > 0:
+        w.player_events.append("Racing: " + head + " " + told.join("; ") + ".")
+    told = []
+    []Bet done = w.bets.filter(bool(Bet b): return b.status != b.OPEN)
+    int extra = done.len() - HISTORY
+    if extra > 0:
+        []int drop = []
+        for k in 0..<extra:
+            drop.append(done[k].id)
+        w.bets = w.bets.filter(bool(Bet b): return !drop.contains(b.id))
+
+// A race is run (World.race_day): its league's race bets settle; any on an
+// earlier round that never ran (a long gap in days) are void.
+void race_run(World w, Result r):
+    bool mine = w.has_team() && w.mine().league == r.league
+    for b in open_bets(w):
+        if !b.race_market() || b.league != r.league:
+            continue
+        if b.season < r.season || (b.season == r.season && b.round < r.round):
+            settle(w, b, b.VOID)
+            continue
+        if b.season != r.season || b.round != r.round:
+            continue
+        if mine:
+            settle(w, b, b.VOID)
+            continue
+        int a = r.pilots.index_of(b.sel) if b.sel != 0 && r.pilots.contains(b.sel) else -1
+        if b.kind == b.WIN:
+            settle(w, b, b.VOID if a < 0 else (b.WON if a == 0 else b.LOST))
+        else if b.kind == b.PODIUM:
+            settle(w, b, b.VOID if a < 0 else (b.WON if a < 3 && r.status[a] == 0 else b.LOST))
+        else if b.kind == b.TEAM:
+            settle(w, b, b.VOID if !r.order.contains(b.sel) else (b.WON if r.order[0] == b.sel else b.LOST))
+        else if b.kind == b.H2H:
+            int c = r.pilots.index_of(b.sel2) if b.sel2 != 0 && r.pilots.contains(b.sel2) else -1
+            // Both must race, as teammates, and not both retire.
+            if a < 0 || c < 0 || r.order[a] != r.order[c] || (r.status[a] != 0 && r.status[c] != 0):
+                settle(w, b, b.VOID)
+            else:
+                settle(w, b, b.WON if a < c else b.LOST)
+    tell(w, "the Paddock Book settles " + race_name(w, r.league, r.round) + ":")
+
+// A league's season ends (World.end_season, the final table and finals set):
+// its season bets settle.
+void season_end(World w, int league, []Team tab, Person champion):
+    bool mine = w.has_team() && w.mine().league == league
+    []int up = w.movers(league, true) if league < 2 else []
+    []int down = w.movers(league, false) if league > 0 else []
+    for b in open_bets(w):
+        if b.race_market() || b.league != league || b.season != w.season:
+            continue
+        if mine:
+            settle(w, b, b.VOID)
+        else if b.kind == b.DRIVERS:
+            settle(w, b, b.VOID if champion.id == 0 else (b.WON if champion.id == b.sel else b.LOST))
+        else if !w.team_by_id.has(b.sel) || w.team(b.sel).league != league:
+            settle(w, b, b.VOID)
+        else if b.kind == b.TEAMS:
+            settle(w, b, b.WON if tab.len() > 0 && tab[0].id == b.sel else b.LOST)
+        else if b.kind == b.UP:
+            settle(w, b, b.WON if up.contains(b.sel) else b.LOST)
+        else if b.kind == b.DOWN:
+            settle(w, b, b.WON if down.contains(b.sel) else b.LOST)
+    tell(w, "the Paddock Book settles the " + names.league_names[league] + "'s season " + string(w.season) + ":")
+
+// A new season (World.new_season): bets on anything that never ran are void.
+void sweep(World w):
+    for b in open_bets(w):
+        if b.season < w.season:
+            settle(w, b, b.VOID)
+    tell(w, "the Paddock Book voids bets on races and seasons that were never run:")
+
+// A team leaves the league (bankrupt, its owners gone): bets on it are void.
+void team_gone(World w, Team t):
+    for b in open_bets(w):
+        if (b.kind == b.TEAM || b.kind == b.TEAMS || b.kind == b.UP || b.kind == b.DOWN) && b.sel == t.id:
+            settle(w, b, b.VOID)
+    tell(w, "the Paddock Book voids its bets on " + t.name + ", which has left the " + names.league_names[t.league] + ":")
+
+// The player buys a team: owners may not bet, and their bets on their own
+// league are void and refunded; bets on the other leagues stand.
+void owner(World w, int league):
+    for b in open_bets(w):
+        if b.league == league:
+            settle(w, b, b.VOID)
+    tell(w, "you own a team in the " + names.league_names[league] + " now, so the Paddock Book voids your bets on that league (bets on the other leagues stand):")
+
+// ---- Telling ----
+
+[]string quips = ["\"Favourites win races. Longshots pay for my shuttle.\"", "\"Every pilot in the paddock has a bio. Half of them are true.\"", "\"Read the scouts if you like. I read the stopwatch.\"", "\"Hazard runs eat favourites. I price that in; do you?\"", "\"A teammate is the first rival a pilot has to beat.\"", "\"The house always takes its slice. That is what keeps the lights on under the grandstand.\"", "\"Promotion is a season's work. Relegation takes a bad month.\""]
+
+string blurb(World w):
+    string t = "The Paddock Book: the league's licensed bookmaker, a booth under the results screens at every spaceport with a bank. Its clerk, an old pit crew chief who still smells of coolant, quotes decimal odds (a winning stake of 1,000 at 4.50 returns 4,500) and keeps a margin on every market, more on the longshots. " + quips[(w.day % quips.len() + quips.len()) % quips.len()]
+    t = t + "\n\nRace markets are on each league's next round, open until it runs; a pilot who does not start, or teammates who both retire, void the bet. Season markets open with the season and close with " + string(CLOSE) + " rounds to go; they stand whoever drives where. Stakes: " + fmt.credits(MIN_STAKE[0]) + " to " + fmt.credits(MAX_STAKE[0]) + " on the " + names.league_names[0] + ", " + fmt.credits(MIN_STAKE[1]) + " to " + fmt.credits(MAX_STAKE[1]) + " on the " + names.league_names[1] + ", " + fmt.credits(MIN_STAKE[2]) + " to " + fmt.credits(MAX_STAKE[2]) + " on the " + names.league_names[2] + " (no bet may win more than " + fmt.short_credits(MAX_WIN[0]) + ", " + fmt.short_credits(MAX_WIN[1]) + ", " + fmt.short_credits(MAX_WIN[2]) + "); at most " + string(MAX_OPEN) + " open bets. Team owners may not bet: buying a team voids your bets on its league."
+    return t
+
+string summary(World w):
+    []Bet open = open_bets(w)
+    float at = 0.0
+    for b in open:
+        at += b.stake
+    float pl = w.bet_returned - w.bet_staked
+    return "Open bets: " + string(open.len()) + (", " + fmt.credits(at) + " credits staked" if open.len() > 0 else "") + ". Settled: " + fmt.credits(w.bet_staked) + " staked, " + fmt.credits(w.bet_returned) + " returned, " + ("+" if pl > 0.0 else "") + fmt.credits(pl) + " credits " + ("up" if pl >= 0.0 else "down") + "."

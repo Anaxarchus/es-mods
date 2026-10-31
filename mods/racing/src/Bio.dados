@@ -1,0 +1,274 @@
+class Bio
+
+// Biographies and scouts' potential (Person). Nothing here is saved but two
+// numbers on the person (peak and skill0): a bio is told again, the same way,
+// from a dice of the person's own (seeded by the world's start day and the
+// person's id, never the world's dice, so telling one changes nothing else).
+//
+// A third hidden stat, `peak`: the skill a person grows toward. Drawn once,
+// when the person joins the pool (or when an older save is loaded): the
+// skill plus a headroom of HEAD + HEAD_SD x a normal draw (never below 0),
+// times youth (1 for a rookie, 0 after YOUTH_RACES races). Each season a
+// person with headroom moves DEVELOP of the way from their skill to their
+// peak (Staff.new_season), besides the old drift.
+//
+// The bio: where they are from (a real world of human space), how they came
+// to the job, how they handle it (a pilot's aggression, otherwise
+// steadiness), whether they have more to give, and a little about them. The
+// sentences are picked by tier (-2 .. 2) from the hidden stats plus noise:
+// skill (as it was when they joined) for the path into the job (PATH_NOISE)
+// and what the paddock says (REP_NOISE), the trait for the temper, the
+// headroom for the outlook; one hint in MISLEAD is turned around, and the
+// middle tier says nothing either way. So a good bio is a good sign, and no
+// more than that.
+//
+// Scouts' potential: 0 .. 100, about 50 + SCALE x the eventual best skill
+// (the larger of peak and skill), with a scout's error of the person's own:
+// a normal draw (fixed for the person) x SIGMA_MIN + SIGMA_NEW / sqrt(1 +
+// races / SIGMA_RACES). About +-20 for a rookie, +-12 after 60 races, and
+// never better than +-SIGMA_MIN or so: the record narrows the guess, and
+// never gives the answer away.
+
+float HEAD = 0.1
+float HEAD_SD = 0.22
+float YOUTH_RACES = 60.0
+float DEVELOP = 0.3
+float SCALE = 45.0
+float SIGMA_MIN = 5.0
+float SIGMA_NEW = 15.0
+float SIGMA_RACES = 15.0
+float PATH_NOISE = 0.3
+float REP_NOISE = 0.5
+float TRAIT_NOISE = 0.3
+float OUTLOOK_NOISE = 0.25
+float MISLEAD = 12.0
+// A person not yet given a peak (an older save's) has this.
+float UNSET = -9.0
+
+Names names = Names()
+// The tiers (0 .. 4 for -2 .. 2) the last bio told picked: path, trait,
+// outlook, the paddock's word (-1 when the bio has none). For tests.
+[]int tiers = []
+
+// ---- The person's own dice, and the hidden peak ----
+
+Rng dice(World w, Person p, int salt):
+    Rng r = Rng()
+    r.seed((w.start_day % 1000003) * 7919 + p.id * 104729 + salt * 15485863 + 11)
+    for k in 0..<3:
+        r.next()
+    return r
+
+float clamp(float x, float lo, float hi):
+    return lo if x < lo else (hi if x > hi else x)
+
+// Give a person their peak (and remember the skill their bio is told from),
+// once: on joining the pool, or on loading a save from before bios.
+void ensure(World w, Person p):
+    if p.peak > UNSET + 1.0:
+        return
+    Rng r = dice(w, p, 1)
+    float g = r.gauss()
+    float youth = clamp(1.0 - float(p.races) / YOUTH_RACES, 0.0, 1.0)
+    float head = HEAD + HEAD_SD * g
+    if head < 0.0:
+        head = 0.0
+    p.skill0 = p.skill
+    p.peak = clamp(p.skill + youth * head, -1.0, 1.0)
+
+// A season's growth toward the peak (Staff.new_season): only for those who
+// had room to grow when they joined.
+float growth(World w, Person p):
+    ensure(w, p)
+    if p.peak > p.skill && p.peak > p.skill0 + 0.005:
+        return DEVELOP * (p.peak - p.skill)
+    return 0.0
+
+// ---- Scouts' potential ----
+
+float sigma(Person p):
+    return SIGMA_MIN + SIGMA_NEW / float(globalThis.Math.sqrt(1.0 + float(p.races) / SIGMA_RACES))
+
+// The truth the scouts guess at, on their scale.
+float true_potential(Person p):
+    float best = p.peak if p.peak > p.skill else p.skill
+    return 50.0 + SCALE * best
+
+int potential(World w, Person p):
+    ensure(w, p)
+    Rng r = dice(w, p, 1)
+    r.gauss()
+    float z = r.gauss()
+    int v = globalThis.Math.round(true_potential(p) + sigma(p) * z)
+    return 1 if v < 1 else (99 if v > 99 else v)
+
+int low(World w, Person p):
+    int v = potential(w, p) - int(globalThis.Math.round(sigma(p)))
+    return 1 if v < 1 else v
+
+int high(World w, Person p):
+    int v = potential(w, p) + int(globalThis.Math.round(sigma(p)))
+    return 99 if v > 99 else v
+
+// For a table: the scouts' range.
+string range_text(World w, Person p):
+    return string(low(w, p)) + "-" + string(high(w, p))
+
+string potential_text(World w, Person p):
+    float s = sigma(p)
+    string basis = "with no record to go on, little better than a guess" if p.races == 0 else ("from a short record" if s > 13.0 else ("from a fair record" if s > 10.0 else "from a long record"))
+    return "Scouts' potential: " + string(potential(w, p)) + " of 100 (somewhere " + string(low(w, p)) + " to " + string(high(w, p)) + "; " + basis + ")."
+
+// ---- The bio ----
+
+// A hint's tier, 0 .. 4: the stat plus noise, against fixed steps; now and
+// then turned around (the middle tier stays where it is).
+int tier(Rng r, float x, float noise):
+    float v = x + noise * r.gauss()
+    int t = 2 if v > 0.5 else (1 if v > 0.15 else (0 if v > -0.15 else (-1 if v > -0.5 else -2)))
+    if r.chance(MISLEAD):
+        t = -t
+    return t + 2
+
+string pick([]string list, Rng r):
+    return list[r.range(0, list.len() - 1)]
+
+string first_name(Person p):
+    []string parts = p.name.split(" ")
+    return parts[0] if parts.len() > 0 else p.name
+
+string last_name(Person p):
+    []string parts = p.name.split(" ")
+    return parts[parts.len() - 1] if parts.len() > 1 else ""
+
+string text(World w, Person p):
+    ensure(w, p)
+    // A bio written by hand (the intro line's people, Intro).
+    if w.written.has(p.id):
+        return w.written[p.id]
+    Rng r = dice(w, p, 2)
+    string first = first_name(p)
+    int home = r.range(0, homes.len() - 1)
+    string planet = homes[home]
+    string circuit = names.circuit_titles[r.range(0, names.circuit_titles.len() - 1)]
+    int pt = tier(r, p.skill0, PATH_NOISE)
+    int tt = tier(r, p.trait, TRAIT_NOISE)
+    float head = p.peak - p.skill0
+    int ot = tier(r, (head - 0.12) * 2.5, OUTLOOK_NOISE)
+    int rt = tier(r, p.skill0, REP_NOISE)
+    bool rep = r.chance(60.0)
+    bool quirk = r.chance(50.0)
+    tiers = [pt, tt, ot, rt if rep else -1]
+    []string s = []
+    s.append(pick(upbringing[home_region[home]], r))
+    s.append(pick(path[p.role][pt], r))
+    s.append(pick(aggression[tt] if p.role == 0 else steadiness[tt], r))
+    s.append(pick(outlook[ot], r))
+    if rep:
+        s.append(pick(reputation[rt], r))
+    if quirk:
+        s.append(pick(quirks, r))
+    // The full name first, then the first name or the surname, as a
+    // paddock writer would.
+    string last = last_name(p)
+    []string out = []
+    for k in 0..<s.len():
+        string who = p.name if k == 0 else (last if last != "" && r.chance(35.0) else first)
+        out.append(s[k].replace_all("{F}", who).replace_all("{P}", planet).replace_all("{C}", circuit))
+    return out.join(" ")
+
+// ---- The words ----
+
+// Home worlds (real planets of human space) and their region: 0 the old core,
+// 1 the wealthy worlds, 2 the academic Deep, 3 the frontier, 4 the Syndicate's
+// industrial worlds, 5 the hard-scrabble south, 6 pirate havens, 7 stations.
+[]string homes = ["Earth", "Luna", "Mars", "New Boston", "Geminus", "Martini", "Deep", "Valhalla", "Bourne", "Clark", "Dancer", "Longjump", "Poisonwood", "Big Sky", "Heartland", "New Kansas", "Foundry", "Hephaestus", "Maker", "Tinker", "Furnace", "Moonshake", "Crossroads", "Rust", "Skillet", "Tundra", "Winter", "Flood", "Lichen", "Shiver", "Freedom", "Haven", "Smuggler's Den", "Buccaneer Bay", "Deadman's Cove", "Fenrir Station", "Leviathan Station", "Kraken Station", "Charon Station", "Muninn Station"]
+[]int home_region = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7]
+
+[][]string upbringing = [
+    ["{F} grew up on {P} in a family of shipping clerks, watching freighters lift off from the spaceport.", "{F} was raised in the crowded arcologies of {P} and left as soon as a ticket could be afforded.", "{F} is a {P} native, from a long line of Navy officers who expected a different career.", "{F} grew up on {P}, where racing is something people watch on holovids and rarely do.", "{F} comes from {P}, and still mentions it within five minutes of meeting anyone."],
+    ["{F} grew up on {P} with every advantage money could buy, and some it could not.", "{F} is the child of a {P} banking family that still does not approve.", "{F} learned to fly in a private yacht over the beaches of {P}.", "{F} was raised on {P} and has the manners, and the debts, to show for it."],
+    ["{F} grew up on {P}, the child of two research scientists.", "{F} was raised on {P} among telescopes and lab benches, and left for something louder.", "{F} studied on {P} before dropping out to work in a racing garage.", "{F} comes from {P}, and still corrects people's physics at dinner."],
+    ["{F} grew up on a farm on {P}, fixing harvesters before learning to read.", "{F} was raised on {P}, where the nearest repair yard was three jumps away.", "{F} comes from {P}, out on the frontier, and has the accent to prove it.", "{F} left {P} on a freighter at fifteen with a duffel bag and a borrowed jacket.", "{F} grew up on {P}, where everyone flies because the roads give up after a while."],
+    ["{F} grew up in the company housing of {P}.", "{F} was born on {P} to a family that has worked Syndicate assembly lines for four generations.", "{F} left {P} at sixteen with a toolbox and a Syndicate work permit.", "{F} comes from {P}, where the factory whistle was the only clock anyone needed."],
+    ["{F} grew up poor on {P}, where nothing works for long.", "{F} comes from {P}, a world that teaches patience or kills you.", "{F} was raised on {P} by a grandparent who ran a scrapyard.", "{F} grew up on {P} and learned early that a ship is only as good as its last repair."],
+    ["{F} will only say that childhood was spent 'near' {P}.", "{F} learned to fly running cargo out of {P}, and does not like questions about which cargo.", "{F} grew up on {P}, a past the league's background check politely skipped.", "{F} was born on {P}, and left the day a ship would take a passenger without papers."],
+    ["{F} was born on {P} and did not see a real sky until the age of twelve.", "{F} grew up in the corridors of {P}, racing maintenance carts through the habitat rings.", "{F} was raised on {P}, where the docking bays were the only playground.", "{F} grew up on {P} and still sleeps better with the hum of life support."]
+]
+
+// The way into the job, by role and tier (worst to best).
+[][][]string path = [
+    [
+        ["{F} was asked to leave three flight schools before a cut-rate courier outfit took a chance.", "{F} failed the league's licensing test twice, and passed the third time on a recount.", "{F} spent years flying ore haulers, and some say still flies like one.", "{F} came to racing late, after a sponsor's nephew dropped out of a seat nobody else wanted."],
+        ["{F} raced in the junior heats at the {C} for four seasons without a podium.", "{F} flew escort for a freight line before switching to racing, mostly for the pay.", "{F} is remembered in the junior series as reliable, if rarely quick.", "{F} learned to race in simulators and has been learning the difference ever since."],
+        ["{F} won a junior race at the {C} once, in a field half full of retirements.", "{F} spent a few years as a test pilot for a shipyard that has since gone bankrupt.", "{F} talks a great race; the timing sheets have been less certain.", "{F} came into racing through a holovid talent show."],
+        ["{F} won the {C} junior heats in a borrowed ship.", "{F} flew Navy interceptors for three years and left with a commendation.", "{F} set a lap record in the amateur class at the {C} that stood for six seasons.", "{F} raced cargo shuttles through asteroid belts for side bets, and rarely paid up."],
+        ["{F} won the {C} junior circuit twice and never looked back.", "{F} was scouted at sixteen after out-flying a Navy instructor in a training sim, and then again in a real ship.", "{F} spent a decade dodging pirates on freight runs without a scratch on the hull.", "Old hands at the {C} still talk about the day {F} lapped the entire junior field."]
+    ],
+    [
+        ["{F} got into racing through a cousin who owned a team, and stayed through a contract nobody has managed to break.", "{F} once set up a ship with its stabilisers on upside down. It finished last, but it finished.", "{F} studied hull design by correspondence, and has the certificate framed above a very small desk.", "{F} sold used ships before deciding that setups were the same thing, only louder."],
+        ["{F} spent years tuning tourist shuttles for a sightseeing line.", "{F} came up through the junior series, where the ships were simple and so were the setups.", "{F} is thorough, careful, and usually still working on last week's problem.", "{F} keeps a binder of standard setups and trusts it more than the telemetry."],
+        ["{F} worked a single season for a front-running team, and has never said why it ended.", "{F} trained as a hyperdrive technician before a friend talked them into racing.", "{F} has a theory about thruster harmonics that is either brilliant or nonsense.", "{F} once found three tenths a lap at the {C}, and has been looking for them ever since."],
+        ["{F} trained at a Navy engineering school, and still files reports nobody asked for.", "{F} tuned engines for a freight line that bragged it never missed a delivery window.", "{F} found the setup that won a backmarker team the {C}, and nobody has forgotten it.", "{F} reads telemetry the way other people read the news."],
+        ["{F} quietly rebuilt a salvaged reactor at fourteen, and has been tuning ships ever since.", "{F} designed a stabiliser package that half the paddock copied the following season.", "Pilots say a ship set up by {F} seems to know where they want to go.", "{F} came from a Syndicate prototype shop, which still sends a card every year asking for {F} back."]
+    ],
+    [
+        ["{F} was let go from a university lab after an antimatter experiment went exactly as feared.", "{F} holds a doctorate from an institution that, on inspection, is a mailbox on a pirate world.", "{F} spent ten years writing grant proposals and two weeks doing research.", "{F} once spent a whole R&D budget on a thruster that only worked in simulation."],
+        ["{F} worked in a shipyard's quality control office, checking other people's ideas.", "{F} studied physics, then accounting, then physics again.", "{F} is known for careful, thorough and not very surprising work.", "{F} built a career on improving last year's designs, by a little."],
+        ["{F} left the Navy's research wing for reasons that are sealed.", "{F} published one famous paper, and nothing since.", "{F} works best at night, alone, and on the wrong problem.", "{F} worked on terraforming before racing; the methods carry over less than expected."],
+        ["{F} came from a Syndicate design bureau with a name for squeezing out efficiency.", "{F} ran a small lab on a shoestring and still turned out patents.", "{F} has a knack for knowing which experiments are worth running.", "{F} studied under one of the Deep's famous hyperspace theorists, and kept the notes."],
+        ["{F} redesigned a freighter's thruster array as a student project, and the freight line still uses it.", "{F} turned down three shipyards to work in racing, where things move faster.", "{F}'s notebooks are said to be worth more than most teams' ships.", "{F} was the youngest researcher ever to lead a project at a Navy research station."]
+    ],
+    [
+        ["{F} once ran a pit stop at the {C} that took longer than the qualifying lap.", "{F} owned a bar before taking over a pit crew, and still runs it like one.", "{F} learned the trade at a scrapyard, where speed was never the point.", "{F} has a crew that loves the job and a stopwatch that does not."],
+        ["{F} ran a maintenance hangar at a spaceport for years, where nothing was ever urgent.", "{F} came up as a crew member on a midfield team and was promoted when everyone else left.", "{F} believes a careful stop never lost a race. The timing sheets disagree, a little.", "{F} worked the refuelling docks for a freight line before switching to racing."],
+        ["{F} ran the pit crew for a team that folded mid-season; whose fault that was depends on whom you ask.", "{F} was a damage control officer on a Navy cruiser, which is either good training or a different job entirely.", "{F} insists that the crew rehearse every stop in silence.", "{F} won a pit-stop contest at the {C} once, on a day the rival crews were badly hung over."],
+        ["{F} ran a refit dock that turned ships around faster than any other in the sector.", "{F} drills the crew until they can swap a battery pack in the dark.", "{F} was a carrier deck chief, launching fighters by the dozen under fire.", "{F}'s crews are known for stops that are quick and, more surprising, never messy."],
+        ["{F} holds the pit-lane record at the {C}, and keeps the stopwatch on a chain.", "{F} ran repair crews for a merchant convoy that crossed pirate space every month and never lost a ship.", "Other crews time their stops against the one {F} ran at the {C}.", "{F} laid out a refit dock so well that its owners tried to patent it."]
+    ],
+    [
+        ["{F} sold timeshares on a pirate world before moving into racing, and some of the buyers are still looking.", "{F} once signed a sponsor that turned out to be a front for a smuggling ring.", "{F} lost a sponsor by arriving at the meeting a day late, in the wrong system.", "{F} got the job, by most accounts, by being related to the last commercial director."],
+        ["{F} worked in advertising for a soft drink that no longer exists.", "{F} is pleasant, well dressed, and rarely remembered after a meeting.", "{F} kept the books for a freight line before trying sales.", "{F} writes long, careful proposals that sponsors mean to read."],
+        ["{F} brokered one famous deal years ago, and has dined out on it since.", "{F} worked in a Syndicate marketing division, and either learned a great deal or picked up bad habits.", "{F} knows everyone in the paddock; whether anyone returns the calls is another matter.", "{F} presented holovid shows before taking up sponsorship, and still talks like it."],
+        ["{F} sold insurance to freighter captains on the pirate routes, which takes a certain talent.", "{F} built a small trading company up from a single cargo hold.", "{F} has a name for leaving meetings with more than {F} came in for.", "{F} brought three new sponsors into the junior series in a single season."],
+        ["{F} negotiated a shipping contract with the Syndicate and came out ahead, which is said to be impossible.", "{F} once talked a bank into sponsoring a team that had not won a race in four seasons.", "Sponsors' accountants are said to sigh when {F} walks in.", "{F} ran a merchant fleet's contracts at twenty-three, and the fleet doubled in size."]
+    ]
+]
+
+// A pilot's temper in traffic (aggression), timid to wild.
+[][]string aggression = [
+    ["In traffic {F} is patient to a fault, and has been passed for it more than once.", "{F} has never been in a collision, and is quietly proud of it.", "{F} would rather finish fifth than risk a scratch."],
+    ["{F} prefers a clean race to a bold one.", "{F} picks the moment to pass with care, sometimes too much.", "{F} gives other pilots room, and expects the same."],
+    ["{F} can be calm or reckless, depending, it seems, on breakfast.", "Nobody can predict how {F} will take a corner, including {F}.", "{F} races hard when it matters, by {F}'s own reckoning of when that is."],
+    ["{F} likes to race close, and does not mind a little paint traded.", "{F} will try a pass most others would not, and usually gets away with it.", "{F} treats every gap as an invitation."],
+    ["{F} is famous for diving into gaps that are not there.", "Insurers charge extra for any team that hires {F}.", "{F} keeps a scrapbook of other pilots' bent fins, and swears none of it was deliberate."]
+]
+
+// Everyone else's temper: erratic to steady.
+[][]string steadiness = [
+    ["Brilliant on a good day, {F} is less reliable on the others, and nobody is sure which day is which.", "{F} works in bursts, and the bursts are hard to predict.", "{F} has been known to redo a week's work at midnight, for reasons of mood."],
+    ["{F} has good weeks and bad weeks, and talks about both at length.", "{F}'s results come in streaks.", "{F} does well under pressure, and less well without it."],
+    ["{F}'s colleagues describe a steady temper and an unsteady filing system.", "{F} is either methodical or stubborn; the paddock is split.", "{F} keeps to a routine, except when not."],
+    ["{F} keeps meticulous notes, and follows them.", "{F} turns up early, leaves late, and rarely surprises anyone.", "{F} does not panic, which in racing is half the job."],
+    ["{F} has kept the same notebook layout for twenty years, and much the same results.", "You can set a chronometer by {F}'s work, and some have.", "{F} has never had an off day that anyone could find in the records."]
+]
+
+// Room to grow (the headroom to the peak), none to plenty.
+[][]string outlook = [
+    ["At this point {F} is unlikely to learn new tricks.", "{F} talks about the old days a great deal.", "Some say {F} peaked in the junior series."],
+    ["{F} is settled into a way of working and sees little reason to change it.", "{F} has been at this long enough to know what works, and to stop looking further.", "{F} is what {F} is, and seems content with that."],
+    ["Whether {F} has more to give is a favourite argument in the paddock.", "{F} claims to improve every season; the evidence is mixed.", "{F} is a puzzle, and nobody yet knows the answer."],
+    ["{F} learns quickly and asks a lot of questions.", "Every season {F} seems a little better.", "Coaches say {F} has not yet found a ceiling."],
+    ["Coaches say the best of {F} is still to come.", "{F} soaks up everything, and a few old hands already feel nervous.", "People who have watched {F} closely use the word 'raw', and mean it kindly."]
+]
+
+// What the paddock says (a weaker hint of skill), unkind to admiring.
+[][]string reputation = [
+    ["Former teammates change the subject when {F}'s name comes up.", "The paddock gossip about {F} is not kind.", "{F}'s last team wished {F} well, warmly and from a distance."],
+    ["Former colleagues call {F} 'dependable', in the tone people use for old shuttles.", "References for {F} are polite, and short.", "Those who have worked with {F} mostly mention the punctuality."],
+    ["Opinions on {F} are divided, sometimes within the same person.", "{F}'s references are glowing, which some find suspicious.", "Nobody has a bad word to say about {F}, or many words at all."],
+    ["Former colleagues speak well of {F}, and some of them are rivals.", "{F}'s last team tried hard to keep {F}.", "Mechanics, who are hard to impress, seem to like {F}."],
+    ["Rival team bosses ask about {F} more often than they admit.", "Ask around the paddock about {F}, and people start telling stories.", "Veterans of the paddock call {F} 'the real thing', and they do not say that often."]
+]
+
+[]string quirks = ["{F} collects antique flight manuals.", "{F} keeps a potted plant from {P} on every workbench.", "{F} sings, loudly and badly, at the pit-lane karaoke.", "{F} owns a lucky pair of socks, and several hundred unlucky ones.", "{F} once got lost in the {C} paddock for a whole day.", "{F} writes letters home every race week, on paper.", "{F} is learning to cook, and practises on the team.", "{F} plays a fierce game of chess and a terrible game of cards.", "{F} has a cat named after a bulk freighter.", "{F} reads old Earth poetry between sessions.", "{F} has strong opinions about spaceport coffee.", "{F} keeps a scrapbook of every news item that misspells {F}'s name.", "{F} swears that ships have moods.", "{F} spends the off-season fishing on a world nobody can pronounce.", "{F} is saving for a ship of {F}'s own: a small one, but fast.", "{F} has never been seen without a jacket from the {C}.", "{F} is an amateur astronomer, which in a racing paddock draws a lot of jokes.", "{F} talks to the ship before every race. The ship has not answered yet.", "{F} owes a great many people a drink, and knows exactly how many.", "{F} has a twin, also in racing, and they do not speak.", "{F} grows chili peppers in the hold and shares them as a test of character.", "{F} has read every rulebook the league has published, including the withdrawn ones.", "{F} still sends money home to {P} every month.", "{F} has a tattoo of the {C} track map, slightly out of date."]

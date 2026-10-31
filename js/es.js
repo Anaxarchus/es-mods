@@ -13,7 +13,7 @@
 
 // The mod API version this SDK targets. A loader runs a mod whose min_api() it
 // speaks (before mod API 10, whose api_version() it speaks). Written by `npm run sync`.
-export const MOD_API = 10;
+export const MOD_API = 12;
 
 export class Mod {
 	// The mod API this mod was built against (the SDK's MOD_API): for information.

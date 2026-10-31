@@ -1,0 +1,503 @@
+class Sponsors
+
+// Sponsors and their deals (Sponsor, Deal). Outside sponsors come over the
+// notification bus, from any mod that answers (this mod knows none by name;
+// the Racing League and Corporations bridge is one): each sponsors day and on
+// loading a pilot this mod posts "racing.sponsors_wanted" with the teams
+// (wanted), and a "racing.sponsors" roster (name, sector, weekly budget,
+// fortune) makes those the sponsors that offer deals (roster); while no roster
+// is fresher than STALE days the built-in sponsors (Names) offer them.
+// "racing.sponsor_gone" ends a sponsor's deals; "racing.sponsor_offer" is a
+// sponsor offering one team a deal of its own (direct), answered with
+// "racing.sponsor_answer". For outside sponsors this mod posts what they paid
+// ("racing.sponsor_paid", each day there were payments) and each deal's
+// result at the season's end, or when it ends early ("racing.sponsor_result").
+//
+// A deal's weekly pay: BASE x the league's scale x the team's appeal (its
+// place in the table, 0.5 .. 1.5) x the slot (title or minor) x the
+// sponsor's fortune x the commercial director's yield. A sponsor never
+// commits more than its budget across its deals. Clauses: the target
+// position at the season's end (missing it costs PENALTY weeks of pay and
+// ends the deal), and a walk-away: four finishes in a row averaging worse
+// than `walk` end it on the spot. Teams have at most SLOTS deals. When no
+// sponsor can pay a deal in full, the one with the most budget left offers
+// the player what it can still afford (at least FIT_MIN of the deal); AI
+// teams sign only deals paid in full.
+
+float BASE = 16000.0
+int STALE = 60
+// A direct offer an AI team takes: at least ACCEPT of what its standing is
+// worth for the slot.
+float ACCEPT = 0.9
+int SLOTS = 3
+float BONUS = 1.2
+float PENALTY = 4.0
+int OFFER_DAYS = 14
+float OFFER_CHANCE = 35.0
+// The least share of a deal's worth a sponsor short of budget still offers the player.
+float FIT_MIN = 0.25
+// A famous pilot's pull on what a deal pays (Lore): up to this much more.
+float FAME_PAY = 0.15
+// A prestigious team's pull (World.prestige): up to this much more.
+float PRESTIGE_PAY = 0.1
+[]float slot_size = [1.0, 0.55, 0.35]
+
+Names names = Names()
+Fmt fmt = Fmt()
+
+void seed(World w):
+    for k in 0..<names.sponsor_names.len():
+        Sponsor s = Sponsor()
+        s.name = names.sponsor_names[k]
+        s.sector = names.sponsor_sectors[k]
+        s.budget = names.sponsor_budgets[k]
+        s.fortune = w.rng.between(-0.3, 0.3)
+        s.source = "own"
+        w.sponsors.append(s)
+
+bool corp_live(World w):
+    return w.corp_day != 0 && w.day - w.corp_day <= STALE
+
+// Sponsors that can offer a deal now.
+[]Sponsor offering(World w):
+    bool corp = corp_live(w)
+    return w.sponsors.filter(bool(Sponsor s): return s.active && (s.source == "corp") == corp)
+
+float committed(World w, string sponsor):
+    float sum = 0.0
+    for d in w.deals:
+        if d.sponsor == sponsor:
+            sum += d.pay
+    return sum
+
+float weekly(World w, Team t):
+    float sum = 0.0
+    for d in w.deals:
+        if d.team == t.id && !d.offer:
+            sum += d.pay
+    return sum
+
+void pay(World w, Team t):
+    for d in w.deals:
+        if d.team == t.id && !d.offer:
+            w.earn(t, d.pay)
+            w.value.book(w, t, d.sponsor, d.pay)
+            d.paid += d.pay
+            owe(w, d, d.pay, d.pay if d.pay < d.worth else d.worth)
+
+void podium(World w, Team t, bool win):
+    for d in w.deals:
+        if d.team == t.id && !d.offer:
+            float b = d.bonus * (2.0 if win else 1.0)
+            w.earn(t, b)
+            w.value.book(w, t, d.sponsor, b)
+            d.paid += b
+            float cap = d.worth * BONUS * (2.0 if win else 1.0)
+            owe(w, d, b, b if b < cap else cap)
+
+// ---- Outside sponsors' books (the bus) ----
+
+// Payments to outside sponsors since the last flush, by sponsor.
+{string: float} due = {}
+[]string due_order = []
+
+bool external(World w, string sponsor):
+    Sponsor s = w.sponsor(sponsor)
+    return s.name != "" && s.source != "own"
+
+void owe(World w, Deal d, float amount, float basis):
+    d.season_paid += amount
+    d.season_worth += basis
+    if amount > 0.0 && external(w, d.sponsor):
+        if !due.has(d.sponsor):
+            due[d.sponsor] = 0.0
+            due_order.append(d.sponsor)
+        due[d.sponsor] = due[d.sponsor] + amount
+
+// "racing.sponsor_paid" {"day", "payments": [{"sponsor", "amount"}]}: once a
+// day there were payments (World.one_day), so nothing waits across a save.
+void flush_payments(World w):
+    if due_order.len() == 0:
+        return
+    []string out = []
+    for name in due_order:
+        int a = globalThis.Math.round(due[name])
+        out.append("{\"sponsor\":" + w.json(name) + ",\"amount\":" + string(a) + "}")
+    w.outbox.append("racing.sponsor_paid\t{\"day\":" + string(w.day) + ",\"payments\":[" + out.join(",") + "]}")
+    due = {}
+    due_order = []
+
+// "racing.sponsor_result": how an outside sponsor's deal did this season (or
+// as it ended early): its target, where the team stands, whether it hit, what
+// was paid this season and how much of that the deal's worth covers (`basis`),
+// and the penalty the team paid back for missing (0 when none).
+void result(World w, Deal d, Team t, int position, bool hit, float penalty):
+    if external(w, d.sponsor):
+        int paid = globalThis.Math.round(d.season_paid)
+        int basis = globalThis.Math.round(d.season_worth)
+        int pen = globalThis.Math.round(penalty)
+        w.outbox.append("racing.sponsor_result\t{\"sponsor\":" + w.json(d.sponsor) + ",\"team\":" + w.json(t.name) + ",\"player\":" + ("true" if t.player else "false") + ",\"league\":\"" + names.league_short[t.league] + "\",\"season\":" + string(w.season) + ",\"target\":" + string(d.target) + ",\"position\":" + string(position) + ",\"hit\":" + ("true" if hit else "false") + ",\"paid\":" + string(paid) + ",\"basis\":" + string(basis) + ",\"penalty\":" + string(pen) + "}")
+    d.season_paid = 0.0
+    d.season_worth = 0.0
+
+// "racing.sponsors_wanted": the day and every team, with its league, place,
+// what its standing fetches a week (fair), its free slots and its deals.
+string wanted(World w):
+    []string teams = []
+    for t in w.teams:
+        []string ds = []
+        for d in w.deals_of(t.id):
+            ds.append("{\"sponsor\":" + w.json(d.sponsor) + ",\"weekly\":" + string(int(d.pay)) + ",\"target\":" + string(d.target) + ",\"until\":" + string(d.until) + "}")
+        int f = globalThis.Math.round(fair(w, t))
+        teams.append("{\"name\":" + w.json(t.name) + ",\"league\":\"" + names.league_short[t.league] + "\",\"position\":" + string(w.position(t)) + ",\"expected\":" + string(expected(w, t)) + ",\"fair\":" + string(f) + ",\"free\":" + string(SLOTS - ds.len()) + ",\"player\":" + ("true" if t.player else "false") + ",\"deals\":[" + ds.join(",") + "]}")
+    return "{\"day\":" + string(w.day) + ",\"season\":" + string(w.season) + ",\"teams\":[" + teams.join(",") + "]}"
+
+// "racing.sponsor_offer" {"id", "sponsor", "sector", "team", "weekly"}: a
+// sponsor offers a team a deal on its own terms. An AI team takes it when it
+// has a slot and the pay is at least ACCEPT of its standing's worth; the
+// player's team gets it as an offer on the Sponsors tab, like any other.
+// Answered with "racing.sponsor_answer" {"id", "sponsor", "team", "accepted",
+// "offered", "reason", "weekly", "fair", "target"}.
+void direct(World w, string payload):
+    any parse = globalThis.Function("s", "try { const o = JSON.parse(s); if (!o || typeof o.sponsor !== 'string' || typeof o.team !== 'string') return ''; return [String(o.id ?? ''), o.sponsor, String(o.sector || ''), o.team, Number(o.weekly) || 0].join('\\t'); } catch (e) { return ''; }")
+    string flat = parse(payload)
+    if flat == "":
+        return
+    []string f = flat.split("\t")
+    if f.len() < 5:
+        return
+    string id = names.clean(f[0])
+    string sponsor = names.clean(f[1])
+    string sector = names.clean(f[2])
+    string team = f[3]
+    float weekly = f[4].to_float()
+    Team t = Team()
+    for x in w.teams:
+        if x.name == team:
+            t = x
+    // A team renamed since the sender last heard: its last name before this one.
+    if t.id == 0:
+        for x in w.teams:
+            if t.id == 0 && w.former_name(x) == team:
+                t = x
+    float worth = fair(w, t) if t.id != 0 else 0.0
+    string reason = ""
+    if sponsor == "":
+        reason = "no sponsor"
+    else if t.id == 0:
+        reason = "no such team"
+    else if weekly < 100.0:
+        reason = "too little"
+    else if w.deals.filter(bool(Deal d): return d.team == t.id && d.sponsor == sponsor).len() > 0:
+        reason = "already sponsored"
+    else if w.deals_of(t.id).len() >= SLOTS:
+        reason = "no room"
+    else if !t.player && weekly < ACCEPT * worth:
+        reason = "too little"
+    Deal d = Deal()
+    if reason == "":
+        if w.sponsor(sponsor).name == "":
+            Sponsor s = Sponsor()
+            s.name = sponsor
+            s.sector = sector
+            s.source = "direct"
+            s.active = false
+            w.sponsors.append(s)
+        d.id = w.next_deal
+        w.next_deal += 1
+        d.sponsor = sponsor
+        d.team = t.id
+        int k = globalThis.Math.round(weekly / 100.0)
+        d.pay = float(k) * 100.0
+        float r = globalThis.Math.round(worth / 100.0)
+        d.worth = r * 100.0
+        terms(w, t, d)
+        w.deals.append(d)
+        if t.player:
+            w.player_events.append("Racing: " + sponsor + " offers " + t.name + " a sponsorship of " + fmt.credits(d.pay) + " credits a week (see the Sponsors tab; the offer stands " + string(OFFER_DAYS) + " days).")
+        else:
+            w.note(t.league, sponsor + " sponsors " + t.name + ".")
+    int target = d.target if reason == "" else 0
+    w.outbox.append("racing.sponsor_answer\t{\"id\":" + w.json(id) + ",\"sponsor\":" + w.json(sponsor) + ",\"team\":" + w.json(team) + ",\"accepted\":" + ("true" if reason == "" && !t.player else "false") + ",\"offered\":" + ("true" if reason == "" && t.player else "false") + ",\"reason\":" + w.json(reason) + ",\"weekly\":" + string(int(d.pay if reason == "" else weekly)) + ",\"fair\":" + string(int(worth)) + ",\"target\":" + string(target) + "}")
+
+// How a team looks to a sponsor: 0.5 (last) .. 1.5 (first), by this season's
+// table once it has three rounds, else by its car against the league's.
+float appeal(World w, Team t):
+    int pos = w.position(t)
+    if t.races < 3:
+        pos = 1
+        float r = t.rating()
+        for x in w.league_teams(t.league):
+            if x.id != t.id && x.rating() > r:
+                pos += 1
+        // A team just promoted is news: sponsors rate it no worse than midfield.
+        if t.last_league < t.league && t.last_pos > 0 && pos > 6:
+            pos = 6
+    float a = 1.5 - float(pos - 1) / float(w.size(t.league) - 1)
+    return a if a > 0.5 else 0.5
+
+int expected(World w, Team t):
+    float a = appeal(w, t)
+    int pos = 1 + int(globalThis.Math.round((1.5 - a) * float(w.size(t.league) - 1)))
+    return pos
+
+Deal make(World w, Team t, Sponsor s, int slot):
+    Person cd = w.seat(t, 4)
+    float eff = 1.0 + 0.3 * cd.skill + 0.08 * w.rng.gauss() * (1.0 - 0.5 * cd.trait)
+    if w.lore.has(cd, w.lore.RAINMAKER):
+        eff += w.lore.YIELD
+    eff = eff if eff > 0.5 else 0.5
+    Deal d = Deal()
+    d.id = w.next_deal
+    w.next_deal += 1
+    d.sponsor = s.name
+    d.team = t.id
+    float f = 1.0 + 0.3 * s.fortune
+    d.pay = BASE * w.scale[t.league] * appeal(w, t) * slot_size[slot] * f * eff * w.rng.between(0.85, 1.15) * fame_pull(w, t) * prestige_pull(w, t)
+    int k = globalThis.Math.round(d.pay / 100.0)
+    d.pay = float(k) * 100.0
+    d.worth = d.pay
+    terms(w, t, d)
+    if cd.id != 0:
+        w.staff.observe(cd, eff * 100.0, (eff - 1.0) / 0.3)
+        w.lore.deal(w, t, cd, eff)
+    return d
+
+// Famous pilots draw sponsors: up to FAME_PAY more for a household name
+// (World.pilot_fame: both pilots, at most 100).
+float fame_pull(World w, Team t):
+    return 1.0 + FAME_PAY * w.pilot_fame(t) / 100.0
+
+// A storied name draws sponsors too: up to PRESTIGE_PAY more for prestige 100.
+float prestige_pull(World w, Team t):
+    return 1.0 + PRESTIGE_PAY * w.prestige(t) / 100.0
+
+// A deal's terms from its pay: bonus, target (about where the team is
+// expected to finish), penalty, walk-away, length, offer.
+void terms(World w, Team t, Deal d):
+    d.bonus = d.pay * BONUS
+    int target = expected(w, t) + w.rng.range(-1, 2)
+    d.target = target if target >= 1 else 1
+    d.target = d.target if d.target <= w.size(t.league) else w.size(t.league)
+    d.penalty = d.pay * PENALTY
+    d.walk = float(d.target) + 3.5
+    d.until = w.season + (1 if w.season_week() >= w.ROUNDS / 2 else 0)
+    d.offer = t.player
+    d.expires = w.day + OFFER_DAYS
+
+// What a team's standing fetches a week from a sponsor of average fortune,
+// in its next slot.
+float fair(World w, Team t):
+    int active = w.deals_of(t.id).len()
+    int slot = active if active < SLOTS else SLOTS - 1
+    return BASE * w.scale[t.league] * appeal(w, t) * slot_size[slot] * prestige_pull(w, t)
+
+// Cut a deal down to what the sponsor can still pay a week.
+void fit(Deal d, float room):
+    int k = globalThis.Math.floor(room / 100.0)
+    d.pay = float(k) * 100.0
+    d.bonus = d.pay * BONUS
+    d.penalty = d.pay * PENALTY
+
+int slots_used(World w, Team t):
+    int n = 0
+    for d in w.deals:
+        if d.team == t.id:
+            n += 1
+    return n
+
+// Up to n new offers (deals, for an AI team) from sponsors with room in their budgets.
+void offers(World w, Team t, int n):
+    []string have = []
+    for d in w.deals:
+        if d.team == t.id:
+            have.append(d.sponsor)
+    []Sponsor pool = offering(w).filter(bool(Sponsor s): return !have.contains(s.name))
+    int made = 0
+    // The best deal a sponsor short of budget could still offer (the most room).
+    Deal spare = Deal()
+    float spare_room = 0.0
+    for made < n && pool.len() > 0 && slots_used(w, t) < SLOTS + (2 if t.player else 0):
+        int k = w.rng.range(0, pool.len() - 1)
+        Sponsor s = pool[k]
+        pool.remove_at(k)
+        int active = w.deals_of(t.id).len()
+        int slot = active if active < SLOTS else SLOTS - 1
+        Deal d = make(w, t, s, slot)
+        float room = s.budget - committed(w, s.name)
+        if d.pay > room:
+            if room >= FIT_MIN * d.pay && room > spare_room:
+                spare = d
+                spare_room = room
+            continue
+        added(w, t, d)
+        made += 1
+    // No sponsor could pay a deal in full: the player is offered what the
+    // one with the most room can still afford (AI teams sign only full deals).
+    // Without this a team at the top, whose S League deals are worth more
+    // than any sponsor has left, got no offers at all.
+    if made < n && t.player && spare.id != 0 && slots_used(w, t) < SLOTS + 2:
+        fit(spare, spare_room)
+        added(w, t, spare)
+
+void added(World w, Team t, Deal d):
+    bool first = w.deals_of(t.id).len() == 0
+    w.deals.append(d)
+    // An AI team's new title sponsor may put its name on it (World.sponsor_name).
+    if first && !t.player:
+        w.sponsor_name(t, d.sponsor)
+    if t.player:
+        w.player_events.append("Racing: " + d.sponsor + " offers " + t.name + " a sponsorship of " + fmt.credits(d.pay) + " credits a week (see the Sponsors tab; the offer stands " + string(OFFER_DAYS) + " days).")
+
+void ai_deals(World w, Team t):
+    if t.player:
+        return
+    // One new deal a week at most, so a season's end does not sign them all at once.
+    int have = w.deals_of(t.id).len()
+    if have < 2:
+        offers(w, t, 1)
+
+// The player takes over a team (World.buy): a deal from their own company
+// (a direct sponsor, now a related party) pays no more than its worth from
+// now on, as the bridge holds offers to the owner's own team (its SELF_PAY).
+void take_over(World w, Team t):
+    for d in w.deals:
+        if d.team == t.id && !d.offer && w.sponsor(d.sponsor).source == "direct" && d.worth > 0.0 && d.pay > d.worth:
+            float was = d.pay
+            fit(d, d.worth)
+            w.player_events.append("Racing: " + d.sponsor + "'s deal with " + t.name + " is cut from " + fmt.credits(was) + " to " + fmt.credits(d.pay) + " credits a week, its worth: your own company does not overpay your team.")
+
+// The player signs an offer.
+bool sign(World w, Deal d):
+    Team t = w.mine()
+    if !d.offer || d.team != t.id || w.deals_of(t.id).len() >= SLOTS:
+        return false
+    d.offer = false
+    w.note(t.league, d.sponsor + " sponsors " + t.name + ".")
+    w.outbox.append("racing.sponsor_signed\t{\"sponsor\":" + w.json(d.sponsor) + ",\"team\":" + w.json(t.name) + ",\"weekly\":" + string(int(d.pay)) + "}")
+    return true
+
+// The player ends a deal early: the clause's penalty.
+void drop(World w, Deal d):
+    Team t = w.mine()
+    if !d.offer:
+        w.spend(t, d.penalty)
+        w.value.book(w, t, d.sponsor, -d.penalty)
+        result(w, d, t, w.position(t), false, d.penalty)
+    w.deals = w.deals.filter(bool(Deal x): return x.id != d.id)
+
+// ---- The week (weekday 6) ----
+
+void week(World w):
+    w.outbox.append("racing.sponsors_wanted\t" + wanted(w))
+    for s in w.sponsors:
+        if s.source == "own":
+            s.fortune = names_clamp(s.fortune * 0.95 + 0.08 * w.rng.gauss())
+    []Deal keep = []
+    for d in w.deals:
+        Team t = w.team(d.team)
+        if t.id == 0:
+            continue
+        if d.offer && (w.day >= d.expires || !t.player):
+            continue
+        if !d.offer && walks(t, d):
+            result(w, d, t, w.position(t), false, 0.0)
+            w.note(t.league, d.sponsor + " walks away from " + t.name + " after a run of poor results.")
+            if t.player:
+                w.player_events.append("Racing: " + d.sponsor + " ends its sponsorship of " + t.name + ": your last four finishes broke its clause.")
+            continue
+        keep.append(d)
+    w.deals = keep
+    for t in w.teams:
+        ai_deals(w, t)
+    if w.has_team():
+        Team me = w.mine()
+        Person cd = w.seat(me, 4)
+        if slots_used(w, me) < SLOTS + 1 && w.rng.chance(OFFER_CHANCE * (1.0 + 0.5 * cd.skill) * (1.5 if w.deals_of(me.id).len() == 0 else 1.0)):
+            offers(w, me, 1)
+
+float names_clamp(float x):
+    return -1.0 if x < -1.0 else (1.0 if x > 1.0 else x)
+
+bool walks(Team t, Deal d):
+    int n = t.finishes.len()
+    if n < 4:
+        return false
+    int sum = 0
+    for k in n - 4..<n:
+        sum += t.finishes[k]
+    return float(sum) / 4.0 > d.walk
+
+void season_end(World w):
+    []Deal keep = []
+    for d in w.deals:
+        if d.offer:
+            continue
+        Team t = w.team(d.team)
+        if t.id == 0:
+            continue
+        int pos = t.last_pos
+        result(w, d, t, pos, pos <= d.target, d.penalty if pos > d.target else 0.0)
+        if pos > d.target:
+            w.spend(t, d.penalty)
+            w.value.book(w, t, d.sponsor, -d.penalty)
+            if t.player:
+                w.player_events.append("Racing: " + d.sponsor + "'s target was " + string(d.target) + names.ordinal_suffix(d.target) + "; you finished " + string(pos) + names.ordinal_suffix(pos) + ". The clause costs " + fmt.credits(d.penalty) + " credits, and the deal ends.")
+            continue
+        if d.until <= w.season:
+            if t.player:
+                w.player_events.append("Racing: your deal with " + d.sponsor + " has run its course (target met).")
+            continue
+        keep.append(d)
+    w.deals = keep
+
+// ---- Outside sponsors (the bus) ----
+
+// "racing.sponsors" {"day", "sponsors": [{"name", "sector", "budget",
+// "fortune"}]}: the outside sponsors, each with what it spends on racing a
+// week and its fortune (-1 .. 1).
+void roster(World w, string payload):
+    any parse = globalThis.Function("s", "try { const o = JSON.parse(s); const c = (o && Array.isArray(o.sponsors)) ? o.sponsors : []; return c.filter((x) => x && typeof x.name === 'string' && x.name !== '').map((x) => [x.name, String(x.sector || ''), Number(x.budget) || 0, Number(x.fortune) || 0].join('\\t')).join('\\n'); } catch (e) { return ''; }")
+    string flat = parse(payload)
+    if flat == "":
+        return
+    []string seen = []
+    for line in flat.split("\n"):
+        []string f = line.split("\t")
+        if f.len() < 4:
+            continue
+        string name = names.clean(f[0])
+        float b = f[2].to_float()
+        Sponsor s = w.sponsor(name)
+        if s.name == "":
+            s.name = name
+            w.sponsors.append(s)
+        s.source = "corp"
+        s.sector = names.clean(f[1])
+        s.budget = b if b > 0.0 else 0.0
+        s.fortune = names_clamp(f[3].to_float())
+        s.active = true
+        s.seen = w.day
+        seen.append(name)
+    for s in w.sponsors:
+        if s.source == "corp" && !seen.contains(s.name):
+            s.active = false
+    w.corp_day = w.day if w.day > 0 else 1
+
+// "racing.sponsor_gone" {"sponsor"}: the sponsor is gone (bankrupt); its deals end now.
+void bankrupt(World w, string payload):
+    any get = globalThis.Function("s", "try { const o = JSON.parse(s); return (o && typeof o.sponsor === 'string') ? o.sponsor : ''; } catch (e) { return ''; }")
+    string name = get(payload)
+    name = names.clean(name)
+    if name == "":
+        return
+    Sponsor s = w.sponsor(name)
+    if s.name == "":
+        return
+    s.active = false
+    for d in w.deals:
+        if d.sponsor == name && !d.offer:
+            Team t = w.team(d.team)
+            if t.player:
+                w.player_events.append("Racing: " + name + " is gone; its sponsorship of " + t.name + " ends.")
+    w.deals = w.deals.filter(bool(Deal d): return d.sponsor != name)

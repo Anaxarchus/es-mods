@@ -1,0 +1,7647 @@
+# Copyright (c) 2026 by Anaxarchus
+#
+# Endless Sky is free software: you can redistribute it and/or modify it under the
+# terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later version.
+#
+# Endless Sky is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+# PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+# The ships of the Shoal. The Wardens reuse the Kor Mereti drone sprites (and the
+# Kor Sestor battlecruiser for the Undertow), with the hardpoints of those ships.
+# Most of their strength is built into the hull (generation, shields, repair,
+# cooling) rather than into outfits. Their weapons and engines are unplunderable
+# "Warden ..." copies of stock outfits (in "shoal outfits.txt"), so what a
+# disabled Warden gives up is its materials: Shoal Glass, Warden Cores and Deep
+# Lattice. They are uncapturable and never self-destruct, so a disabled Warden
+# can always be plundered.
+#
+# v0.3 (DESIGN.md section 15): rebalanced for ships fitted with Shoal Mk III
+# gear. Shields, hull, regeneration and the Warden weapon copies' damage went
+# up; energy generation and cooling x1.12 to feed the copies; loot unchanged.
+#
+# v0.5.0 (DESIGN.md section 22): cut down so a solo captain with Shoal Mk I/II
+# gear can sink them. These are the shallowest tier; the deeper tiers are
+# generated variants ("Warden Picket 2" ... "The Undertow 4", in "shoal deep
+# wardens.txt", tools/deep/gen.py). Shields and hull: Picket and Lancer -45%,
+# Bastion -50%, Undertow -66%; regeneration -40% / -40% / -50% / -66%; the
+# weapon copies -30% (all of them); the Bastion trades a Husk-Slice turret for
+# a second Warder, the Undertow leaves a gun port and two turret mounts empty
+# and carries less energy. More glass on every hull; cores and lattice as
+# before.
+#
+# The drowned hulls are stock human ships, a little worse for the water: less
+# hull, less shield, a touch more drag, short-handed (required crew is 0.8 of the
+# stock hull's, rounded), stripped down to a reactor, engines and a
+# hyperdrive. They are real ships and can be captured and flown. The variants
+# set how much glass (and anything else) each wreck carries.
+
+
+ship "Warden Picket"
+	sprite "ship/model 8"
+	thumbnail "thumbnail/model 8"
+	"administrative cost" 1
+	uncapturable
+	attributes
+		category "Interceptor"
+		"cost" 2000000
+		"shields" 4400
+		"hull" 2600
+		"automaton" 1
+		"crew equivalent" 5
+		"mass" 160
+		"drag" 3.7
+		"heat dissipation" 1.3
+		"fuel capacity" 300
+		"cargo space" 20
+		"outfit space" 240
+		"weapon capacity" 80
+		"engine capacity" 60
+		"energy generation" 11.2
+		"energy capacity" 3000
+		"shield generation" .9
+		"hull repair rate" .12
+		"cooling" 9
+		"ramscoop" 3
+		weapon
+			"blast radius" 100
+			"shield damage" 1200
+			"hull damage" 600
+			"hit force" 1800
+	outfits
+		"Warden Husk-Slice"
+		"Warden Particle Cannon"
+		
+		"Warden Thruster (Comet Class)"
+		"Warden Steering (Lunar Class)"
+		"Hyperdrive"
+		
+		"Warden Core"
+		"Shoal Glass" 8
+	
+	engine -11 49
+	engine 11 49
+	gun 9 -36 "Warden Husk-Slice"
+	gun -11 -15 "Warden Particle Cannon"
+	explode "tiny explosion" 30
+	explode "small explosion" 10
+	"final explode" "final explosion small"
+	description "A small, quick machine that circles the edges of the Shoal like a dog at a fence. The Breakers call them pickets. Their hulls are pitted and patched with glass, and the serial numbers stamped into them match no registry anyone has found."
+
+
+ship "Warden Lancer"
+	sprite "ship/model 32"
+	thumbnail "thumbnail/model 32"
+	"administrative cost" 4
+	uncapturable
+	attributes
+		category "Light Warship"
+		"cost" 4500000
+		"shields" 16500
+		"hull" 7700
+		"automaton" 1
+		"crew equivalent" 25
+		"mass" 625
+		"drag" 11.7
+		"heat dissipation" 1.0
+		"fuel capacity" 400
+		"cargo space" 16
+		"outfit space" 481
+		"weapon capacity" 205
+		"engine capacity" 110
+		"energy generation" 34
+		"energy capacity" 8000
+		"shield generation" 2.4
+		"hull repair rate" .3
+		"cooling" 34
+		"ramscoop" 3
+		weapon
+			"blast radius" 240
+			"shield damage" 3200
+			"hull damage" 1600
+			"hit force" 4800
+	outfits
+		"Warden Husk-Slice"
+		"Warden Husk-Slice Turret"
+		"Warden Shield Disruptor Turret"
+		"Warden Thermal Repeater Turret"
+		
+		"Warden Thruster (Planetary Class)"
+		"Warden Steering (Lunar Class)"
+		"Hyperdrive"
+		
+		"Warden Core" 2
+		"Shoal Glass" 14
+
+	engine -10 128
+	engine 10 128
+	gun 0 -129 "Warden Husk-Slice"
+	turret 32 -24 "Warden Shield Disruptor Turret"
+	turret -31 -9 "Warden Husk-Slice Turret"
+	turret 24 19 "Warden Thermal Repeater Turret"
+	explode "tiny explosion" 80
+	explode "small explosion" 55
+	explode "medium explosion" 40
+	explode "large explosion" 15
+	"final explode" "final explosion medium"
+	description "The gunships of the Shoal's guardians. A lancer carries more firepower than most human warships of its size and repairs itself while it fights, slowly, as if it has all the time in the world. It probably does."
+
+
+ship "Warden Bastion"
+	sprite "ship/model 256"
+	thumbnail "thumbnail/model 256"
+	"administrative cost" 8
+	uncapturable
+	attributes
+		category "Heavy Warship"
+		"cost" 24000000
+		"shields" 40000
+		"hull" 16000
+		"automaton" 1
+		"crew equivalent" 100
+		"mass" 2340
+		"drag" 26.8
+		"heat dissipation" .52
+		"fuel capacity" 400
+		"cargo space" 78
+		"outfit space" 857
+		"weapon capacity" 410
+		"engine capacity" 145
+		"energy generation" 78
+		"energy capacity" 20000
+		"shield generation" 4
+		"hull repair rate" .6
+		"cooling" 56
+		"ramscoop" 3
+		weapon
+			"blast radius" 340
+			"shield damage" 5200
+			"hull damage" 2600
+			"hit force" 7800
+	outfits
+		"Warden Korath Detainer" 2
+		"Warden Husk-Slice Turret"
+		"Warden Shield Disruptor Turret" 2
+		"Warden Thermal Repeater Turret"
+		"Warden Warder Anti-Missile" 2
+		
+		"Warden Thruster (Planetary Class)"
+		"Warden Steering (Planetary Class)"
+		"Warden Steering (Comet Class)"
+		"Hyperdrive"
+		
+		"Warden Core" 4
+		"Shoal Glass" 24
+
+	engine -60 147
+	engine 60 147
+	gun -22 -148 "Warden Korath Detainer"
+	gun 22 -148 "Warden Korath Detainer"
+	turret 36 -85 "Warden Shield Disruptor Turret"
+	turret -56 -45 "Warden Husk-Slice Turret"
+	turret 69 3 "Warden Thermal Repeater Turret"
+	turret -73 38 "Warden Warder Anti-Missile"
+	turret 66 64 "Warden Warder Anti-Missile"
+	turret -56 101 "Warden Shield Disruptor Turret"
+	explode "tiny explosion" 140
+	explode "small explosion" 100
+	explode "medium explosion" 70
+	explode "large explosion" 30
+	"final explode" "final explosion large"
+	description "A heavy guardian, slow to wake and slower to stop. A bastion is a ring of shield emitters and turrets around a core nobody has managed to open intact. Salvagers who see one coming are advised to already be leaving."
+
+
+ship "The Undertow"
+	sprite "ship/kar ik vot 349"
+	thumbnail "thumbnail/kar ik vot 349"
+	"administrative cost" 10
+	uncapturable
+	attributes
+		category "Heavy Warship"
+		"cost" 100000000
+		"shields" 68000
+		"hull" 51000
+		"automaton" 1
+		"crew equivalent" 150
+		"mass" 3754
+		"drag" 40
+		"heat dissipation" .25
+		"fuel capacity" 400
+		"cargo space" 87
+		"outfit space" 1100
+		"weapon capacity" 570
+		"engine capacity" 173
+		"energy generation" 112
+		"energy capacity" 16000
+		"shield generation" 5.4
+		"hull repair rate" 1.2
+		"cooling" 78
+		"ramscoop" 3
+		weapon
+			"blast radius" 450
+			"shield damage" 6400
+			"hull damage" 3200
+			"hit force" 9600
+	outfits
+		"Warden Korath Detainer"
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 400
+		"Warden Husk-Slice Turret" 2
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile" 2
+		
+		"Warden Thruster (Planetary Class)"
+		"Warden Steering (Stellar Class)"
+		"Hyperdrive"
+		
+		"Deep Lattice" 3
+		"Warden Core" 6
+		"Shoal Glass" 30
+	
+	engine -24 237
+	engine 24 237
+	gun -8 -212 "Warden Korath Detainer"
+	gun 8 -212
+	gun -16 -158 "Warden Piercer Missile Launcher"
+	gun 16 -158 "Warden Piercer Missile Launcher"
+	turret -37 -150 "Warden Husk-Slice Turret"
+	turret 37 -150 "Warden Husk-Slice Turret"
+	turret -38 -132 "Warden Shield Disruptor Turret"
+	turret 38 -132 "Warden Shield Disruptor Turret"
+	turret -40 -111
+	turret 40 -111
+	turret -102 188 "Warden Warder Anti-Missile"
+	turret 102 188 "Warden Warder Anti-Missile"
+	explode "tiny explosion" 120
+	explode "small explosion" 60
+	explode "medium explosion" 70
+	explode "large explosion" 50
+	explode "huge explosion" 15
+	"final explode" "final explosion large"
+	description "The thing that sleeps under the Shoal. The Breakers have a dozen names for it and use none of them aloud. It is older than the other guardians, heavier, and patient beyond reason, and when the belt has been disturbed enough, it comes up to see why."
+
+
+
+ship "Drowned Bulk Freighter"
+	sprite "ship/bulk freighter"
+	thumbnail "thumbnail/bulk freighter"
+	"administrative cost" 4
+	uncapturable
+	attributes
+		category "Heavy Freighter"
+		"cost" 6600000
+		"shields" 3400
+		"hull" 5700
+		"required crew" 10
+		"bunks" 21
+		"mass" 1510
+		"drag" 18.2
+		"heat dissipation" 0.27
+		"fuel capacity" 900
+		"cargo space" 640
+		"outfit space" 410
+		"weapon capacity" 180
+		"engine capacity" 85
+		weapon
+			"blast radius" 120
+			"shield damage" 1200
+			"hull damage" 600
+			"hit force" 1800
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 8
+	
+	engine -22 198
+	engine 22 198
+	gun -20 -175
+	gun 20 -175
+	turret -12 -155
+	turret 12 -155
+	turret 0 5
+	turret -30 175
+	turret 30 175
+	leak "leak" 40 50
+	leak "flame" 30 80
+	leak "big leak" 50 30
+	explode "small explosion" 15
+	explode "medium explosion" 25
+	explode "large explosion" 35
+	explode "huge explosion" 20
+	"final explode" "final explosion large"
+	description "A Bulk Freighter that went into the Shoal heavy and never came out. Its holds are breached and its frames are bent, but the engines still answer, after a fashion, and there is a great deal of room aboard for whatever you find."
+
+
+ship "Drowned Leviathan"
+	sprite "ship/leviathan"
+	thumbnail "thumbnail/leviathan"
+	"administrative cost" 5
+	uncapturable
+	attributes
+		category "Heavy Warship"
+		"cost" 5900000
+		"shields" 12200
+		"hull" 3750
+		"required crew" 34
+		"bunks" 64
+		"mass" 1515
+		"drag" 15.3
+		"heat dissipation" 0.3
+		"fuel capacity" 500
+		"cargo space" 80
+		"outfit space" 620
+		"weapon capacity" 240
+		"engine capacity" 120
+		weapon
+			"blast radius" 80
+			"shield damage" 800
+			"hull damage" 400
+			"hit force" 1200
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 8
+	
+	engine -24 126
+	engine 24 126
+	gun -37.5 -31.5
+	gun 37.5 -31.5
+	gun -49 -19.5
+	gun 49 -19.5
+	turret -14 -10
+	turret 14 -10
+	turret -25.5 12.5
+	turret 25.5 12.5
+	leak "leak" 50 50
+	leak "flame" 30 80
+	leak "big leak" 60 30
+	explode "tiny explosion" 18
+	explode "small explosion" 36
+	explode "medium explosion" 24
+	explode "large explosion" 8
+	"final explode" "final explosion large"
+	description "An old Leviathan, older than most in service, scoured down to bare metal by the belt. Whoever flew it here fought something on the way in; the scars along its flanks are not from rocks. The armor is thinner than it was, but it is still a Leviathan."
+
+
+ship "Drowned Falcon"
+	sprite "ship/falcon"
+	thumbnail "thumbnail/falcon"
+	"administrative cost" 5
+	uncapturable
+	attributes
+		category "Heavy Warship"
+		"cost" 6500000
+		"shields" 10900
+		"hull" 2800
+		"required crew" 42
+		"bunks" 91
+		"mass" 1260
+		"drag" 12.3
+		"heat dissipation" 0.42
+		"fuel capacity" 600
+		"cargo space" 130
+		"outfit space" 560
+		"weapon capacity" 250
+		"engine capacity" 150
+		weapon
+			"blast radius" 160
+			"shield damage" 1600
+			"hull damage" 800
+			"hit force" 2400
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 8
+	
+	engine -16.5 143
+	engine 16.5 143
+	gun -16 -86.5
+	gun 16 -86.5
+	gun -19 -76.5
+	gun 19 -76.5
+	turret -16 -29
+	turret 16 -29
+	turret -50 39.5
+	turret 50 39.5
+	leak "leak" 30 50
+	leak "flame" 50 80
+	leak "big leak" 60 30
+	explode "tiny explosion" 40
+	explode "small explosion" 55
+	explode "medium explosion" 60
+	explode "large explosion" 40
+	"final explode" "final explosion medium"
+	description "A Tarazed Falcon, its paint long gone and its canopy crazed with glass dust. Somebody kept it fighting a long time before it went quiet. The frame is sound enough to fly, if you can live with what the belt has done to its hull."
+
+
+ship "Drowned Bactrian"
+	sprite "ship/bactrian"
+	thumbnail "thumbnail/bactrian"
+	"administrative cost" 7
+	uncapturable
+	attributes
+		category "Utility"
+		"cost" 10500000
+		"shields" 14900
+		"hull" 6450
+		"required crew" 56
+		"bunks" 245
+		"mass" 2450
+		"drag" 33
+		"heat dissipation" 0.22
+		"fuel capacity" 700
+		"cargo space" 530
+		"outfit space" 740
+		"weapon capacity" 300
+		"engine capacity" 180
+		weapon
+			"blast radius" 260
+			"shield damage" 2600
+			"hull damage" 1300
+			"hit force" 3900
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 8
+	
+	engine 18.5 232
+	engine -15 232
+	gun -9 -231.5
+	gun 13.5 -231.5
+	gun 36.5 -197
+	gun 42 -193
+	turret 37 -132.5
+	turret -39 -39
+	turret 31.5 -26
+	turret -42.5 75
+	turret 32.5 132
+	turret -33.5 192.5
+	bay "Fighter" -43.5 -125
+		"launch effect" "human internal"
+	bay "Fighter" 53 -72.5
+		"launch effect" "human internal"
+	bay "Fighter" -50 103.5
+		"launch effect" "human internal"
+	leak "leak" 30 50
+	leak "flame" 30 80
+	leak "big leak" 50 30
+	explode "small explosion" 25
+	explode "medium explosion" 35
+	explode "large explosion" 45
+	explode "huge explosion" 30
+	"final explode" "final explosion large"
+	description "A city-ship, adrift. Its corridors are dark and cold and its bunks are empty, and the Breakers will not say what they found aboard when they first opened it. It still flies. Nobody needs a license from the Deep to take it, either."
+
+
+ship "Drowned Osprey"
+	sprite "ship/osprey"
+	thumbnail "thumbnail/osprey"
+	"administrative cost" 3
+	uncapturable
+	attributes
+		category "Medium Warship"
+		"cost" 2500000
+		"shields" 6100
+		"hull" 1200
+		"required crew" 7
+		"bunks" 24
+		"mass" 630
+		"drag" 9.6
+		"heat dissipation" 0.54
+		"fuel capacity" 600
+		"cargo space" 40
+		"outfit space" 450
+		"weapon capacity" 180
+		"engine capacity" 130
+		weapon
+			"blast radius" 80
+			"shield damage" 800
+			"hull damage" 400
+			"hit force" 1200
+	outfits
+		"RT-I Radiothermal"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 8
+	
+	engine -42.5 62.5 .8
+	engine 42.5 62.5 .8
+	engine -16.5 105 .6
+	engine 16.5 105 .6
+	gun -9.5 -95.5
+	gun 9.5 -95.5
+	gun -25 -49.5
+	gun 25 -49.5
+	turret -15.5 -12
+	turret 15.5 -12
+	leak "leak" 40 50
+	leak "flame" 80 80
+	leak "big leak" 80 30
+	explode "medium explosion" 24
+	explode "large explosion" 16
+	explode "small explosion" 40
+	explode "tiny explosion" 28
+	"final explode" "final explosion medium"
+	description "An Osprey with its guns torn out and its hull worn thin by years in the belt. Something chewed through its engine block and something else, later, patched it with glass. It flies, more or less."
+
+
+ship "Drowned Hauler"
+	sprite "ship/hauler i"
+	thumbnail "thumbnail/hauler i"
+	"administrative cost" 1
+	uncapturable
+	attributes
+		category "Light Freighter"
+		"cost" 860000
+		"shields" 2100
+		"hull" 2800
+		"required crew" 2
+		"bunks" 12
+		"mass" 490
+		"drag" 10.6
+		"heat dissipation" 0.43
+		"fuel capacity" 400
+		"cargo space" 130
+		"outfit space" 350
+		"weapon capacity" 140
+		"engine capacity" 80
+		weapon
+			"blast radius" 60
+			"shield damage" 600
+			"hull damage" 300
+			"hit force" 900
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 8
+	
+	engine -45 122.5
+	engine 45 122.5
+	gun -14.5 -92.5
+	gun 14.5 -92.5
+	turret -21.5 -48
+	turret 21.5 -48
+	turret -18.5 78.5
+	turret 18.5 78.5
+	leak "leak" 60 50
+	leak "flame" 50 80
+	leak "big leak" 90 30
+	explode "tiny explosion" 20
+	explode "small explosion" 35
+	explode "medium explosion" 20
+	explode "large explosion" 5
+	"final explode" "final explosion medium"
+	description "A cargo container with a cockpit and an engine block bolted on, like every Hauler, except this one has been sitting in the Shoal for longer than you have been alive. The cargo doors are rusted open. The engines, astonishingly, still work."
+
+
+# Wreck variants. "(Sparse)" and the base hull are the common wrecks,
+# "(Laden)" a better find, "(Glass)" the glass-heavy wrecks, "(Rich)" what the
+# belt turns up when it is stirred. The deep wrecks ("(Deep, X)") and the
+# other exotic-bearing variants are at the end of the file (v0.3).
+# "(Lead ...)" variants are the marked wrecks of the salvage-lead jobs.
+
+ship "Drowned Hauler" "Drowned Hauler (Sparse)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Quad Blaster Turret"
+		
+		"Shoal Glass" 6
+
+ship "Drowned Hauler" "Drowned Hauler (Laden)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 14
+
+ship "Drowned Hauler" "Drowned Hauler (Glass)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 22
+
+ship "Drowned Hauler" "Drowned Hauler (Rich)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Osprey" "Drowned Osprey (Sparse)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Plasma Cannon"
+		
+		"Shoal Glass" 6
+
+ship "Drowned Osprey" "Drowned Osprey (Laden)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 12
+
+ship "Drowned Osprey" "Drowned Osprey (Glass)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 20
+
+ship "Drowned Osprey" "Drowned Osprey (Rich)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 28
+
+ship "Drowned Falcon" "Drowned Falcon (Sparse)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Plasma Cannon"
+		
+		"Shoal Glass" 7
+
+ship "Drowned Falcon" "Drowned Falcon (Laden)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 14
+
+ship "Drowned Falcon" "Drowned Falcon (Glass)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 24
+
+ship "Drowned Falcon" "Drowned Falcon (Rich)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 34
+
+ship "Drowned Leviathan" "Drowned Leviathan (Sparse)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Particle Cannon" 2
+		
+		"Shoal Glass" 8
+
+ship "Drowned Leviathan" "Drowned Leviathan (Laden)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Leviathan" "Drowned Leviathan (Glass)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 26
+
+ship "Drowned Leviathan" "Drowned Leviathan (Rich)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 36
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Sparse)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Laser Turret"
+		
+		"Shoal Glass" 10
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Laden)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Glass)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Rich)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 40
+
+ship "Drowned Bactrian" "Drowned Bactrian (Sparse)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Heavy Laser Turret" 2
+		
+		"Shoal Glass" 10
+
+ship "Drowned Bactrian" "Drowned Bactrian (Laden)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Bactrian" "Drowned Bactrian (Glass)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Rich)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 40
+
+ship "Drowned Falcon" "Drowned Falcon (Rich, Tidecutter)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Tidecutter Mk I"
+		"Shoal Glass" 30
+
+ship "Drowned Osprey" "Drowned Osprey (Rich, Riptide)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Riptide Turret Mk I"
+		"Shoal Glass" 30
+
+ship "Drowned Leviathan" "Drowned Leviathan (Rich, Glassweave)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Glassweave Shield Mk I"
+		"Shoal Glass" 30
+
+ship "Drowned Bactrian" "Drowned Bactrian (Rich, Abyssal)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Abyssal Cell Mk I"
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Osprey" "Drowned Osprey (Rich, Undertow)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP036a Battery Pack"
+		"Undertow Thruster Mk I"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Rich, Coralgraft)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Coralgraft Mender Mk I"
+		"Shoal Glass" 30
+
+ship "Drowned Falcon" "Drowned Falcon (Rich, Eddy)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Hyperdrive"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Leviathan" "Drowned Leviathan (Rich, Brine)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Brine Capacitor Mk I"
+		"Shoal Glass" 30
+
+ship "Drowned Hauler" "Drowned Hauler (Rich, Coldwater)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		
+		"Coldwater Sink Mk I"
+		"Shoal Glass" 30
+
+ship "Drowned Bactrian" "Drowned Bactrian (Rich, Glimmer)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Glimmer Point Defense Mk I"
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Rich, Coral)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Coral Plating Mk I"
+		"Shoal Glass" 30
+
+ship "Drowned Osprey" "Drowned Osprey (Rich, Siltwake)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Siltwake Afterburner Mk I"
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Lead)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 40
+
+ship "Drowned Hauler" "Drowned Hauler (Lead)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 40
+
+ship "Drowned Falcon" "Drowned Falcon (Lead, Tidecutter)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Warden Core"
+		"Tidecutter Mk I"
+		"Shoal Glass" 25
+
+ship "Drowned Osprey" "Drowned Osprey (Lead, Riptide)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Warden Core"
+		"Riptide Turret Mk I"
+		"Shoal Glass" 25
+
+ship "Drowned Falcon" "Drowned Falcon (Lead, Glassweave)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Warden Core"
+		"Glassweave Shield Mk I"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Lead, Abyssal)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Abyssal Cell Mk I"
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Osprey" "Drowned Osprey (Lead, Undertow)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP036a Battery Pack"
+		"Undertow Thruster Mk I"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Lead, Coralgraft)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Warden Core"
+		"Coralgraft Mender Mk I"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Lead, Deep)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Deep Lattice" 2
+		"Shoal Glass" 30
+
+
+# v0.3 drops (DESIGN.md section 15). "(Worn, X)": an ordinary wreck with a Mk I
+# of line X; "(Rich, X II)": a rich wreck with a Mk II; "(Deep, X)" / "(Deep, X II)":
+# the deep wreck, always with one exotic; "(Lead, X II)": the warship lead's Mk II.
+
+ship "Drowned Falcon" "Drowned Falcon (Worn, Tidecutter)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Tidecutter Mk I"
+		"Shoal Glass" 10
+
+ship "Drowned Osprey" "Drowned Osprey (Worn, Riptide)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Riptide Turret Mk I"
+		"Shoal Glass" 10
+
+ship "Drowned Leviathan" "Drowned Leviathan (Worn, Glassweave)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Glassweave Shield Mk I"
+		"Shoal Glass" 10
+
+ship "Drowned Bactrian" "Drowned Bactrian (Worn, Abyssal)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Abyssal Cell Mk I"
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 10
+
+ship "Drowned Osprey" "Drowned Osprey (Worn, Undertow)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP036a Battery Pack"
+		"Undertow Thruster Mk I"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 10
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Worn, Coralgraft)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Coralgraft Mender Mk I"
+		"Shoal Glass" 10
+
+ship "Drowned Falcon" "Drowned Falcon (Worn, Eddy)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Hyperdrive"
+		
+		"Shoal Glass" 10
+
+ship "Drowned Leviathan" "Drowned Leviathan (Worn, Brine)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Brine Capacitor Mk I"
+		"Shoal Glass" 10
+
+ship "Drowned Hauler" "Drowned Hauler (Worn, Coldwater)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		
+		"Coldwater Sink Mk I"
+		"Shoal Glass" 10
+
+ship "Drowned Bactrian" "Drowned Bactrian (Worn, Glimmer)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Glimmer Point Defense Mk I"
+		"Shoal Glass" 10
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Worn, Coral)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Coral Plating Mk I"
+		"Shoal Glass" 10
+
+ship "Drowned Osprey" "Drowned Osprey (Worn, Siltwake)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Siltwake Afterburner Mk I"
+		"Shoal Glass" 10
+
+ship "Drowned Falcon" "Drowned Falcon (Rich, Tidecutter II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Tidecutter Mk II"
+		"Shoal Glass" 30
+
+ship "Drowned Osprey" "Drowned Osprey (Rich, Riptide II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Riptide Turret Mk II"
+		"Shoal Glass" 30
+
+ship "Drowned Leviathan" "Drowned Leviathan (Rich, Glassweave II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Glassweave Shield Mk II"
+		"Shoal Glass" 30
+
+ship "Drowned Bactrian" "Drowned Bactrian (Rich, Abyssal II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Abyssal Cell Mk II"
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Osprey" "Drowned Osprey (Rich, Undertow II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP036a Battery Pack"
+		"Undertow Thruster Mk II"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Rich, Coralgraft II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Coralgraft Mender Mk II"
+		"Shoal Glass" 30
+
+ship "Drowned Falcon" "Drowned Falcon (Rich, Eddy II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"Eddy Steering Mk II"
+		"Hyperdrive"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Leviathan" "Drowned Leviathan (Rich, Brine II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Brine Capacitor Mk II"
+		"Shoal Glass" 30
+
+ship "Drowned Hauler" "Drowned Hauler (Rich, Coldwater II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		
+		"Coldwater Sink Mk II"
+		"Shoal Glass" 30
+
+ship "Drowned Bactrian" "Drowned Bactrian (Rich, Glimmer II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Glimmer Point Defense Mk II"
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Rich, Coral II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Coral Plating Mk II"
+		"Shoal Glass" 30
+
+ship "Drowned Osprey" "Drowned Osprey (Rich, Siltwake II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Siltwake Afterburner Mk II"
+		"Shoal Glass" 30
+
+ship "Drowned Leviathan" "Drowned Leviathan (Deep, Tidecutter)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Tidecutter Mk I"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Leviathan" "Drowned Leviathan (Deep, Tidecutter II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Tidecutter Mk II"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Bactrian" "Drowned Bactrian (Deep, Riptide)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Riptide Turret Mk I"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Bactrian" "Drowned Bactrian (Deep, Riptide II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Riptide Turret Mk II"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Leviathan" "Drowned Leviathan (Deep, Glassweave)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Glassweave Shield Mk I"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Leviathan" "Drowned Leviathan (Deep, Glassweave II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Glassweave Shield Mk II"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Bactrian" "Drowned Bactrian (Deep, Abyssal)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Abyssal Cell Mk I"
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Bactrian" "Drowned Bactrian (Deep, Abyssal II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Abyssal Cell Mk II"
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Leviathan" "Drowned Leviathan (Deep, Undertow)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"Undertow Thruster Mk I"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Leviathan" "Drowned Leviathan (Deep, Undertow II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"Undertow Thruster Mk II"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Bactrian" "Drowned Bactrian (Deep, Coralgraft)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Coralgraft Mender Mk I"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Bactrian" "Drowned Bactrian (Deep, Coralgraft II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Coralgraft Mender Mk II"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Leviathan" "Drowned Leviathan (Deep, Eddy)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Hyperdrive"
+		
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Leviathan" "Drowned Leviathan (Deep, Eddy II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"Eddy Steering Mk II"
+		"Hyperdrive"
+		
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Bactrian" "Drowned Bactrian (Deep, Brine)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Brine Capacitor Mk I"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Bactrian" "Drowned Bactrian (Deep, Brine II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Brine Capacitor Mk II"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Leviathan" "Drowned Leviathan (Deep, Coldwater)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Coldwater Sink Mk I"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Leviathan" "Drowned Leviathan (Deep, Coldwater II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Coldwater Sink Mk II"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Bactrian" "Drowned Bactrian (Deep, Glimmer)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Glimmer Point Defense Mk I"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Bactrian" "Drowned Bactrian (Deep, Glimmer II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Glimmer Point Defense Mk II"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Bactrian" "Drowned Bactrian (Deep, Coral)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Coral Plating Mk I"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Bactrian" "Drowned Bactrian (Deep, Coral II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Coral Plating Mk II"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Leviathan" "Drowned Leviathan (Deep, Siltwake)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Siltwake Afterburner Mk I"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Leviathan" "Drowned Leviathan (Deep, Siltwake II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Siltwake Afterburner Mk II"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Falcon" "Drowned Falcon (Lead, Tidecutter II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Tidecutter Mk II"
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Osprey" "Drowned Osprey (Lead, Riptide II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Riptide Turret Mk II"
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Falcon" "Drowned Falcon (Lead, Glassweave II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Glassweave Shield Mk II"
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Lead, Abyssal II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Abyssal Cell Mk II"
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Osprey" "Drowned Osprey (Lead, Undertow II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP036a Battery Pack"
+		"Undertow Thruster Mk II"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Lead, Coralgraft II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Coralgraft Mender Mk II"
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Falcon" "Drowned Falcon (Lead, Eddy)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Hyperdrive"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Falcon" "Drowned Falcon (Lead, Eddy II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"Eddy Steering Mk II"
+		"Hyperdrive"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Lead, Brine)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Brine Capacitor Mk I"
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Lead, Brine II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Brine Capacitor Mk II"
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Hauler" "Drowned Hauler (Lead, Coldwater)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		
+		"Coldwater Sink Mk I"
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Hauler" "Drowned Hauler (Lead, Coldwater II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		
+		"Coldwater Sink Mk II"
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Bactrian" "Drowned Bactrian (Lead, Glimmer)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Glimmer Point Defense Mk I"
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Bactrian" "Drowned Bactrian (Lead, Glimmer II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Glimmer Point Defense Mk II"
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Lead, Coral)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Coral Plating Mk I"
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Lead, Coral II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Coral Plating Mk II"
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Osprey" "Drowned Osprey (Lead, Siltwake)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Siltwake Afterburner Mk I"
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Osprey" "Drowned Osprey (Lead, Siltwake II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Siltwake Afterburner Mk II"
+		"Warden Core"
+		"Shoal Glass" 25
+
+
+# The thirteenth line (v0.3.4): the Driftnet Ramscoop, on a Hauler (worn, rich,
+# lead) or a Leviathan (deep), like the Coldwater Sink.
+ship "Drowned Hauler" "Drowned Hauler (Worn, Driftnet)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		
+		"Driftnet Ramscoop Mk I"
+		"Shoal Glass" 10
+
+ship "Drowned Hauler" "Drowned Hauler (Rich, Driftnet)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		
+		"Driftnet Ramscoop Mk I"
+		"Shoal Glass" 30
+
+ship "Drowned Hauler" "Drowned Hauler (Rich, Driftnet II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		
+		"Driftnet Ramscoop Mk II"
+		"Shoal Glass" 30
+
+ship "Drowned Leviathan" "Drowned Leviathan (Deep, Driftnet)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Driftnet Ramscoop Mk I"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Leviathan" "Drowned Leviathan (Deep, Driftnet II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Driftnet Ramscoop Mk II"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Hauler" "Drowned Hauler (Lead, Driftnet)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		
+		"Driftnet Ramscoop Mk I"
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Hauler" "Drowned Hauler (Lead, Driftnet II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		
+		"Driftnet Ramscoop Mk II"
+		"Warden Core"
+		"Shoal Glass" 25
+
+# BEGIN Lamprey line (generated by tools/lines/addline.py; do not edit by hand)
+# The Lamprey line: the Lamprey Launcher on a Bulk Freighter (worn, rich, lead) or a Bactrian (deep),
+# each the Coral variant of that hull and kind with the Coral Plating swapped
+# for it and loaded with Glass Lamprey x10.
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Worn, Lamprey)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Shoal Glass" 10
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Rich, Lamprey)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Rich, Lamprey II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Lamprey Launcher Mk II"
+		"Glass Lamprey" 10
+		"Shoal Glass" 30
+
+ship "Drowned Bactrian" "Drowned Bactrian (Deep, Lamprey)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Bactrian" "Drowned Bactrian (Deep, Lamprey II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Lamprey Launcher Mk II"
+		"Glass Lamprey" 10
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Lead, Lamprey)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Lead, Lamprey II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Lamprey Launcher Mk II"
+		"Glass Lamprey" 10
+		"Warden Core"
+		"Shoal Glass" 25
+# END Lamprey line
+
+# Restless wrecks (v0.3, DESIGN.md section 15): drowned hulls with Warden weapon
+# copies still in their hardpoints, spawned by the mod's code as the fleet
+# "Shoal Restless Wrecks". They are derelicts like any other wreck, and their
+# weapons are dormant while they are disabled. Uncapturable, so the Warden
+# copies (unplunderable) cannot be taken by capturing the hull either. Liquid
+# nitrogen coolers keep them from cooking when they wake, and the three warship
+# hulls carry an extra RT-I so the weapons have something to draw on. Loot: 15 to 30
+# glass, and a Warden Core aboard the three warship hulls.
+
+ship "Drowned Hauler" "Drowned Hauler (Restless)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Osprey" "Drowned Osprey (Restless)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Restless)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Falcon" "Drowned Falcon (Restless)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Leviathan" "Drowned Leviathan (Restless)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Bactrian" "Drowned Bactrian (Restless)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Husk-Slice Turret" 2
+		"Warden Shield Disruptor Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+
+# Ambushers (DESIGN.md section 17): restless hulls that woke and stayed awake, for
+# the combat jobs in "shoal ambushes.txt" (fleets "Shoal Ambushers" and "Shoal
+# Ambush Hunter"). Same Warden copies and uncapturable, but they carry exotics:
+# "(Ambusher)" none, "(Ambusher, X)" a Mk I of line X, "(Ambusher, X II)" a Mk II.
+# Freighter hulls (Hauler, Bulk Freighter) carry at most one; the four warship
+# hulls (Osprey, Falcon, Leviathan, Bactrian) up to three. An exotic takes the
+# place of what it replaces (Tidecutter a Particle Cannon, Abyssal an RT-I, Undertow
+# the thruster, Eddy the steering, Brine the battery, Coldwater a nitrogen cooler,
+# Glimmer the Warder, Riptide a turret if no mount is free; the Driftnet Ramscoop,
+# the thirteenth line since v0.3.4, only needs free room; the Lamprey Launcher,
+# the fourteenth since v0.3.5, takes a Piercer launcher's gun port, else a
+# Particle Cannon's, and is loaded with 10 Glass Lampreys); where that is not
+# enough room, a smaller thruster, steering or battery, or fewer launchers. Every
+# variant fits its hull and runs cooler than it dissipates. Loot as the restless
+# hulls: 15 to 30 glass, a Warden Core on the Falcon, Leviathan and Bactrian.
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Tidecutter)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Tidecutter Mk I"
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Tidecutter II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Tidecutter Mk II"
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Riptide)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		"Riptide Turret Mk I"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Riptide II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		"Riptide Turret Mk II"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Glassweave)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"Glassweave Shield Mk I"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Glassweave II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"Glassweave Shield Mk II"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Abyssal)"
+	uncapturable
+	outfits
+		"Abyssal Cell Mk I"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Abyssal II)"
+	uncapturable
+	outfits
+		"Abyssal Cell Mk II"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Undertow)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"Undertow Thruster Mk I"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Undertow II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"Undertow Thruster Mk II"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Coralgraft)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"Coralgraft Mender Mk I"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Coralgraft II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"Coralgraft Mender Mk II"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Eddy)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X2700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Eddy II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X2700 Ion Thruster"
+		"Eddy Steering Mk II"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Brine)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"Brine Capacitor Mk I"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Brine II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"Brine Capacitor Mk II"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Coldwater)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Coldwater Sink Mk I"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Coldwater II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Coldwater Sink Mk II"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Glimmer)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		"Glimmer Point Defense Mk I"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Glimmer II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		"Glimmer Point Defense Mk II"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Coral)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"Coral Plating Mk I"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Coral II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"Coral Plating Mk II"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Siltwake)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X2700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Siltwake Afterburner Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Siltwake II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X2700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Siltwake Afterburner Mk II"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Driftnet)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"Driftnet Ramscoop Mk I"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Driftnet II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"Driftnet Ramscoop Mk II"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Lamprey)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Hauler" "Drowned Hauler (Ambusher, Lamprey II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Lamprey Launcher Mk II"
+		"Glass Lamprey" 10
+		"Warden Shield Disruptor Turret"
+		
+		"Shoal Glass" 15
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Tidecutter)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Tidecutter Mk I"
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Tidecutter II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Tidecutter Mk II"
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Riptide)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		"Riptide Turret Mk I"
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Riptide II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		"Riptide Turret Mk II"
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Glassweave)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"Glassweave Shield Mk I"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Glassweave II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"Glassweave Shield Mk II"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Abyssal)"
+	uncapturable
+	outfits
+		"Abyssal Cell Mk I"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Abyssal II)"
+	uncapturable
+	outfits
+		"Abyssal Cell Mk II"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Undertow)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"Undertow Thruster Mk I"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Undertow II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"Undertow Thruster Mk II"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Coralgraft)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"Coralgraft Mender Mk I"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Coralgraft II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"Coralgraft Mender Mk II"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Eddy)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X2700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Eddy II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X2700 Ion Thruster"
+		"Eddy Steering Mk II"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Brine)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"Brine Capacitor Mk I"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Brine II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"Brine Capacitor Mk II"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Coldwater)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Coldwater Sink Mk I"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Coldwater II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Coldwater Sink Mk II"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Glimmer)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret" 2
+		"Glimmer Point Defense Mk I"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Glimmer II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret" 2
+		"Glimmer Point Defense Mk II"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Coral)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"Coral Plating Mk I"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Coral II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"Coral Plating Mk II"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Siltwake)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X2700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Siltwake Afterburner Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Siltwake II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X2700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Siltwake Afterburner Mk II"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Driftnet)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"Driftnet Ramscoop Mk I"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Driftnet II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"Driftnet Ramscoop Mk II"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Lamprey)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Ambusher, Lamprey II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Lamprey Launcher Mk II"
+		"Glass Lamprey" 10
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 30
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Tidecutter)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Tidecutter Mk I"
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Tidecutter II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Tidecutter Mk II"
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Riptide)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Riptide Turret Mk I"
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Riptide II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Riptide Turret Mk II"
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Glassweave)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"Glassweave Shield Mk I"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Glassweave II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"Glassweave Shield Mk II"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Abyssal)"
+	uncapturable
+	outfits
+		"Abyssal Cell Mk I"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Abyssal II)"
+	uncapturable
+	outfits
+		"Abyssal Cell Mk II"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Undertow)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"Undertow Thruster Mk I"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Undertow II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"Undertow Thruster Mk II"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Coralgraft)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"Coralgraft Mender Mk I"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Coralgraft II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"Coralgraft Mender Mk II"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Eddy)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Eddy II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"Eddy Steering Mk II"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Brine)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"Brine Capacitor Mk I"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Brine II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"Brine Capacitor Mk II"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Coldwater)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Coldwater Sink Mk I"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Coldwater II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Coldwater Sink Mk II"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Glimmer)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Glimmer Point Defense Mk I"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Glimmer II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Glimmer Point Defense Mk II"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Coral)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"Coral Plating Mk I"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Coral II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"Coral Plating Mk II"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Siltwake)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Siltwake Afterburner Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Siltwake II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Siltwake Afterburner Mk II"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Driftnet)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"Driftnet Ramscoop Mk I"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Driftnet II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"Driftnet Ramscoop Mk II"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Lamprey)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Lamprey II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Lamprey Launcher Mk II"
+		"Glass Lamprey" 10
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Tidecutter II, Coralgraft)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"Coralgraft Mender Mk I"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Tidecutter Mk II"
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Riptide, Eddy)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Riptide Turret Mk I"
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Glassweave, Brine)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"Brine Capacitor Mk I"
+		"Glassweave Shield Mk I"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Abyssal, Coldwater)"
+	uncapturable
+	outfits
+		"Abyssal Cell Mk I"
+		"Coldwater Sink Mk I"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Undertow II, Glimmer)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"Undertow Thruster Mk II"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Glimmer Point Defense Mk I"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Coralgraft, Coral)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"Coralgraft Mender Mk I"
+		"Coral Plating Mk I"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Eddy, Siltwake)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Siltwake Afterburner Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Brine, Driftnet)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"Brine Capacitor Mk I"
+		"Driftnet Ramscoop Mk I"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Coldwater II, Lamprey)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Coldwater Sink Mk II"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Glimmer, Tidecutter)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Tidecutter Mk I"
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Glimmer Point Defense Mk I"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Coral, Riptide)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"Coral Plating Mk I"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Riptide Turret Mk I"
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Siltwake, Glassweave)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"Glassweave Shield Mk I"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Siltwake Afterburner Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Driftnet II, Abyssal)"
+	uncapturable
+	outfits
+		"Abyssal Cell Mk I"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"Driftnet Ramscoop Mk II"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Lamprey, Undertow)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"Undertow Thruster Mk I"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Tidecutter II, Abyssal, Brine)"
+	uncapturable
+	outfits
+		"Abyssal Cell Mk I"
+		"Liquid Nitrogen Cooler"
+		"Brine Capacitor Mk I"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Tidecutter Mk II"
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Riptide, Undertow, Coldwater)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Coldwater Sink Mk I"
+		"LP036a Battery Pack"
+		"Undertow Thruster Mk I"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Riptide Turret Mk I"
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Glassweave II, Coralgraft, Glimmer)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"Glassweave Shield Mk II"
+		"Coralgraft Mender Mk I"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Glimmer Point Defense Mk I"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Abyssal, Eddy, Coral)"
+	uncapturable
+	outfits
+		"Abyssal Cell Mk I"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"Coral Plating Mk I"
+		"X3700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Undertow II, Brine, Siltwake)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"Brine Capacitor Mk I"
+		"Undertow Thruster Mk II"
+		"X3200 Ion Steering"
+		"Siltwake Afterburner Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Coralgraft, Coldwater, Driftnet)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Coldwater Sink Mk I"
+		"LP036a Battery Pack"
+		"Driftnet Ramscoop Mk I"
+		"Coralgraft Mender Mk I"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Eddy II, Glimmer, Lamprey)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"Eddy Steering Mk II"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Glimmer Point Defense Mk I"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Brine, Coral, Tidecutter)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"Brine Capacitor Mk I"
+		"Coral Plating Mk I"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Tidecutter Mk I"
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Coldwater II, Siltwake, Riptide)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Coldwater Sink Mk II"
+		"LP036a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Siltwake Afterburner Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Riptide Turret Mk I"
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Glimmer, Driftnet, Glassweave)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"Glassweave Shield Mk I"
+		"Driftnet Ramscoop Mk I"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Glimmer Point Defense Mk I"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Coral II, Lamprey, Abyssal)"
+	uncapturable
+	outfits
+		"Abyssal Cell Mk I"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"Coral Plating Mk II"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Siltwake, Tidecutter, Undertow)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"Undertow Thruster Mk I"
+		"X3200 Ion Steering"
+		"Siltwake Afterburner Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Tidecutter Mk I"
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Driftnet II, Riptide, Coralgraft)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"Driftnet Ramscoop Mk II"
+		"Coralgraft Mender Mk I"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Riptide Turret Mk I"
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Osprey" "Drowned Osprey (Ambusher, Lamprey, Glassweave, Eddy)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Liquid Nitrogen Cooler"
+		"LP036a Battery Pack"
+		"Glassweave Shield Mk I"
+		"X3700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Warden Warder Anti-Missile"
+		
+		"Shoal Glass" 18
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Tidecutter)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Tidecutter Mk I"
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Tidecutter II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Tidecutter Mk II"
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Riptide)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Husk-Slice Turret"
+		"Riptide Turret Mk I"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Riptide II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Husk-Slice Turret"
+		"Riptide Turret Mk II"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Glassweave)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"Glassweave Shield Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Glassweave II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"Glassweave Shield Mk II"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Abyssal)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"Abyssal Cell Mk I"
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Abyssal II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"Abyssal Cell Mk II"
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Undertow)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Undertow Thruster Mk I"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Undertow II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Undertow Thruster Mk II"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Coralgraft)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"Coralgraft Mender Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Coralgraft II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"Coralgraft Mender Mk II"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Eddy)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Eddy II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"Eddy Steering Mk II"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Brine)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"Brine Capacitor Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Brine II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"Brine Capacitor Mk II"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Coldwater)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler"
+		"Coldwater Sink Mk I"
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Coldwater II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler"
+		"Coldwater Sink Mk II"
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Glimmer)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Glimmer Point Defense Mk I"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Glimmer II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Glimmer Point Defense Mk II"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Coral)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"Coral Plating Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Coral II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"Coral Plating Mk II"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Siltwake)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Siltwake Afterburner Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Siltwake II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Siltwake Afterburner Mk II"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Driftnet)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"Driftnet Ramscoop Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Driftnet II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"Driftnet Ramscoop Mk II"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Lamprey)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Lamprey II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Lamprey Launcher Mk II"
+		"Glass Lamprey" 10
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Tidecutter, Abyssal)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"Abyssal Cell Mk I"
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Tidecutter Mk I"
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Riptide II, Undertow)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Undertow Thruster Mk I"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Husk-Slice Turret"
+		"Riptide Turret Mk II"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Glassweave, Coralgraft)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"Glassweave Shield Mk I"
+		"Coralgraft Mender Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Abyssal, Eddy)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"Abyssal Cell Mk I"
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"X4700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Undertow, Brine)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"Brine Capacitor Mk I"
+		"Undertow Thruster Mk I"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Coralgraft II, Coldwater)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler"
+		"Coldwater Sink Mk I"
+		"LP036a Battery Pack"
+		"Coralgraft Mender Mk II"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Eddy, Glimmer)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Glimmer Point Defense Mk I"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Brine, Coral)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"Brine Capacitor Mk I"
+		"Coral Plating Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Coldwater, Siltwake)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler"
+		"Coldwater Sink Mk I"
+		"LP036a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Siltwake Afterburner Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Glimmer II, Driftnet)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"Driftnet Ramscoop Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Glimmer Point Defense Mk II"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Coral, Lamprey)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"Coral Plating Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Siltwake, Tidecutter)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Siltwake Afterburner Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Tidecutter Mk I"
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Driftnet, Riptide)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"Driftnet Ramscoop Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Husk-Slice Turret"
+		"Riptide Turret Mk I"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Lamprey II, Glassweave)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"Glassweave Shield Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Lamprey Launcher Mk II"
+		"Glass Lamprey" 10
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Tidecutter, Undertow, Glimmer)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Undertow Thruster Mk I"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Tidecutter Mk I"
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Glimmer Point Defense Mk I"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Riptide II, Coralgraft, Coral)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"Coralgraft Mender Mk I"
+		"Coral Plating Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Husk-Slice Turret"
+		"Riptide Turret Mk II"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Glassweave, Eddy, Siltwake)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"Glassweave Shield Mk I"
+		"X4700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Siltwake Afterburner Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Abyssal II, Brine, Driftnet)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"Abyssal Cell Mk II"
+		"Liquid Nitrogen Cooler" 2
+		"Brine Capacitor Mk I"
+		"Driftnet Ramscoop Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Undertow, Coldwater, Lamprey)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler"
+		"Coldwater Sink Mk I"
+		"LP072a Battery Pack"
+		"Undertow Thruster Mk I"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Coralgraft II, Glimmer, Tidecutter)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"Coralgraft Mender Mk II"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Tidecutter Mk I"
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Glimmer Point Defense Mk I"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Eddy, Coral, Riptide)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"Coral Plating Mk I"
+		"X4700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Warden Husk-Slice Turret"
+		"Riptide Turret Mk I"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Brine II, Siltwake, Glassweave)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"Brine Capacitor Mk II"
+		"Glassweave Shield Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Siltwake Afterburner Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Coldwater, Driftnet, Abyssal)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"Abyssal Cell Mk I"
+		"Liquid Nitrogen Cooler"
+		"Coldwater Sink Mk I"
+		"LP036a Battery Pack"
+		"Driftnet Ramscoop Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Glimmer II, Lamprey, Undertow)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Undertow Thruster Mk I"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Glimmer Point Defense Mk II"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Coral, Tidecutter, Coralgraft)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"Coralgraft Mender Mk I"
+		"Coral Plating Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Tidecutter Mk I"
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Siltwake II, Riptide, Eddy)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"X4700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Siltwake Afterburner Mk II"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Warden Husk-Slice Turret"
+		"Riptide Turret Mk I"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Driftnet, Glassweave, Brine)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"Brine Capacitor Mk I"
+		"Glassweave Shield Mk I"
+		"Driftnet Ramscoop Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Falcon" "Drowned Falcon (Ambusher, Lamprey II, Abyssal, Coldwater)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"Abyssal Cell Mk I"
+		"Liquid Nitrogen Cooler"
+		"Coldwater Sink Mk I"
+		"LP036a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Lamprey Launcher Mk II"
+		"Glass Lamprey" 10
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 22
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Tidecutter)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 3
+		"Tidecutter Mk I"
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Tidecutter II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 3
+		"Tidecutter Mk II"
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Riptide)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret"
+		"Riptide Turret Mk I"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Riptide II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret"
+		"Riptide Turret Mk II"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Glassweave)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Glassweave Shield Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Glassweave II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Glassweave Shield Mk II"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Abyssal)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"Abyssal Cell Mk I"
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Abyssal II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"Abyssal Cell Mk II"
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Undertow)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Undertow Thruster Mk I"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Undertow II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Undertow Thruster Mk II"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Coralgraft)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Coralgraft Mender Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Coralgraft II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Coralgraft Mender Mk II"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Eddy)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Eddy II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"Eddy Steering Mk II"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Brine)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"Brine Capacitor Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Brine II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"Brine Capacitor Mk II"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Coldwater)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler"
+		"Coldwater Sink Mk I"
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Coldwater II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler"
+		"Coldwater Sink Mk II"
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Glimmer)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Glimmer Point Defense Mk I"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Glimmer II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Glimmer Point Defense Mk II"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Coral)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Coral Plating Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Coral II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Coral Plating Mk II"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Siltwake)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Siltwake Afterburner Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Siltwake II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Siltwake Afterburner Mk II"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Driftnet)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Driftnet Ramscoop Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Driftnet II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Driftnet Ramscoop Mk II"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Lamprey)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 3
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Lamprey II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 3
+		"Lamprey Launcher Mk II"
+		"Glass Lamprey" 10
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Tidecutter, Coralgraft)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Coralgraft Mender Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 3
+		"Tidecutter Mk I"
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Riptide, Eddy)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret"
+		"Riptide Turret Mk I"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Glassweave II, Brine)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"Brine Capacitor Mk I"
+		"Glassweave Shield Mk II"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Abyssal, Coldwater)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"Abyssal Cell Mk I"
+		"Liquid Nitrogen Cooler"
+		"Coldwater Sink Mk I"
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Undertow, Glimmer)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Undertow Thruster Mk I"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Glimmer Point Defense Mk I"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Coralgraft, Coral)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Coralgraft Mender Mk I"
+		"Coral Plating Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Eddy II, Siltwake)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"Eddy Steering Mk II"
+		"Siltwake Afterburner Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Brine, Driftnet)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"Brine Capacitor Mk I"
+		"Driftnet Ramscoop Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Coldwater, Lamprey)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler"
+		"Coldwater Sink Mk I"
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 3
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Glimmer, Tidecutter)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 3
+		"Tidecutter Mk I"
+		"Warden Shield Disruptor Turret" 2
+		"Glimmer Point Defense Mk I"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Coral II, Riptide)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Coral Plating Mk II"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret"
+		"Riptide Turret Mk I"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Siltwake, Glassweave)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Glassweave Shield Mk I"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Siltwake Afterburner Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Driftnet, Abyssal)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"Abyssal Cell Mk I"
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Driftnet Ramscoop Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Lamprey, Undertow)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Undertow Thruster Mk I"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 3
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Tidecutter II, Coralgraft, Coldwater)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler"
+		"Coldwater Sink Mk I"
+		"LP072a Battery Pack"
+		"Coralgraft Mender Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 3
+		"Tidecutter Mk II"
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Riptide, Eddy, Glimmer)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret"
+		"Riptide Turret Mk I"
+		"Glimmer Point Defense Mk I"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Glassweave II, Brine, Coral)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"Brine Capacitor Mk I"
+		"Glassweave Shield Mk II"
+		"Coral Plating Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Abyssal, Coldwater, Siltwake)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"Abyssal Cell Mk I"
+		"Liquid Nitrogen Cooler"
+		"Coldwater Sink Mk I"
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Siltwake Afterburner Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Undertow II, Glimmer, Driftnet)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Driftnet Ramscoop Mk I"
+		"Undertow Thruster Mk II"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Glimmer Point Defense Mk I"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Coralgraft, Coral, Lamprey)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Coralgraft Mender Mk I"
+		"Coral Plating Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 3
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Eddy II, Siltwake, Tidecutter)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"Eddy Steering Mk II"
+		"Siltwake Afterburner Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 3
+		"Tidecutter Mk I"
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Brine, Driftnet, Riptide)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"Brine Capacitor Mk I"
+		"Driftnet Ramscoop Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret"
+		"Riptide Turret Mk I"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Coldwater II, Lamprey, Glassweave)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler"
+		"Coldwater Sink Mk II"
+		"LP072a Battery Pack"
+		"Glassweave Shield Mk I"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 3
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Glimmer, Tidecutter, Abyssal)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"Abyssal Cell Mk I"
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 3
+		"Tidecutter Mk I"
+		"Warden Shield Disruptor Turret" 2
+		"Glimmer Point Defense Mk I"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Coral II, Riptide, Undertow)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Coral Plating Mk II"
+		"Undertow Thruster Mk I"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret"
+		"Riptide Turret Mk I"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Siltwake, Glassweave, Coralgraft)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Glassweave Shield Mk I"
+		"Coralgraft Mender Mk I"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Siltwake Afterburner Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Driftnet II, Abyssal, Eddy)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"Abyssal Cell Mk I"
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Driftnet Ramscoop Mk II"
+		"X4700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 4
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Leviathan" "Drowned Leviathan (Ambusher, Lamprey, Undertow, Brine)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"Brine Capacitor Mk I"
+		"Undertow Thruster Mk I"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 3
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Warden Shield Disruptor Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 25
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Tidecutter)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Tidecutter Mk I"
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Tidecutter II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Tidecutter Mk II"
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Riptide)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Husk-Slice Turret" 2
+		"Riptide Turret Mk I"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Riptide II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Husk-Slice Turret" 2
+		"Riptide Turret Mk II"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Glassweave)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"Glassweave Shield Mk I"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Glassweave II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"Glassweave Shield Mk II"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Abyssal)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"Abyssal Cell Mk I"
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Abyssal II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"Abyssal Cell Mk II"
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Undertow)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"Undertow Thruster Mk I"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Undertow II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"Undertow Thruster Mk II"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Coralgraft)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"Coralgraft Mender Mk I"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Coralgraft II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"Coralgraft Mender Mk II"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Eddy)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Eddy II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"Eddy Steering Mk II"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Brine)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"Brine Capacitor Mk I"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Brine II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"Brine Capacitor Mk II"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Coldwater)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler"
+		"Coldwater Sink Mk I"
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Coldwater II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler"
+		"Coldwater Sink Mk II"
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Glimmer)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Glimmer Point Defense Mk I"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Glimmer II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Glimmer Point Defense Mk II"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Coral)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"Coral Plating Mk I"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Coral II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"Coral Plating Mk II"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Siltwake)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"X4700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Siltwake Afterburner Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Siltwake II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"X4700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Siltwake Afterburner Mk II"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Driftnet)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"Driftnet Ramscoop Mk I"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Driftnet II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"Driftnet Ramscoop Mk II"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Lamprey)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Lamprey II)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Lamprey Launcher Mk II"
+		"Glass Lamprey" 10
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Tidecutter, Eddy)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Tidecutter Mk I"
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Riptide, Brine)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"Brine Capacitor Mk I"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Husk-Slice Turret" 2
+		"Riptide Turret Mk I"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Glassweave, Coldwater)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler"
+		"Coldwater Sink Mk I"
+		"LP144a Battery Pack"
+		"Glassweave Shield Mk I"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Abyssal II, Glimmer)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"Abyssal Cell Mk II"
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Glimmer Point Defense Mk I"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Undertow, Coral)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"Coral Plating Mk I"
+		"Undertow Thruster Mk I"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Coralgraft, Siltwake)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"Coralgraft Mender Mk I"
+		"X4700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Siltwake Afterburner Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Eddy, Driftnet)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"Driftnet Ramscoop Mk I"
+		"X5700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Brine II, Lamprey)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"Brine Capacitor Mk II"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Coldwater, Tidecutter)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler"
+		"Coldwater Sink Mk I"
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Tidecutter Mk I"
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Glimmer, Riptide)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Husk-Slice Turret" 2
+		"Riptide Turret Mk I"
+		"Glimmer Point Defense Mk I"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Coral, Glassweave)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Glassweave Shield Mk I"
+		"Coral Plating Mk I"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Siltwake II, Abyssal)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"Abyssal Cell Mk I"
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"X4700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Siltwake Afterburner Mk II"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Driftnet, Undertow)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"Driftnet Ramscoop Mk I"
+		"Undertow Thruster Mk I"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Lamprey, Coralgraft)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"Coralgraft Mender Mk I"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Tidecutter, Glassweave, Brine)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"Brine Capacitor Mk I"
+		"Glassweave Shield Mk I"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Tidecutter Mk I"
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Riptide II, Abyssal, Coldwater)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"Abyssal Cell Mk I"
+		"Liquid Nitrogen Cooler"
+		"Coldwater Sink Mk I"
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Husk-Slice Turret" 2
+		"Riptide Turret Mk II"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Glassweave, Undertow, Glimmer)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"Glassweave Shield Mk I"
+		"Undertow Thruster Mk I"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Glimmer Point Defense Mk I"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Abyssal II, Coralgraft, Coral)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"Abyssal Cell Mk II"
+		"Liquid Nitrogen Cooler" 2
+		"LP036a Battery Pack"
+		"Coralgraft Mender Mk I"
+		"Coral Plating Mk I"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Undertow, Eddy, Siltwake)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"Undertow Thruster Mk I"
+		"Eddy Steering Mk I"
+		"Siltwake Afterburner Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Coralgraft II, Brine, Driftnet)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"Brine Capacitor Mk I"
+		"Driftnet Ramscoop Mk I"
+		"Coralgraft Mender Mk II"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Eddy, Coldwater, Lamprey)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler"
+		"Coldwater Sink Mk I"
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Brine II, Glimmer, Tidecutter)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"Brine Capacitor Mk II"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Tidecutter Mk I"
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Glimmer Point Defense Mk I"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Coldwater, Coral, Riptide)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler"
+		"Coldwater Sink Mk I"
+		"LP144a Battery Pack"
+		"Coral Plating Mk I"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Husk-Slice Turret" 2
+		"Riptide Turret Mk I"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Glimmer II, Siltwake, Glassweave)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"Glassweave Shield Mk I"
+		"X4700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Siltwake Afterburner Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Glimmer Point Defense Mk II"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Coral, Driftnet, Abyssal)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"Abyssal Cell Mk I"
+		"Liquid Nitrogen Cooler" 2
+		"LP072a Battery Pack"
+		"Driftnet Ramscoop Mk I"
+		"Coral Plating Mk I"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Siltwake II, Lamprey, Undertow)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"Undertow Thruster Mk I"
+		"X4200 Ion Steering"
+		"Siltwake Afterburner Mk II"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Lamprey Launcher Mk I"
+		"Glass Lamprey" 10
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Driftnet, Tidecutter, Coralgraft)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"Driftnet Ramscoop Mk I"
+		"Coralgraft Mender Mk I"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		"Warden Particle Cannon"
+		"Tidecutter Mk I"
+		"Warden Piercer Missile Launcher" 2
+		"Warden Piercer Missile" 40
+		"Warden Shield Disruptor Turret"
+		"Warden Husk-Slice Turret" 2
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+ship "Drowned Bactrian" "Drowned Bactrian (Ambusher, Lamprey II, Riptide, Eddy)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 3
+		"Liquid Nitrogen Cooler" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"Eddy Steering Mk I"
+		"Hyperdrive"
+		"Warden Particle Cannon" 2
+		"Warden Piercer Missile Launcher"
+		"Warden Piercer Missile" 20
+		"Lamprey Launcher Mk II"
+		"Glass Lamprey" 10
+		"Warden Husk-Slice Turret" 2
+		"Riptide Turret Mk I"
+		"Warden Warder Anti-Missile"
+		
+		"Warden Core"
+		"Shoal Glass" 28
+
+# The Breakers' own ships for the combat jobs: a salvage barge and a tug, drowned
+# hulls the Breakers refitted and plated with glass-laced armor.
+ship "Drowned Bulk Freighter" "Drowned Bulk Freighter (Breakers Barge)"
+	uncapturable
+	"display name" "Breakers Barge"
+	add attributes
+		"shields" 36000
+		"hull" 18000
+		"shield generation" 4
+		"hull repair rate" .6
+		"heat dissipation" .3
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"D67-TM Shield Generator"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		"Heavy Anti-Missile Turret" 2
+		"Heavy Laser Turret" 2
+
+ship "Drowned Hauler" "Drowned Hauler (Breakers Tug)"
+	uncapturable
+	"display name" "Breakers Tug"
+	add attributes
+		"shields" 30000
+		"hull" 15000
+		"shield generation" 3.5
+		"hull repair rate" .5
+		"heat dissipation" .3
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"D67-TM Shield Generator"
+		"X3700 Ion Thruster"
+		"X2200 Ion Steering"
+		"Hyperdrive"
+		"Heavy Anti-Missile Turret" 2
+		"Heavy Laser Turret"
+
+# BEGIN abyss wrecks (tools/deep/abyss.py)
+# The Abyss's wrecks: each line's (Deep, X II) wreck with the Mk III instead.
+
+ship "Drowned Leviathan" "Drowned Leviathan (Abyss, Tidecutter III)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Tidecutter Mk III"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Bactrian" "Drowned Bactrian (Abyss, Riptide III)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Riptide Turret Mk III"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Leviathan" "Drowned Leviathan (Abyss, Glassweave III)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Glassweave Shield Mk III"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Bactrian" "Drowned Bactrian (Abyss, Abyssal III)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal"
+		"Abyssal Cell Mk III"
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Leviathan" "Drowned Leviathan (Abyss, Undertow III)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"Undertow Thruster Mk III"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Bactrian" "Drowned Bactrian (Abyss, Coralgraft III)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Coralgraft Mender Mk III"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Leviathan" "Drowned Leviathan (Abyss, Eddy III)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"Eddy Steering Mk III"
+		"Hyperdrive"
+		
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Bactrian" "Drowned Bactrian (Abyss, Brine III)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Brine Capacitor Mk III"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Leviathan" "Drowned Leviathan (Abyss, Coldwater III)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Coldwater Sink Mk III"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Bactrian" "Drowned Bactrian (Abyss, Glimmer III)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Glimmer Point Defense Mk III"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Bactrian" "Drowned Bactrian (Abyss, Coral III)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Coral Plating Mk III"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Leviathan" "Drowned Leviathan (Abyss, Siltwake III)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X3700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Siltwake Afterburner Mk III"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Leviathan" "Drowned Leviathan (Abyss, Driftnet III)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP072a Battery Pack"
+		"X4700 Ion Thruster"
+		"X3200 Ion Steering"
+		"Hyperdrive"
+		
+		"Driftnet Ramscoop Mk III"
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+ship "Drowned Bactrian" "Drowned Bactrian (Abyss, Lamprey III)"
+	uncapturable
+	outfits
+		"RT-I Radiothermal" 2
+		"LP144a Battery Pack"
+		"X5700 Ion Thruster"
+		"X4200 Ion Steering"
+		"Hyperdrive"
+		
+		"Lamprey Launcher Mk III"
+		"Glass Lamprey" 10
+		"Deep Lattice"
+		"Shoal Glass" 30
+
+# END abyss wrecks

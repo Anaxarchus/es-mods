@@ -1,0 +1,318 @@
+class Race
+
+// One race of a league, lap by lap (World.race_day). Each car's lap time is
+// the circuit's base lap times a factor:
+//   1 - PACE_K x (pace - ln BASE)     the car: the circuit's weights over the
+//                                     logs of propulsion, handling and armour
+//     - PILOT_K x pilot skill         the pilot
+//     - setup                         the race engineer's setup, from skill
+//                                     with noise (less for a steady one)
+//     - form + approach               events' form; aggressive is quicker
+//                                     (and riskier), conservative slower
+// and each lap adds noise. The grid is set by a qualifying lap. Each car
+// stops once, on a lap the engineer picks; the pit crew chief's skill sets
+// the stop and the chance it is botched. Reliability sets the chance of a
+// mechanical failure; the circuit's hazard, armour, the pilot's skill and
+// aggression and the approach the chance of a crash (most end the race, some
+// cost time). A faster car must pass the one ahead: a chance from the pace
+// gap and the pilot's aggression, else it is held up. The story names lead
+// changes, the player's battles, every retirement and botched stop.
+//
+// Every team runs two cars of its one design (its #1 and #2 pilots): the
+// crew work for both. The pit crew services one car at a time: called in on
+// the same lap, the #2 waits for the #1's stop and STACK more (a double
+// stack), unless a good engineer (or a Strategist) keeps them a lap apart.
+// Team orders: a #1 behind its #2 gets ORDERS on its passing move, a #2
+// behind its #1 half of it less. A car's pace rank is its design's among
+// the teams (both cars share it); a pilot is read against the middle of
+// the team's two slots (expected).
+
+float PACE_K = 0.06
+float BASE = 20.0
+float PILOT_K = 0.015
+float SETUP_K = 0.006
+float SETUP_NOISE = 0.004
+float LAP_NOISE = 0.004
+float GRID_GAP = 0.6
+float PIT_LANE = 18.0
+float STOP_BASE = 2.8
+float STOP_SKILL = 0.5
+float BOTCH = 6.0
+float FAIL_BASE = 0.1
+float REL_REF = 25.0
+float ARMOUR_REF = 30.0
+// Lap factor and crash risk, by approach.
+[]float approach_pace = [0.004, 0.0, -0.004]
+[]float approach_risk = [0.6, 1.0, 1.6]
+float PASS_BASE = 0.45
+// Team orders: the #1 behind its #2 gets this on its passing move.
+float ORDERS = 0.3
+// A double stack: the #2 waits for the #1's stop and this much more.
+float STACK = 1.0
+// Points to the top ten of the twenty cars, as in F1.
+[]int points_table = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1]
+
+Names names = Names()
+Fmt fmt = Fmt()
+Lore lore = Lore()
+
+// Where a car of this pace rank (among the teams) is expected to finish: the
+// middle of its team's two slots.
+float expected(int rank):
+    return 2.0 * float(rank) - 0.5
+
+float log(float x):
+    float v = globalThis.Math.log(x if x > 0.1 else 0.1)
+    return v
+
+float pace(Team t, int kind):
+    []float w = names.kind_weights[kind]
+    return w[0] * log(t.levels[0]) + w[1] * log(t.levels[1]) + w[2] * log(t.levels[3])
+
+Result run(World w, int league, int round, bool full):
+    Result r = Result()
+    r.league = league
+    r.season = w.season
+    r.round = round
+    r.day = w.day
+    int ci = w.circuit_of(league, round)
+    r.circuit = ci
+    int kind = names.circuit_kinds[ci]
+    int laps = names.kind_laps[kind]
+    float base = names.kind_lap[kind]
+    float hazard = names.kind_hazard[kind]
+    string where = names.circuit_titles[ci]
+    Rng rng = w.rng
+    []Team teams = w.league_teams(league)
+    if teams.len() == 0:
+        return r
+    // Two cars a team, the same design: the #1 pilot's (seat 0) and the
+    // #2's (seat Team.SECOND). The crew work for both.
+    []Team field = []
+    []int car_no = []
+    []Person drivers = []
+    for t in teams:
+        for c in 0..<2:
+            field.append(t)
+            car_no.append(c)
+            drivers.append(w.seat(t, 0 if c == 0 else t.SECOND))
+    int n = field.len()
+    // Each car's lap factor, risk, strategy and staff.
+    []float factor = []
+    []float car_pace = []
+    []float setup = []
+    []float noise = []
+    []float pass_bias = []
+    []float defend = []
+    []int pit_lap = []
+    []float stop = []
+    []int fail_lap = []
+    []int crash_lap = []
+    []bool crash_out = []
+    for i in 0..<n:
+        Team t = field[i]
+        Person pilot = drivers[i]
+        Person eng = w.seat(t, 1)
+        Person pit = w.seat(t, 3)
+        float p = pace(t, kind)
+        car_pace.append(p)
+        float s = SETUP_K * eng.skill + SETUP_NOISE * rng.gauss() * (1.0 - 0.5 * eng.trait)
+        // Earned traits (Lore): small edges on the same inputs.
+        if lore.has(eng, lore.WIZARD):
+            s += lore.SETUP
+        setup.append(s)
+        float f = 1.0 - PACE_K * (p - log(BASE)) - PILOT_K * pilot.skill - s - t.form + approach_pace[t.approach] - lore.pace(pilot, kind)
+        factor.append(f)
+        noise.append(LAP_NOISE * (1.0 - 0.3 * pilot.skill) * (lore.STEADY_NOISE if lore.has(pilot, lore.METRONOME) else 1.0))
+        pass_bias.append(0.2 * pilot.trait + 0.1 * pilot.skill + (0.1 if t.approach == 2 else (-0.1 if t.approach == 0 else 0.0)) + (lore.PASS if lore.has(pilot, lore.COMEBACK) else 0.0))
+        defend.append(lore.DEFEND if lore.has(pilot, lore.NERVES) else 0.0)
+        // The engineer's stop: half distance, a better engineer reads it better.
+        int off = rng.range(-2, 2)
+        if eng.skill > 0.3:
+            off = rng.range(-1, 1)
+        if lore.has(eng, lore.STRATEGIST):
+            off = -1 if off < -1 else (1 if off > 1 else off)
+        pit_lap.append(laps / 2 + off)
+        float st = STOP_BASE - STOP_SKILL * pit.skill + float(globalThis.Math.abs(rng.gauss())) * 0.3 * (1.0 - 0.4 * pit.trait)
+        if lore.has(pit, lore.LIGHTNING):
+            st -= lore.STOP
+        if rng.chance(BOTCH * (1.0 - 0.6 * pit.skill) * (lore.BOTCH if lore.has(pit, lore.STEADY) else 1.0)):
+            st += rng.between(6.0, 14.0)
+        stop.append(st)
+        float rel = t.levels[2]
+        float pf = FAIL_BASE * REL_REF / (rel if rel > 1.0 else 1.0)
+        fail_lap.append(rng.range(2, laps) if rng.unit() < pf else 0)
+        float arm = t.levels[3]
+        float pc = hazard * float(globalThis.Math.pow(ARMOUR_REF / (arm if arm > 1.0 else 1.0), 0.6)) * (1.0 + 0.5 * pilot.trait) * (1.0 - 0.35 * pilot.skill) * approach_risk[t.approach] * (lore.KIND_RISK if kind == 2 && lore.has(pilot, lore.HAZARD) else 1.0)
+        bool crash = rng.unit() < pc
+        crash_lap.append(rng.range(1, laps) if crash else 0)
+        crash_out.append(crash && rng.chance(60.0))
+    // One crew, two cars: called in on the same lap, the #2 waits for the #1's
+    // stop (a double stack), unless a good engineer (or a Strategist) keeps
+    // them a lap apart.
+    []float stack = []
+    for i in 0..<n:
+        stack.append(0.0)
+    for i in 0..<n:
+        if car_no[i] == 1 && pit_lap[i] == pit_lap[i - 1]:
+            Person eng = w.seat(field[i], 1)
+            if eng.skill > 0.3 || lore.has(eng, lore.STRATEGIST):
+                pit_lap[i] = pit_lap[i] + 1
+            else:
+                stack[i] = stop[i - 1] + STACK
+    // The car's pace rank among the teams (1 the fastest design; a team's
+    // two cars share it), to read the pilots' records against.
+    []int rank = []
+    for i in 0..<n:
+        int k = 1
+        for t in teams:
+            if pace(t, kind) > car_pace[i]:
+                k += 1
+        rank.append(k)
+    // Qualifying.
+    []float quali = []
+    for i in 0..<n:
+        quali.append(base * (factor[i] + 0.003 * rng.gauss()))
+    []int order = []
+    for i in 0..<n:
+        order.append(i)
+    order.sort(bool(int a, int b): return quali[a] < quali[b])
+    []float time = []
+    for i in 0..<n:
+        time.append(0.0)
+    []int grid = []
+    for i in 0..<n:
+        grid.append(0)
+    for k in 0..<n:
+        grid[order[k]] = k + 1
+        time[order[k]] = float(k) * GRID_GAP
+    []string who = []
+    []bool mine = []
+    for i in 0..<n:
+        Person d = drivers[i]
+        who.append((d.name if d.id != 0 else "a stand-in") + " (" + field[i].name + ")")
+        mine.append(field[i].player)
+    if full:
+        r.story.append("0\t" + who[order[0]] + " starts from pole at the " + where + " (" + names.kind_names[kind] + ", " + string(laps) + " laps).")
+        for i in 0..<n:
+            if mine[i]:
+                r.story.append("0\t" + who[i] + " lines up P" + string(grid[i]) + ".")
+    []int status = []
+    []int done = []
+    for i in 0..<n:
+        status.append(0)
+        done.append(0)
+    []int out = []
+    float best = 1000000.0
+    int best_i = 0
+    int lead_told = 0
+    for lap in 1..=laps:
+        int leader = order[0]
+        for i in order:
+            float lt = base * factor[i] * (1.0 + noise[i] * rng.quick())
+            if lap == 1:
+                lt += 1.5
+            if crash_lap[i] == lap && !crash_out[i]:
+                float lost = rng.between(5.0, 12.0)
+                lt += lost
+                if full && (mine[i] || rng.chance(50.0)):
+                    r.story.append(string(lap) + "\t" + who[i] + " clips a hazard and loses " + string(int(lost)) + " seconds.")
+            if lap != 1 && lt < best && !(crash_lap[i] == lap):
+                best = lt
+                best_i = i
+            if pit_lap[i] == lap:
+                lt += PIT_LANE + stop[i] + stack[i]
+                if full && (mine[i] || stop[i] > 6.0):
+                    if stop[i] > 6.0:
+                        r.story.append(string(lap) + "\t" + who[i] + "'s stop goes wrong: " + fmt.one_decimal(stop[i]) + " seconds stationary.")
+                    else:
+                        r.story.append(string(lap) + "\t" + who[i] + " pits: " + fmt.one_decimal(stop[i]) + " seconds" + (", after waiting " + fmt.one_decimal(stack[i]) + " for the other car (a double stack)" if stack[i] > 0.0 else "") + ".")
+            time[i] = time[i] + lt
+            done[i] = lap
+        // Retirements this lap.
+        []int still = []
+        for i in order:
+            if fail_lap[i] == lap:
+                status[i] = 1
+                out.append(i)
+                if full:
+                    r.story.append(string(lap) + "\t" + who[i] + " retires: " + failure_word(rng) + ".")
+            else if crash_lap[i] == lap && crash_out[i]:
+                status[i] = 2
+                out.append(i)
+                if full:
+                    r.story.append(string(lap) + "\t" + who[i] + " crashes out " + crash_word(rng, kind) + ".")
+            else:
+                still.append(i)
+        order = still
+        // Overtakes: one bubble pass from the front.
+        for k in 1..<order.len():
+            int a = order[k - 1]
+            int b = order[k]
+            if time[b] < time[a]:
+                float edge = (factor[a] - factor[b]) * 40.0
+                float chance = PASS_BASE + pass_bias[b] - 0.5 * pass_bias[a] + edge - defend[a]
+                // Team orders: a #2 lets its #1 by; a #2 does not race its #1 hard.
+                if field[a].id == field[b].id:
+                    chance += ORDERS if car_no[b] == 0 else -ORDERS / 2.0
+                if rng.unit() < chance:
+                    order[k - 1] = b
+                    order[k] = a
+                    if full && (k - 1 == 0 || mine[a] || mine[b]):
+                        if k - 1 == 0:
+                            lead_told = lap
+                            r.story.append(string(lap) + "\t" + who[b] + " takes the lead from " + who[a] + ".")
+                        else if mine[b]:
+                            r.story.append(string(lap) + "\t" + who[b] + " passes " + who[a] + " for P" + string(k) + ".")
+                        else:
+                            r.story.append(string(lap) + "\t" + who[a] + " loses P" + string(k) + " to " + who[b] + ".")
+                else:
+                    time[b] = time[a] + 0.3
+            else if time[b] - time[a] < 0.3:
+                time[b] = time[a] + 0.3
+        if order.len() > 0 && order[0] != leader && full && status[leader] == 0 && lead_told != lap:
+            r.story.append(string(lap) + "\t" + who[order[0]] + " leads after " + who[leader] + " stops.")
+    // Classification: finishers in order, then retirements, last out last.
+    []int classified = order.copy()
+    for k in 0..<out.len():
+        classified.append(out[out.len() - 1 - k])
+    float win_time = time[classified[0]] if classified.len() > 0 else 0.0
+    for k in 0..<classified.len():
+        int i = classified[k]
+        r.order.append(field[i].id)
+        r.pilots.append(drivers[i].id)
+        r.cars.append(car_no[i])
+        r.status.append(status[i])
+        r.grid.append(grid[i])
+        r.gaps.append(time[i] - win_time if status[i] == 0 else float(done[i]))
+        r.laps_done.append(done[i])
+        r.points.append(points_table[k] if k < points_table.len() && status[i] == 0 else 0)
+        // Places gained on where the car's pace puts it: its team's rank's
+        // two slots of the grid, 2 x rank - 1 and 2 x rank, on average.
+        r.pilot_obs.append(expected(rank[i]) - float(k + 1) if status[i] == 0 else (-6.0 if status[i] == 2 else 0.0))
+        r.setup_obs.append(setup[i])
+        r.stop_obs.append(stop[i])
+        r.ranks.append(rank[i])
+    r.fastest_team = field[best_i].id
+    r.fastest_pilot = drivers[best_i].id
+    r.fastest = best
+    if full && classified.len() > 0:
+        r.story.append(string(laps) + "\t" + who[classified[0]] + " wins the " + where + ".")
+        for i in 0..<n:
+            int pos = classified.index_of(i) + 1
+            if mine[i] && status[i] == 0 && pos > 1:
+                r.story.append(string(laps) + "\t" + who[i] + " finishes P" + string(pos) + ", " + fmt.one_decimal(time[i] - win_time) + " seconds behind.")
+        r.story.append(string(laps) + "\tFastest lap: " + who[best_i] + ", " + fmt.one_decimal(best) + " seconds.")
+    return r
+
+string failure_word(Rng rng):
+    []string words = ["a drive coil burns out", "the reactor trips", "a steering thruster seizes", "the coolant loop ruptures", "the hull sensors fail", "a fuel line splits"]
+    return words[rng.range(0, words.len() - 1)]
+
+string crash_word(Rng rng, int kind):
+    []string words = ["against a marker buoy", "in a tangle with a slower car", "after a spin at the hairpin"]
+    if kind == 1:
+        words = ["into a drifting rock", "in the asteroid chicane", "clipping a boulder at full burn"]
+    if kind == 2:
+        words = ["in the hazard field", "after a debris strike", "when a mine goes off beside it"]
+    return words[rng.range(0, words.len() - 1)]

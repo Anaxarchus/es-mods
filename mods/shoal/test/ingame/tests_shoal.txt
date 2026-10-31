@@ -1,0 +1,1622 @@
+# Integration tests for "The Shoal" plugin data (workshop, refinery jobs, unlock, salvage lead).
+# Since v0.3 the workshop builds only the Warden Steward line (DESIGN.md section 15).
+# Run one with /root/escfg/run_test.sh "<test name>".
+
+test-data "Shoal Workshop Save Plenty"
+	category "savegame"
+	contents
+		pilot Bobbi Bughunter
+		date 16 11 3013
+		system "~The Shoal"
+		planet "Breaker's Rest"
+		clearance
+		"sort type" 0
+		"sort descending"
+		"reputation with"
+			Pirate 1
+		ship "Star Barge"
+			name "Glass Barge"
+			sprite "ship/star barge"
+			attributes
+				category "Light Freighter"
+				cost 190000
+				mass 70
+				bunks 3
+				"cargo space" 80
+				drag 2.1
+				"engine capacity" 400
+				"fuel capacity" 300
+				"heat dissipation" 0.8
+				hull 50000
+				"shield generation" 50
+				"outfit space" 1300
+				"required crew" 1
+				shields 50000
+				"turret mounts" 1
+				"weapon capacity" 200
+			outfits
+				"X1700 Ion Thruster"
+				"X1200 Ion Steering"
+				Hyperdrive
+				"nGVF-BB Fuel Cell"
+				"LP036a Battery Pack"
+			cargo
+				outfits
+					"Refined Shoal Glass" 10
+					"Refined Warden Core" 5
+					"Deep Lattice" 2
+			crew 1
+			fuel 300
+			shields 50000
+			hull 50000
+			position 0 0
+			engine -9 38 1
+			engine 9 38 1
+			turret 0 -8
+			system "~The Shoal"
+			planet "Breaker's Rest"
+		account
+			credits 1000000
+			score 400
+			history
+		conditions
+			"shoal: ambush next" 1000000000
+			"shoal: hunter next" 1000000000
+			"shoal: tow next" 1000000000
+			"shoal: lead freighter next" 1000000000
+			"shoal: lead warship next" 1000000000
+			"shoal: lead deep next" 1000000000
+			"shoal: charted"
+			"shoal: welcomed"
+			"shoal: maw told"
+		visited Arneb
+		visited "~The Shoal"
+		"visited planet" "Breaker's Rest"
+		changes
+			link Arneb "~The Shoal"
+
+
+test-data "Shoal Cutlass Save"
+	category "savegame"
+	contents
+		pilot Bobbi Bughunter
+		date 16 11 3013
+		system "~The Shoal"
+		planet "Breaker's Rest"
+		clearance
+		"sort type" 0
+		"sort descending"
+		"reputation with"
+			Pirate 1
+		ship "Star Barge"
+			name "Glass Barge"
+			sprite "ship/star barge"
+			attributes
+				category "Light Freighter"
+				cost 190000
+				mass 70
+				bunks 3
+				"cargo space" 80
+				drag 2.1
+				"engine capacity" 400
+				"fuel capacity" 300
+				"heat dissipation" 0.8
+				hull 50000
+				"shield generation" 50
+				"outfit space" 1300
+				"required crew" 1
+				shields 50000
+				"turret mounts" 1
+				"weapon capacity" 200
+			outfits
+				"Undertow Thruster Mk III"
+				"Eddy Steering Mk III"
+				Hyperdrive
+				"Abyssal Cell Mk III"
+				"Brine Capacitor Mk III"
+				"Coldwater Sink Mk III"
+				"Driftnet Ramscoop Mk III"
+				"LP036a Battery Pack"
+				"Glass-Edge Cutlass" 2
+			cargo
+				outfits
+					"Glass-Edge Cutlass" 3
+			crew 1
+			fuel 300
+			shields 50000
+			hull 50000
+			position 0 0
+			engine -9 38 1
+			engine 9 38 1
+			turret 0 -8
+			system "~The Shoal"
+			planet "Breaker's Rest"
+		account
+			credits 1000000
+			score 400
+			history
+		conditions
+			"shoal: ambush next" 1000000000
+			"shoal: hunter next" 1000000000
+			"shoal: tow next" 1000000000
+			"shoal: lead freighter next" 1000000000
+			"shoal: lead warship next" 1000000000
+			"shoal: lead deep next" 1000000000
+			"shoal: charted"
+			"shoal: welcomed"
+			"shoal: maw told"
+		visited Arneb
+		visited "~The Shoal"
+		"visited planet" "Breaker's Rest"
+		changes
+			link Arneb "~The Shoal"
+
+
+test-data "Shoal Lamprey Save"
+	category "savegame"
+	contents
+		pilot Bobbi Bughunter
+		date 16 11 3013
+		system "~The Shoal"
+		planet "Breaker's Rest"
+		clearance
+		"sort type" 0
+		"sort descending"
+		"reputation with"
+			Pirate 1
+		ship "Star Barge"
+			name "Glass Barge"
+			sprite "ship/star barge"
+			attributes
+				category "Light Freighter"
+				cost 190000
+				mass 70
+				bunks 3
+				"cargo space" 80
+				drag 2.1
+				"engine capacity" 400
+				"fuel capacity" 300
+				"heat dissipation" 0.8
+				hull 50000
+				"shield generation" 50
+				"outfit space" 1300
+				"required crew" 1
+				shields 50000
+				"turret mounts" 1
+				"weapon capacity" 200
+			outfits
+				"X1700 Ion Thruster"
+				"X1200 Ion Steering"
+				Hyperdrive
+				"nGVF-BB Fuel Cell"
+				"LP036a Battery Pack"
+				"Lamprey Launcher Mk I"
+			cargo
+				outfits
+					"Glass Lamprey" 25
+					"Shoal Glass" 30
+			crew 1
+			fuel 300
+			shields 50000
+			hull 50000
+			position 0 0
+			engine -9 38 1
+			engine 9 38 1
+			gun 0 -20 "Lamprey Launcher Mk I"
+			turret 0 -8
+			system "~The Shoal"
+			planet "Breaker's Rest"
+		account
+			credits 1000000
+			score 400
+			history
+		conditions
+			"shoal: ambush next" 1000000000
+			"shoal: hunter next" 1000000000
+			"shoal: tow next" 1000000000
+			"shoal: lead freighter next" 1000000000
+			"shoal: lead warship next" 1000000000
+			"shoal: lead deep next" 1000000000
+			"shoal: charted"
+			"shoal: welcomed"
+			"shoal: maw told"
+		visited Arneb
+		visited "~The Shoal"
+		"visited planet" "Breaker's Rest"
+		changes
+			link Arneb "~The Shoal"
+
+test-data "Shoal Workshop Save 2 Refined Glass"
+	category "savegame"
+	contents
+		pilot Bobbi Bughunter
+		date 16 11 3013
+		system "~The Shoal"
+		planet "Breaker's Rest"
+		clearance
+		"sort type" 0
+		"sort descending"
+		"reputation with"
+			Pirate 1
+		ship "Star Barge"
+			name "Glass Barge"
+			sprite "ship/star barge"
+			attributes
+				category "Light Freighter"
+				cost 190000
+				mass 70
+				bunks 3
+				"cargo space" 80
+				drag 2.1
+				"engine capacity" 400
+				"fuel capacity" 300
+				"heat dissipation" 0.8
+				hull 50000
+				"shield generation" 50
+				"outfit space" 1300
+				"required crew" 1
+				shields 50000
+				"turret mounts" 1
+				"weapon capacity" 200
+			outfits
+				"X1700 Ion Thruster"
+				"X1200 Ion Steering"
+				Hyperdrive
+				"nGVF-BB Fuel Cell"
+				"LP036a Battery Pack"
+			cargo
+				outfits
+					"Refined Shoal Glass" 2
+			crew 1
+			fuel 300
+			shields 50000
+			hull 50000
+			position 0 0
+			engine -9 38 1
+			engine 9 38 1
+			turret 0 -8
+			system "~The Shoal"
+			planet "Breaker's Rest"
+		account
+			credits 1000000
+			score 400
+			history
+		conditions
+			"shoal: ambush next" 1000000000
+			"shoal: hunter next" 1000000000
+			"shoal: tow next" 1000000000
+			"shoal: lead freighter next" 1000000000
+			"shoal: lead warship next" 1000000000
+			"shoal: lead deep next" 1000000000
+			"shoal: charted"
+			"shoal: welcomed"
+			"shoal: maw told"
+		visited Arneb
+		visited "~The Shoal"
+		"visited planet" "Breaker's Rest"
+		changes
+			link Arneb "~The Shoal"
+
+
+
+test-data "Shoal Workshop Save Split Steward"
+	category "savegame"
+	contents
+		pilot Bobbi Bughunter
+		date 16 11 3013
+		system "~The Shoal"
+		planet "Breaker's Rest"
+		clearance
+		"sort type" 0
+		"sort descending"
+		"reputation with"
+			Pirate 1
+		ship "Star Barge"
+			name "Glass Barge"
+			sprite "ship/star barge"
+			attributes
+				category "Light Freighter"
+				cost 190000
+				mass 70
+				bunks 3
+				"cargo space" 80
+				drag 2.1
+				"engine capacity" 400
+				"fuel capacity" 300
+				"heat dissipation" 0.8
+				hull 50000
+				"shield generation" 50
+				"outfit space" 1300
+				"required crew" 1
+				shields 50000
+				"turret mounts" 1
+				"weapon capacity" 200
+			outfits
+				"X1700 Ion Thruster"
+				"X1200 Ion Steering"
+				Hyperdrive
+				"nGVF-BB Fuel Cell"
+				"LP036a Battery Pack"
+			cargo
+				outfits
+					"Refined Shoal Glass" 1
+					"Refined Warden Core" 1
+			crew 1
+			fuel 300
+			shields 50000
+			hull 50000
+			position 0 0
+			engine -9 38 1
+			engine 9 38 1
+			turret 0 -8
+			system "~The Shoal"
+			planet "Breaker's Rest"
+		account
+			credits 1000000
+			score 400
+			history
+		storage
+			planet "Breaker's Rest"
+				cargo
+					outfits
+						"Refined Shoal Glass" 1
+		conditions
+			"shoal: ambush next" 1000000000
+			"shoal: hunter next" 1000000000
+			"shoal: tow next" 1000000000
+			"shoal: lead freighter next" 1000000000
+			"shoal: lead warship next" 1000000000
+			"shoal: lead deep next" 1000000000
+			"shoal: charted"
+			"shoal: welcomed"
+			"shoal: maw told"
+		visited Arneb
+		visited "~The Shoal"
+		"visited planet" "Breaker's Rest"
+		changes
+			link Arneb "~The Shoal"
+
+
+
+test-data "Shoal Workshop Save Split Short"
+	category "savegame"
+	contents
+		pilot Bobbi Bughunter
+		date 16 11 3013
+		system "~The Shoal"
+		planet "Breaker's Rest"
+		clearance
+		"sort type" 0
+		"sort descending"
+		"reputation with"
+			Pirate 1
+		ship "Star Barge"
+			name "Glass Barge"
+			sprite "ship/star barge"
+			attributes
+				category "Light Freighter"
+				cost 190000
+				mass 70
+				bunks 3
+				"cargo space" 80
+				drag 2.1
+				"engine capacity" 400
+				"fuel capacity" 300
+				"heat dissipation" 0.8
+				hull 50000
+				"shield generation" 50
+				"outfit space" 1300
+				"required crew" 1
+				shields 50000
+				"turret mounts" 1
+				"weapon capacity" 200
+			outfits
+				"X1700 Ion Thruster"
+				"X1200 Ion Steering"
+				Hyperdrive
+				"nGVF-BB Fuel Cell"
+				"LP036a Battery Pack"
+			cargo
+				outfits
+					"Refined Warden Core" 1
+			crew 1
+			fuel 300
+			shields 50000
+			hull 50000
+			position 0 0
+			engine -9 38 1
+			engine 9 38 1
+			turret 0 -8
+			system "~The Shoal"
+			planet "Breaker's Rest"
+		account
+			credits 1000000
+			score 400
+			history
+		storage
+			planet "Breaker's Rest"
+				cargo
+					outfits
+						"Refined Shoal Glass" 1
+		conditions
+			"shoal: ambush next" 1000000000
+			"shoal: hunter next" 1000000000
+			"shoal: tow next" 1000000000
+			"shoal: lead freighter next" 1000000000
+			"shoal: lead warship next" 1000000000
+			"shoal: lead deep next" 1000000000
+			"shoal: charted"
+			"shoal: welcomed"
+			"shoal: maw told"
+		visited Arneb
+		visited "~The Shoal"
+		"visited planet" "Breaker's Rest"
+		changes
+			link Arneb "~The Shoal"
+
+
+
+test-data "Shoal Workshop Save Steward Inputs"
+	category "savegame"
+	contents
+		pilot Bobbi Bughunter
+		date 16 11 3013
+		system "~The Shoal"
+		planet "Breaker's Rest"
+		clearance
+		"sort type" 0
+		"sort descending"
+		"reputation with"
+			Pirate 1
+		ship "Star Barge"
+			name "Glass Barge"
+			sprite "ship/star barge"
+			attributes
+				category "Light Freighter"
+				cost 190000
+				mass 70
+				bunks 3
+				"cargo space" 80
+				drag 2.1
+				"engine capacity" 400
+				"fuel capacity" 300
+				"heat dissipation" 0.8
+				hull 50000
+				"shield generation" 50
+				"outfit space" 1300
+				"required crew" 1
+				shields 50000
+				"turret mounts" 1
+				"weapon capacity" 200
+			outfits
+				"X1700 Ion Thruster"
+				"X1200 Ion Steering"
+				Hyperdrive
+				"nGVF-BB Fuel Cell"
+				"LP036a Battery Pack"
+			cargo
+				outfits
+					"Refined Shoal Glass" 2
+					"Refined Warden Core" 1
+			crew 1
+			fuel 300
+			shields 50000
+			hull 50000
+			position 0 0
+			engine -9 38 1
+			engine 9 38 1
+			turret 0 -8
+			system "~The Shoal"
+			planet "Breaker's Rest"
+		account
+			credits 1000000
+			score 400
+			history
+		conditions
+			"shoal: ambush next" 1000000000
+			"shoal: hunter next" 1000000000
+			"shoal: tow next" 1000000000
+			"shoal: lead freighter next" 1000000000
+			"shoal: lead warship next" 1000000000
+			"shoal: lead deep next" 1000000000
+			"shoal: charted"
+			"shoal: welcomed"
+			"shoal: maw told"
+		visited Arneb
+		visited "~The Shoal"
+		"visited planet" "Breaker's Rest"
+		changes
+			link Arneb "~The Shoal"
+
+
+test-data "Shoal Refinery Save 10 Glass"
+	category "savegame"
+	contents
+		pilot Bobbi Bughunter
+		date 16 11 3013
+		system "~The Shoal"
+		planet "Breaker's Rest"
+		clearance
+		"sort type" 0
+		"sort descending"
+		"reputation with"
+			Pirate 1
+		ship "Star Barge"
+			name "Glass Barge"
+			sprite "ship/star barge"
+			attributes
+				category "Light Freighter"
+				cost 190000
+				mass 70
+				bunks 3
+				"cargo space" 80
+				drag 2.1
+				"engine capacity" 400
+				"fuel capacity" 300
+				"heat dissipation" 0.8
+				hull 50000
+				"shield generation" 50
+				"outfit space" 1300
+				"required crew" 1
+				shields 50000
+				"turret mounts" 1
+				"weapon capacity" 200
+			outfits
+				"X1700 Ion Thruster"
+				"X1200 Ion Steering"
+				Hyperdrive
+				"nGVF-BB Fuel Cell"
+				"LP036a Battery Pack"
+			cargo
+				outfits
+					"Shoal Glass" 10
+			crew 1
+			fuel 300
+			shields 50000
+			hull 50000
+			position 0 0
+			engine -9 38 1
+			engine 9 38 1
+			turret 0 -8
+			system "~The Shoal"
+			planet "Breaker's Rest"
+		account
+			credits 1000000
+			score 400
+			history
+		conditions
+			"shoal: ambush next" 1000000000
+			"shoal: hunter next" 1000000000
+			"shoal: tow next" 1000000000
+			"shoal: lead freighter next" 1000000000
+			"shoal: lead warship next" 1000000000
+			"shoal: lead deep next" 1000000000
+			"shoal: charted"
+			"shoal: welcomed"
+			"shoal: maw told"
+			"shoal: refinery jobs" 1
+		visited Arneb
+		visited "~The Shoal"
+		"visited planet" "Breaker's Rest"
+		changes
+			link Arneb "~The Shoal"
+
+
+test-data "Shoal Refinery Save 10 Glass No Jobs"
+	category "savegame"
+	contents
+		pilot Bobbi Bughunter
+		date 16 11 3013
+		system "~The Shoal"
+		planet "Breaker's Rest"
+		clearance
+		"sort type" 0
+		"sort descending"
+		"reputation with"
+			Pirate 1
+		ship "Star Barge"
+			name "Glass Barge"
+			sprite "ship/star barge"
+			attributes
+				category "Light Freighter"
+				cost 190000
+				mass 70
+				bunks 3
+				"cargo space" 80
+				drag 2.1
+				"engine capacity" 400
+				"fuel capacity" 300
+				"heat dissipation" 0.8
+				hull 50000
+				"shield generation" 50
+				"outfit space" 1300
+				"required crew" 1
+				shields 50000
+				"turret mounts" 1
+				"weapon capacity" 200
+			outfits
+				"X1700 Ion Thruster"
+				"X1200 Ion Steering"
+				Hyperdrive
+				"nGVF-BB Fuel Cell"
+				"LP036a Battery Pack"
+			cargo
+				outfits
+					"Shoal Glass" 10
+			crew 1
+			fuel 300
+			shields 50000
+			hull 50000
+			position 0 0
+			engine -9 38 1
+			engine 9 38 1
+			turret 0 -8
+			system "~The Shoal"
+			planet "Breaker's Rest"
+		account
+			credits 1000000
+			score 400
+			history
+		conditions
+			"shoal: ambush next" 1000000000
+			"shoal: hunter next" 1000000000
+			"shoal: tow next" 1000000000
+			"shoal: lead freighter next" 1000000000
+			"shoal: lead warship next" 1000000000
+			"shoal: lead deep next" 1000000000
+			"shoal: charted"
+			"shoal: welcomed"
+			"shoal: maw told"
+		visited Arneb
+		visited "~The Shoal"
+		"visited planet" "Breaker's Rest"
+		changes
+			link Arneb "~The Shoal"
+
+
+test-data "Shoal Lead Save"
+	category "savegame"
+	contents
+		pilot Bobbi Bughunter
+		date 16 11 3013
+		system "~The Shoal"
+		planet "Breaker's Rest"
+		clearance
+		"sort type" 1
+		"sort descending"
+		"reputation with"
+			Pirate 1
+		ship "Star Barge"
+			name "Glass Barge"
+			sprite "ship/star barge"
+			attributes
+				category "Light Freighter"
+				cost 190000
+				mass 70
+				bunks 3
+				"cargo space" 80
+				drag 2.1
+				"engine capacity" 400
+				"fuel capacity" 300
+				"heat dissipation" 0.8
+				hull 50000
+				"shield generation" 50
+				"outfit space" 1300
+				"required crew" 1
+				shields 50000
+				"turret mounts" 1
+				"weapon capacity" 200
+			outfits
+				"X1700 Ion Thruster"
+				"X1200 Ion Steering"
+				Hyperdrive
+				"nGVF-BB Fuel Cell"
+				"LP036a Battery Pack"
+			cargo
+				outfits
+					"Shoal Glass" 0
+			crew 1
+			fuel 300
+			shields 50000
+			hull 50000
+			position 0 0
+			engine -9 38 1
+			engine 9 38 1
+			turret 0 -8
+			system "~The Shoal"
+			planet "Breaker's Rest"
+		account
+			credits 1000000
+			score 400
+			history
+		conditions
+			"shoal: ambush next" 1000000000
+			"shoal: hunter next" 1000000000
+			"shoal: tow next" 1000000000
+			"shoal: lead freighter next" 1000000000
+			"shoal: lead warship next" 1000000000
+			"shoal: lead deep next" 1000000000
+			"shoal: charted"
+			"shoal: welcomed"
+			"shoal: maw told"
+		visited Arneb
+		visited "~The Shoal"
+		"visited planet" "Breaker's Rest"
+		changes
+			link Arneb "~The Shoal"
+
+
+test-data "Shoal Ambush Save"
+	category "savegame"
+	contents
+		pilot Bobbi Bughunter
+		date 16 11 3013
+		system "~The Shoal"
+		planet "Breaker's Rest"
+		clearance
+		"sort type" 1
+		"sort descending"
+		"reputation with"
+			Pirate 1
+		ship "Star Barge"
+			name "Glass Barge"
+			sprite "ship/star barge"
+			attributes
+				category "Light Freighter"
+				cost 190000
+				mass 70
+				bunks 3
+				"cargo space" 80
+				drag 2.1
+				"engine capacity" 400
+				"fuel capacity" 300
+				"heat dissipation" 0.8
+				hull 50000
+				"shield generation" 50
+				"outfit space" 1300
+				"required crew" 1
+				shields 50000
+				"turret mounts" 1
+				"weapon capacity" 200
+			outfits
+				"X1700 Ion Thruster"
+				"X1200 Ion Steering"
+				Hyperdrive
+				"nGVF-BB Fuel Cell"
+				"LP036a Battery Pack"
+			cargo
+				outfits
+					"Shoal Glass" 0
+			crew 1
+			fuel 300
+			shields 50000
+			hull 50000
+			position 0 0
+			engine -9 38 1
+			engine 9 38 1
+			turret 0 -8
+			system "~The Shoal"
+			planet "Breaker's Rest"
+		account
+			credits 1000000
+			score 400
+			history
+		conditions
+			"shoal: charted"
+			"shoal: welcomed"
+			"shoal: maw told"
+			"shoal: deepest depth" 8
+		visited Arneb
+		visited "~The Shoal"
+		"visited planet" "Breaker's Rest"
+		changes
+			link Arneb "~The Shoal"
+
+
+test-data "Shoal Haven Save"
+	category "savegame"
+	contents
+		pilot Bobbi Bughunter
+		date 16 11 3013
+		system Arneb
+		planet Haven
+		clearance
+		"reputation with"
+			Pirate 10
+		ship "Star Barge"
+			name "Glass Barge"
+			sprite "ship/star barge"
+			attributes
+				category "Light Freighter"
+				cost 190000
+				mass 70
+				bunks 3
+				"cargo space" 80
+				drag 2.1
+				"engine capacity" 400
+				"fuel capacity" 300
+				"heat dissipation" 0.8
+				hull 50000
+				"shield generation" 50
+				"outfit space" 1300
+				"required crew" 1
+				shields 50000
+				"turret mounts" 1
+				"weapon capacity" 200
+			outfits
+				"X1700 Ion Thruster"
+				"X1200 Ion Steering"
+				Hyperdrive
+				"nGVF-BB Fuel Cell"
+				"LP036a Battery Pack"
+			crew 1
+			fuel 300
+			shields 50000
+			hull 50000
+			position 0 0
+			engine -9 38 1
+			engine 9 38 1
+			turret 0 -8
+			system Arneb
+			planet Haven
+		account
+			credits 1000000
+			score 400
+			history
+		visited Arneb
+		"visited planet" Haven
+
+
+test "Shoal Wait For Takeoff"
+	status partial
+	description "Depart (pressing the depart key again every 100 frames) and wait until the flagship is in space."
+	sequence
+		apply
+			"test: takeoff frames" = 0
+		label press
+		call "Depart"
+		label takeoff
+		apply
+			"test: takeoff frames" += 1
+		branch done
+			"flagship landed" == 0
+		branch press
+			"test: takeoff frames" % 100 == 0
+			"test: takeoff frames" < 1000
+		branch takeoff
+			"test: takeoff frames" < 1000
+		label done
+		assert
+			"flagship landed" == 0
+
+
+test "Shoal Land"
+	status partial
+	description "Land on the travel destination (or nearest planet), giving up after 5000 frames."
+	sequence
+		apply
+			"test: land frames" = 0
+		input
+			command land
+		label landing
+		apply
+			"test: land frames" += 1
+		branch landing
+			"flagship landed" == 0
+			"test: land frames" < 5000
+		assert
+			"flagship landed" == 1
+
+
+test "Shoal Relanding"
+	status partial
+	description "Depart and land again so the job board is regenerated."
+	sequence
+		call "Shoal Wait For Takeoff"
+		navigate
+			"travel destination" "Breaker's Rest"
+		call "Shoal Land"
+
+
+test "Shoal Workshop Builds Only Stewards"
+	status active
+	description "DESIGN.md section 15: with refined materials, lattice and credits to spare, the workshop builds a Warden Steward Mk I and nothing else (no exotic-line jobs remain)."
+	sequence
+		inject "Shoal Workshop Save Plenty"
+		call "Load First Savegame"
+		call "Shoal Relanding"
+		assert
+			"flagship planet: Breaker's Rest" == 1
+			"outfit: Refined Shoal Glass" == 10
+		apply
+			"test: credits before" = "credits"
+		# Try to accept every job on the board.
+		apply
+			"test: tries" = 0
+		input
+			key j
+		label next
+		input
+			key a
+		input
+			key "return"
+		input
+			key "down"
+		apply
+			"test: tries" += 1
+		branch next
+			"test: tries" < 40
+		assert
+			"outfit: Warden Steward Mk I" == 1
+			"outfit: Refined Shoal Glass" == 8
+			"outfit: Refined Warden Core" == 4
+			"outfit: Deep Lattice" == 2
+			"credits" == "test: credits before" - 100000
+			"shoal: crafted" == 1
+			"outfit: Tidecutter Mk I" == 0
+			"outfit: Riptide Turret Mk I" == 0
+			"outfit: Glassweave Shield Mk I" == 0
+			"outfit: Abyssal Cell Mk I" == 0
+			"outfit: Undertow Thruster Mk I" == 0
+			"outfit: Coralgraft Mender Mk I" == 0
+			"outfit: Eddy Steering Mk I" == 0
+			"outfit: Brine Capacitor Mk I" == 0
+			"outfit: Coldwater Sink Mk I" == 0
+			"outfit: Glimmer Point Defense Mk I" == 0
+			"outfit: Coral Plating Mk I" == 0
+			"outfit: Siltwake Afterburner Mk I" == 0
+			"Shoal: Workshop Warden Steward Mk I: failed" == 1
+			"Shoal: Workshop Warden Steward Mk I: active" == 0
+
+
+test "Shoal Workshop Steward Needs A Refined Core"
+	status active
+	description "With 2 Refined Shoal Glass but no Refined Warden Core, nothing can be built and nothing is taken."
+	sequence
+		inject "Shoal Workshop Save 2 Refined Glass"
+		call "Load First Savegame"
+		call "Shoal Relanding"
+		apply
+			"test: credits before" = "credits"
+		apply
+			"test: tries" = 0
+		input
+			key j
+		label next
+		input
+			key a
+		input
+			key "return"
+		input
+			key "down"
+		apply
+			"test: tries" += 1
+		branch next
+			"test: tries" < 40
+		assert
+			"outfit: Refined Shoal Glass" == 2
+			"outfit: Warden Steward Mk I" == 0
+			"credits" == "test: credits before"
+			"shoal: crafted" == 0
+
+
+test "Shoal Whispers Unlock And Travel"
+	status active
+	description "Whispers is offered at Haven (Arneb) to a respected captain; paying charts the link, and the Shoal can be reached and Breaker's Rest landed on."
+	sequence
+		inject "Shoal Haven Save"
+		call "Load First Savegame"
+		# Above the 1097 (rank 7) gate of DESIGN.md section 11.
+		apply
+			"combat rating" = 1200
+		assert
+			"shoal: charted" == 0
+		# Landing missions are offered on landing; "random < 40" gate, so retry.
+		# The "offered" condition is only set once the conversation ends, so
+		# always answer as if it were showing: "What is it?" / "Then why isn't
+		# everyone out there?" / "(Pay him.)" / end. On the planet panel these
+		# keys do nothing.
+		label retry
+		debug "Whispers: landing attempt"
+		apply
+			"test: landings" += 1
+		call "Shoal Wait For Takeoff"
+		navigate
+			"travel destination" Haven
+		call "Shoal Land"
+		apply
+			"test: credits before" = "credits"
+		input
+			key 1
+		input
+			key 1
+		input
+			key 1
+		input
+			key "return"
+		branch accepted
+			"Shoal: Whispers: active" == 1
+		branch retry
+			"test: landings" < 40
+		label accepted
+		assert
+			"shoal: charted" == 1
+			"Shoal: Whispers: active" == 1
+			"credits" == "test: credits before" - 50000
+			"hyperjumps to system: ~The Shoal" == 1
+		call "Shoal Wait For Takeoff"
+		navigate
+			travel "~The Shoal"
+			"travel destination" "Breaker's Rest"
+		apply
+			"test: jump frames" = 0
+		label jumpcommand
+		input
+			command jump
+		label jumping
+		apply
+			"test: jump frames" += 1
+		branch jumped
+			"flagship system: ~The Shoal"
+		branch jumpcommand
+			"test: jump frames" % 200 == 0
+			"test: jump frames" < 6000
+		branch jumping
+			"test: jump frames" < 6000
+		label jumped
+		apply
+			"test: hull after jump" = "flagship hull"
+		assert
+			"visited system: ~The Shoal" == 1
+		call "Shoal Land"
+		assert
+			"flagship planet: Breaker's Rest" == 1
+			"visited planet: Breaker's Rest" == 1
+		# Welcome conversation: one choice, then the end.
+		input
+			key 1
+		input
+			key "return"
+		assert
+			"shoal: welcomed" == 1
+			"Shoal: Whispers: done" == 1
+
+
+test "Shoal Whispers Needs Rank 7"
+	status active
+	description "DESIGN.md section 11: the unlock needs combat rating 1097 (rank 7). At 1000 Whispers must not be offered."
+	sequence
+		inject "Shoal Haven Save"
+		call "Load First Savegame"
+		apply
+			"combat rating" = 1000
+		label retry
+		apply
+			"test: landings" += 1
+		call "Shoal Wait For Takeoff"
+		navigate
+			"travel destination" Haven
+		call "Shoal Land"
+		input
+			key 1
+		input
+			key 1
+		input
+			key 1
+		input
+			key "return"
+		branch retry
+			"test: landings" < 12
+		assert
+			"Shoal: Whispers: offered" == 0
+			"shoal: charted" == 0
+
+
+test "Shoal Breakers Rest Has No Bank"
+	status active
+	description "DESIGN.md section 11: Breaker's Rest has no bank."
+	sequence
+		inject "Shoal Workshop Save 2 Refined Glass"
+		call "Load First Savegame"
+		assert
+			"flagship planet: Breaker's Rest" == 1
+			"flagship planet attribute: spaceport" == 1
+			"flagship planet attribute: service: jobs" == 1
+			"flagship planet attribute: service: bank" == 0
+
+
+test "Shoal Workshop Warden Steward Mk I"
+	status active
+	description "With 2 Refined Shoal Glass, 1 Refined Warden Core and the fee, the crew line's first mark can be built."
+	sequence
+		inject "Shoal Workshop Save Steward Inputs"
+		call "Load First Savegame"
+		call "Shoal Relanding"
+		assert
+			"outfit: Refined Warden Core" == 1
+			"outfit: Refined Shoal Glass" == 2
+		apply
+			"test: credits before" = "credits"
+		apply
+			"test: tries" = 0
+		input
+			key j
+		label next
+		input
+			key a
+		input
+			key "return"
+		input
+			key "down"
+		apply
+			"test: tries" += 1
+		branch next
+			"outfit: Warden Steward Mk I" == 0
+			"test: tries" < 40
+		assert
+			"outfit: Warden Steward Mk I" == 1
+			"outfit: Refined Warden Core" == 0
+			"outfit: Refined Shoal Glass" == 0
+			"credits" == "test: credits before" - 100000
+
+
+test "Shoal Workshop Uses Storage"
+	status active
+	description "1 Refined Shoal Glass and 1 Refined Warden Core in the hold plus 1 Refined Shoal Glass in Breaker's Rest's storage pay for a Warden Steward Mk I; the hold is used first, then storage."
+	sequence
+		inject "Shoal Workshop Save Split Steward"
+		call "Load First Savegame"
+		call "Shoal Relanding"
+		assert
+			"outfit (cargo): Refined Shoal Glass" == 1
+			"outfit (cargo): Refined Warden Core" == 1
+			"outfit (storage): Refined Shoal Glass" == 1
+		apply
+			"test: credits before" = "credits"
+		apply
+			"test: tries" = 0
+		input
+			key j
+		label next
+		input
+			key a
+		input
+			key "return"
+		input
+			key "down"
+		apply
+			"test: tries" += 1
+		branch next
+			"outfit: Warden Steward Mk I" == 0
+			"test: tries" < 40
+		assert
+			"outfit: Warden Steward Mk I" == 1
+			"outfit (cargo): Refined Shoal Glass" == 0
+			"outfit (cargo): Refined Warden Core" == 0
+			"outfit (storage): Refined Shoal Glass" == 0
+			"credits" == "test: credits before" - 100000
+
+
+test "Shoal Workshop Storage Still Needs Enough"
+	status active
+	description "1 Refined Warden Core in the hold and 1 Refined Shoal Glass in storage are not enough for a Warden Steward Mk I (it needs 2 glass); nothing is taken."
+	sequence
+		inject "Shoal Workshop Save Split Short"
+		call "Load First Savegame"
+		call "Shoal Relanding"
+		apply
+			"test: credits before" = "credits"
+		apply
+			"test: tries" = 0
+		input
+			key j
+		label next
+		input
+			key a
+		input
+			key "return"
+		input
+			key "down"
+		apply
+			"test: tries" += 1
+		branch next
+			"test: tries" < 40
+		assert
+			"outfit: Warden Steward Mk I" == 0
+			"outfit (cargo): Refined Warden Core" == 1
+			"outfit (storage): Refined Shoal Glass" == 1
+			"credits" == "test: credits before"
+
+
+test "Shoal Refinery Job Refines Glass"
+	status active
+	description "DESIGN.md section 14: with \"shoal: refinery jobs\" set, accepting \"Refinery: 10 Shoal Glass\" turns 10 Shoal Glass into 1 Refined Shoal Glass, free."
+	sequence
+		inject "Shoal Refinery Save 10 Glass"
+		call "Load First Savegame"
+		call "Shoal Relanding"
+		assert
+			"shoal: refinery jobs" == 1
+			"outfit: Shoal Glass" == 10
+			"outfit: Refined Shoal Glass" == 0
+		apply
+			"test: credits before" = "credits"
+			"test: tries" = 0
+		input
+			key j
+		# Only the 10-glass job can be accepted (no refined materials for the
+		# workshop, not enough glass for the bigger batches, no cores), so walk
+		# down the board pressing "a" until it is taken.
+		label next
+		input
+			key a
+		input
+			key "return"
+		input
+			key "down"
+		apply
+			"test: tries" += 1
+		branch next
+			"outfit: Refined Shoal Glass" == 0
+			"test: tries" < 40
+		assert
+			"outfit: Shoal Glass" == 0
+			"outfit: Refined Shoal Glass" == 1
+			"credits" == "test: credits before"
+			"Shoal: Refine 10 Shoal Glass: offered" == 1
+			"Shoal: Refine 10 Shoal Glass: active" == 0
+			"Shoal: Refine 10 Shoal Glass: failed" == 1
+			"Shoal: Refine 50 Shoal Glass: offered" == 0
+			"shoal: crafted" == 0
+
+
+test "Shoal Refinery Jobs Need The Condition"
+	status active
+	description "DESIGN.md section 14: without \"shoal: refinery jobs\" (the game has the refinery button), no refinery job is on the board."
+	sequence
+		inject "Shoal Refinery Save 10 Glass No Jobs"
+		call "Load First Savegame"
+		apply
+			"test: landings" = 0
+		label retry
+		apply
+			"test: landings" += 1
+			"test: tries" = 0
+		call "Shoal Relanding"
+		input
+			key j
+		label next
+		input
+			key a
+		input
+			key "return"
+		input
+			key "down"
+		apply
+			"test: tries" += 1
+		branch next
+			"test: tries" < 25
+		input
+			key "escape"
+		branch retry
+			"test: landings" < 3
+		assert
+			"shoal: refinery jobs" == 0
+			"outfit: Shoal Glass" == 10
+			"outfit: Refined Shoal Glass" == 0
+			"Shoal: Refine 10 Shoal Glass: offered" == 0
+
+
+# 0.5.0 (DESIGN.md section 22): the Deep. Without the mod's code (these
+# tests run the stock game on the plugin's data) there is no run, but the way
+# down and back and the jobs are data: the Maw at the centre of Breakers' Rest
+# leads to the hub (The Sounding), Breakers' Haven there can be landed on, the
+# Upwell leads back up; and the Breakers' jobs, one per target system in the
+# Deep, are offered at Breaker's Rest. The run itself (it starts through the
+# Maw, Haven keeps it, coming back up ends it, depth) is tested end to end with
+# the loader: test/ingame/e2e.
+
+test "Shoal Through The Maw"
+	status partial
+	description "In flight in Breakers' Rest: land on The Maw until the flagship is in the hub."
+	sequence
+		apply
+			"test: maw frames" = 0
+		navigate
+			"travel destination" "The Maw"
+		label press
+		input
+			command land
+		label wait
+		apply
+			"test: maw frames" += 1
+		branch done
+			"flagship system: ~~Shoal The Sounding" == 1
+		branch press
+			"test: maw frames" % 200 == 0
+			"test: maw frames" < 8000
+		branch wait
+			"test: maw frames" < 8000
+		label done
+		assert
+			"flagship system: ~~Shoal The Sounding" == 1
+
+
+test "Shoal Up The Upwell"
+	status partial
+	description "In flight in the hub: land on The Upwell until the flagship is back in Breakers' Rest."
+	sequence
+		apply
+			"test: upwell frames" = 0
+		navigate
+			"travel destination" "The Upwell"
+		label press
+		input
+			command land
+		label wait
+		apply
+			"test: upwell frames" += 1
+		branch done
+			"flagship system: ~The Shoal" == 1
+		branch press
+			"test: upwell frames" % 200 == 0
+			"test: upwell frames" < 8000
+		branch wait
+			"test: upwell frames" < 8000
+		label done
+		assert
+			"flagship system: ~The Shoal" == 1
+
+
+test "Shoal Maw To The Deep And Back"
+	status active
+	description "The black hole at the centre of Breakers' Rest is a wormhole down to the hub of the Deep; Breakers' Haven there can be landed on and sells nothing; the Upwell leads back up. The Deep has no lane to the charted map."
+	sequence
+		inject "Shoal Ambush Save"
+		call "Load First Savegame"
+		assert
+			"flagship planet: Breaker's Rest" == 1
+		call "Shoal Wait For Takeoff"
+		call "Shoal Through The Maw"
+		assert
+			"visited system: ~~Shoal The Sounding" == 1
+			"hyperjumps to system: ~~Shoal Kelpwater" == 1
+		navigate
+			"travel destination" "Breakers' Haven"
+		call "Shoal Land"
+		assert
+			"flagship planet: Breakers' Haven" == 1
+			"visited planet: Breakers' Haven" == 1
+		call "Shoal Wait For Takeoff"
+		assert
+			"flagship system: ~~Shoal The Sounding" == 1
+		call "Shoal Up The Upwell"
+		assert
+			"flagship system: ~The Shoal" == 1
+		navigate
+			"travel destination" "Breaker's Rest"
+		call "Shoal Land"
+		assert
+			"flagship planet: Breaker's Rest" == 1
+
+test "Shoal Deep Jobs Offered"
+	status active
+	description "DESIGN.md sections 17 and 22: the six kinds of Breakers' jobs, one mission per target system in the Deep, are offered at Breaker's Rest to a welcomed captain, and can be accepted: each kind sets its cooldown, so no two of a kind run at a time (even when two were on the board together). Jobs accepted early may have run out by the end."
+	sequence
+		inject "Shoal Ambush Save"
+		call "Load First Savegame"
+		apply
+			"test: landings" = 0
+		label retry
+		apply
+			"test: landings" += 1
+		call "Shoal Relanding"
+		input
+			key j
+		input
+			key a
+		input
+			key a
+		input
+			key a
+		input
+			key a
+		input
+			key a
+		input
+			key a
+		input
+			key a
+		input
+			key a
+		input
+			key "escape"
+		branch done
+			"shoal: lead freighter next" > 0
+			"shoal: lead warship next" > 0
+			"shoal: lead deep next" > 0
+			"shoal: ambush next" > 0
+			"shoal: hunter next" > 0
+			"shoal: tow next" > 0
+		branch retry
+			"test: landings" < 80
+		label done
+		assert
+			"shoal: lead freighter next" > 0
+			"shoal: lead warship next" > 0
+			"shoal: lead deep next" > 0
+			"shoal: ambush next" > 0
+			"shoal: hunter next" > 0
+			"shoal: tow next" > 0
+			"Shoal: Lead Freighter: Gullwake: offered" + "Shoal: Lead Freighter: Kelpwater: offered" + "Shoal: Lead Freighter: Pale Reach: offered" + "Shoal: Lead Freighter: Shallow Mercy: offered" + "Shoal: Lead Freighter: Brinefall: offered" + "Shoal: Lead Freighter: Cold Shelf: offered" + "Shoal: Lead Freighter: Driftglass: offered" + "Shoal: Lead Freighter: Lantern Shoal: offered" + "Shoal: Lead Freighter: Low Tide: offered" + "Shoal: Lead Freighter: Saltmere: offered" + "Shoal: Lead Freighter: Barnacle Reach: offered" + "Shoal: Lead Freighter: Ebbstone: offered" + "Shoal: Lead Freighter: Greywater: offered" + "Shoal: Lead Freighter: Hollow Swell: offered" + "Shoal: Lead Freighter: Siltmarrow: offered" + "Shoal: Lead Freighter: Undercurrent: offered" + "Shoal: Lead Freighter: Fogbank: offered" + "Shoal: Lead Freighter: Murkwell: offered" + "Shoal: Lead Freighter: Rustcurrent: offered" + "Shoal: Lead Freighter: The Tangle: offered" + "Shoal: Lead Freighter: Tidegrave: offered" + "Shoal: Lead Freighter: Wreckmouth: offered" >= 1
+			"Shoal: Lead Freighter: Gullwake: active" + "Shoal: Lead Freighter: Kelpwater: active" + "Shoal: Lead Freighter: Pale Reach: active" + "Shoal: Lead Freighter: Shallow Mercy: active" + "Shoal: Lead Freighter: Brinefall: active" + "Shoal: Lead Freighter: Cold Shelf: active" + "Shoal: Lead Freighter: Driftglass: active" + "Shoal: Lead Freighter: Lantern Shoal: active" + "Shoal: Lead Freighter: Low Tide: active" + "Shoal: Lead Freighter: Saltmere: active" + "Shoal: Lead Freighter: Barnacle Reach: active" + "Shoal: Lead Freighter: Ebbstone: active" + "Shoal: Lead Freighter: Greywater: active" + "Shoal: Lead Freighter: Hollow Swell: active" + "Shoal: Lead Freighter: Siltmarrow: active" + "Shoal: Lead Freighter: Undercurrent: active" + "Shoal: Lead Freighter: Fogbank: active" + "Shoal: Lead Freighter: Murkwell: active" + "Shoal: Lead Freighter: Rustcurrent: active" + "Shoal: Lead Freighter: The Tangle: active" + "Shoal: Lead Freighter: Tidegrave: active" + "Shoal: Lead Freighter: Wreckmouth: active" <= 1
+			"Shoal: Lead Warship: Barnacle Reach: offered" + "Shoal: Lead Warship: Ebbstone: offered" + "Shoal: Lead Warship: Greywater: offered" + "Shoal: Lead Warship: Hollow Swell: offered" + "Shoal: Lead Warship: Siltmarrow: offered" + "Shoal: Lead Warship: Undercurrent: offered" + "Shoal: Lead Warship: Fogbank: offered" + "Shoal: Lead Warship: Murkwell: offered" + "Shoal: Lead Warship: Rustcurrent: offered" + "Shoal: Lead Warship: The Tangle: offered" + "Shoal: Lead Warship: Tidegrave: offered" + "Shoal: Lead Warship: Wreckmouth: offered" + "Shoal: Lead Warship: Blackwater: offered" + "Shoal: Lead Warship: Bonefield: offered" + "Shoal: Lead Warship: Gloom Shelf: offered" + "Shoal: Lead Warship: Ironsilt: offered" + "Shoal: Lead Warship: Lightless Reach: offered" + "Shoal: Lead Warship: Midnight Water: offered" + "Shoal: Lead Warship: Coldheart: offered" + "Shoal: Lead Warship: Drowned Lantern: offered" + "Shoal: Lead Warship: Hadal Gate: offered" + "Shoal: Lead Warship: Pressure Ridge: offered" + "Shoal: Lead Warship: The Sunken Choir: offered" >= 1
+			"Shoal: Lead Warship: Barnacle Reach: active" + "Shoal: Lead Warship: Ebbstone: active" + "Shoal: Lead Warship: Greywater: active" + "Shoal: Lead Warship: Hollow Swell: active" + "Shoal: Lead Warship: Siltmarrow: active" + "Shoal: Lead Warship: Undercurrent: active" + "Shoal: Lead Warship: Fogbank: active" + "Shoal: Lead Warship: Murkwell: active" + "Shoal: Lead Warship: Rustcurrent: active" + "Shoal: Lead Warship: The Tangle: active" + "Shoal: Lead Warship: Tidegrave: active" + "Shoal: Lead Warship: Wreckmouth: active" + "Shoal: Lead Warship: Blackwater: active" + "Shoal: Lead Warship: Bonefield: active" + "Shoal: Lead Warship: Gloom Shelf: active" + "Shoal: Lead Warship: Ironsilt: active" + "Shoal: Lead Warship: Lightless Reach: active" + "Shoal: Lead Warship: Midnight Water: active" + "Shoal: Lead Warship: Coldheart: active" + "Shoal: Lead Warship: Drowned Lantern: active" + "Shoal: Lead Warship: Hadal Gate: active" + "Shoal: Lead Warship: Pressure Ridge: active" + "Shoal: Lead Warship: The Sunken Choir: active" <= 1
+			"Shoal: Lead Deep: Blackwater: offered" + "Shoal: Lead Deep: Bonefield: offered" + "Shoal: Lead Deep: Gloom Shelf: offered" + "Shoal: Lead Deep: Ironsilt: offered" + "Shoal: Lead Deep: Lightless Reach: offered" + "Shoal: Lead Deep: Midnight Water: offered" + "Shoal: Lead Deep: Coldheart: offered" + "Shoal: Lead Deep: Drowned Lantern: offered" + "Shoal: Lead Deep: Hadal Gate: offered" + "Shoal: Lead Deep: Pressure Ridge: offered" + "Shoal: Lead Deep: The Sunken Choir: offered" + "Shoal: Lead Deep: Hadal Floor: offered" + "Shoal: Lead Deep: The Last Fathom: offered" + "Shoal: Lead Deep: The Sepulchre: offered" + "Shoal: Lead Deep: The Trench: offered" + "Shoal: Lead Deep: Nadir: offered" + "Shoal: Lead Deep: Stillwater: offered" >= 1
+			"Shoal: Lead Deep: Blackwater: active" + "Shoal: Lead Deep: Bonefield: active" + "Shoal: Lead Deep: Gloom Shelf: active" + "Shoal: Lead Deep: Ironsilt: active" + "Shoal: Lead Deep: Lightless Reach: active" + "Shoal: Lead Deep: Midnight Water: active" + "Shoal: Lead Deep: Coldheart: active" + "Shoal: Lead Deep: Drowned Lantern: active" + "Shoal: Lead Deep: Hadal Gate: active" + "Shoal: Lead Deep: Pressure Ridge: active" + "Shoal: Lead Deep: The Sunken Choir: active" + "Shoal: Lead Deep: Hadal Floor: active" + "Shoal: Lead Deep: The Last Fathom: active" + "Shoal: Lead Deep: The Sepulchre: active" + "Shoal: Lead Deep: The Trench: active" + "Shoal: Lead Deep: Nadir: active" + "Shoal: Lead Deep: Stillwater: active" <= 1
+			"Shoal: Ambush At The Wrecks: Gullwake: offered" + "Shoal: Ambush At The Wrecks: Kelpwater: offered" + "Shoal: Ambush At The Wrecks: Pale Reach: offered" + "Shoal: Ambush At The Wrecks: Shallow Mercy: offered" + "Shoal: Ambush At The Wrecks: Brinefall: offered" + "Shoal: Ambush At The Wrecks: Cold Shelf: offered" + "Shoal: Ambush At The Wrecks: Driftglass: offered" + "Shoal: Ambush At The Wrecks: Lantern Shoal: offered" + "Shoal: Ambush At The Wrecks: Low Tide: offered" + "Shoal: Ambush At The Wrecks: Saltmere: offered" + "Shoal: Ambush At The Wrecks: Barnacle Reach: offered" + "Shoal: Ambush At The Wrecks: Ebbstone: offered" + "Shoal: Ambush At The Wrecks: Greywater: offered" + "Shoal: Ambush At The Wrecks: Hollow Swell: offered" + "Shoal: Ambush At The Wrecks: Siltmarrow: offered" + "Shoal: Ambush At The Wrecks: Undercurrent: offered" + "Shoal: Ambush At The Wrecks: Fogbank: offered" + "Shoal: Ambush At The Wrecks: Murkwell: offered" + "Shoal: Ambush At The Wrecks: Rustcurrent: offered" + "Shoal: Ambush At The Wrecks: The Tangle: offered" + "Shoal: Ambush At The Wrecks: Tidegrave: offered" + "Shoal: Ambush At The Wrecks: Wreckmouth: offered" >= 1
+			"Shoal: Ambush At The Wrecks: Gullwake: active" + "Shoal: Ambush At The Wrecks: Kelpwater: active" + "Shoal: Ambush At The Wrecks: Pale Reach: active" + "Shoal: Ambush At The Wrecks: Shallow Mercy: active" + "Shoal: Ambush At The Wrecks: Brinefall: active" + "Shoal: Ambush At The Wrecks: Cold Shelf: active" + "Shoal: Ambush At The Wrecks: Driftglass: active" + "Shoal: Ambush At The Wrecks: Lantern Shoal: active" + "Shoal: Ambush At The Wrecks: Low Tide: active" + "Shoal: Ambush At The Wrecks: Saltmere: active" + "Shoal: Ambush At The Wrecks: Barnacle Reach: active" + "Shoal: Ambush At The Wrecks: Ebbstone: active" + "Shoal: Ambush At The Wrecks: Greywater: active" + "Shoal: Ambush At The Wrecks: Hollow Swell: active" + "Shoal: Ambush At The Wrecks: Siltmarrow: active" + "Shoal: Ambush At The Wrecks: Undercurrent: active" + "Shoal: Ambush At The Wrecks: Fogbank: active" + "Shoal: Ambush At The Wrecks: Murkwell: active" + "Shoal: Ambush At The Wrecks: Rustcurrent: active" + "Shoal: Ambush At The Wrecks: The Tangle: active" + "Shoal: Ambush At The Wrecks: Tidegrave: active" + "Shoal: Ambush At The Wrecks: Wreckmouth: active" <= 1
+			"Shoal: Silence The Hunter: Barnacle Reach: offered" + "Shoal: Silence The Hunter: Ebbstone: offered" + "Shoal: Silence The Hunter: Greywater: offered" + "Shoal: Silence The Hunter: Hollow Swell: offered" + "Shoal: Silence The Hunter: Siltmarrow: offered" + "Shoal: Silence The Hunter: Undercurrent: offered" + "Shoal: Silence The Hunter: Fogbank: offered" + "Shoal: Silence The Hunter: Murkwell: offered" + "Shoal: Silence The Hunter: Rustcurrent: offered" + "Shoal: Silence The Hunter: The Tangle: offered" + "Shoal: Silence The Hunter: Tidegrave: offered" + "Shoal: Silence The Hunter: Wreckmouth: offered" + "Shoal: Silence The Hunter: Blackwater: offered" + "Shoal: Silence The Hunter: Bonefield: offered" + "Shoal: Silence The Hunter: Gloom Shelf: offered" + "Shoal: Silence The Hunter: Ironsilt: offered" + "Shoal: Silence The Hunter: Lightless Reach: offered" + "Shoal: Silence The Hunter: Midnight Water: offered" + "Shoal: Silence The Hunter: Coldheart: offered" + "Shoal: Silence The Hunter: Drowned Lantern: offered" + "Shoal: Silence The Hunter: Hadal Gate: offered" + "Shoal: Silence The Hunter: Pressure Ridge: offered" + "Shoal: Silence The Hunter: The Sunken Choir: offered" >= 1
+			"Shoal: Silence The Hunter: Barnacle Reach: active" + "Shoal: Silence The Hunter: Ebbstone: active" + "Shoal: Silence The Hunter: Greywater: active" + "Shoal: Silence The Hunter: Hollow Swell: active" + "Shoal: Silence The Hunter: Siltmarrow: active" + "Shoal: Silence The Hunter: Undercurrent: active" + "Shoal: Silence The Hunter: Fogbank: active" + "Shoal: Silence The Hunter: Murkwell: active" + "Shoal: Silence The Hunter: Rustcurrent: active" + "Shoal: Silence The Hunter: The Tangle: active" + "Shoal: Silence The Hunter: Tidegrave: active" + "Shoal: Silence The Hunter: Wreckmouth: active" + "Shoal: Silence The Hunter: Blackwater: active" + "Shoal: Silence The Hunter: Bonefield: active" + "Shoal: Silence The Hunter: Gloom Shelf: active" + "Shoal: Silence The Hunter: Ironsilt: active" + "Shoal: Silence The Hunter: Lightless Reach: active" + "Shoal: Silence The Hunter: Midnight Water: active" + "Shoal: Silence The Hunter: Coldheart: active" + "Shoal: Silence The Hunter: Drowned Lantern: active" + "Shoal: Silence The Hunter: Hadal Gate: active" + "Shoal: Silence The Hunter: Pressure Ridge: active" + "Shoal: Silence The Hunter: The Sunken Choir: active" <= 1
+			"Shoal: Tow Escort: Gullwake: offered" + "Shoal: Tow Escort: Kelpwater: offered" + "Shoal: Tow Escort: Pale Reach: offered" + "Shoal: Tow Escort: Shallow Mercy: offered" + "Shoal: Tow Escort: Brinefall: offered" + "Shoal: Tow Escort: Cold Shelf: offered" + "Shoal: Tow Escort: Driftglass: offered" + "Shoal: Tow Escort: Lantern Shoal: offered" + "Shoal: Tow Escort: Low Tide: offered" + "Shoal: Tow Escort: Saltmere: offered" >= 1
+			"Shoal: Tow Escort: Gullwake: active" + "Shoal: Tow Escort: Kelpwater: active" + "Shoal: Tow Escort: Pale Reach: active" + "Shoal: Tow Escort: Shallow Mercy: active" + "Shoal: Tow Escort: Brinefall: active" + "Shoal: Tow Escort: Cold Shelf: active" + "Shoal: Tow Escort: Driftglass: active" + "Shoal: Tow Escort: Lantern Shoal: active" + "Shoal: Tow Escort: Low Tide: active" + "Shoal: Tow Escort: Saltmere: active" <= 1
+			"shoal: ambush pair" == 0
+
+
+test "Shoal Deep Jobs Need The Welcome"
+	status active
+	description "Without the Breakers' welcome, none of their jobs is offered."
+	sequence
+		inject "Shoal Ambush Save"
+		call "Load First Savegame"
+		apply
+			"shoal: welcomed" = 0
+			"test: landings" = 0
+		label retry
+		apply
+			"test: landings" += 1
+		call "Shoal Relanding"
+		input
+			key j
+		input
+			key a
+		input
+			key a
+		input
+			key "escape"
+		branch retry
+			"test: landings" < 10
+		assert
+			"Shoal: Lead Freighter: Gullwake: offered" + "Shoal: Lead Freighter: Kelpwater: offered" + "Shoal: Lead Freighter: Pale Reach: offered" + "Shoal: Lead Freighter: Shallow Mercy: offered" + "Shoal: Lead Freighter: Brinefall: offered" + "Shoal: Lead Freighter: Cold Shelf: offered" + "Shoal: Lead Freighter: Driftglass: offered" + "Shoal: Lead Freighter: Lantern Shoal: offered" + "Shoal: Lead Freighter: Low Tide: offered" + "Shoal: Lead Freighter: Saltmere: offered" + "Shoal: Lead Freighter: Barnacle Reach: offered" + "Shoal: Lead Freighter: Ebbstone: offered" + "Shoal: Lead Freighter: Greywater: offered" + "Shoal: Lead Freighter: Hollow Swell: offered" + "Shoal: Lead Freighter: Siltmarrow: offered" + "Shoal: Lead Freighter: Undercurrent: offered" + "Shoal: Lead Freighter: Fogbank: offered" + "Shoal: Lead Freighter: Murkwell: offered" + "Shoal: Lead Freighter: Rustcurrent: offered" + "Shoal: Lead Freighter: The Tangle: offered" + "Shoal: Lead Freighter: Tidegrave: offered" + "Shoal: Lead Freighter: Wreckmouth: offered" == 0
+			"Shoal: Lead Warship: Barnacle Reach: offered" + "Shoal: Lead Warship: Ebbstone: offered" + "Shoal: Lead Warship: Greywater: offered" + "Shoal: Lead Warship: Hollow Swell: offered" + "Shoal: Lead Warship: Siltmarrow: offered" + "Shoal: Lead Warship: Undercurrent: offered" + "Shoal: Lead Warship: Fogbank: offered" + "Shoal: Lead Warship: Murkwell: offered" + "Shoal: Lead Warship: Rustcurrent: offered" + "Shoal: Lead Warship: The Tangle: offered" + "Shoal: Lead Warship: Tidegrave: offered" + "Shoal: Lead Warship: Wreckmouth: offered" + "Shoal: Lead Warship: Blackwater: offered" + "Shoal: Lead Warship: Bonefield: offered" + "Shoal: Lead Warship: Gloom Shelf: offered" + "Shoal: Lead Warship: Ironsilt: offered" + "Shoal: Lead Warship: Lightless Reach: offered" + "Shoal: Lead Warship: Midnight Water: offered" + "Shoal: Lead Warship: Coldheart: offered" + "Shoal: Lead Warship: Drowned Lantern: offered" + "Shoal: Lead Warship: Hadal Gate: offered" + "Shoal: Lead Warship: Pressure Ridge: offered" + "Shoal: Lead Warship: The Sunken Choir: offered" == 0
+			"Shoal: Lead Deep: Blackwater: offered" + "Shoal: Lead Deep: Bonefield: offered" + "Shoal: Lead Deep: Gloom Shelf: offered" + "Shoal: Lead Deep: Ironsilt: offered" + "Shoal: Lead Deep: Lightless Reach: offered" + "Shoal: Lead Deep: Midnight Water: offered" + "Shoal: Lead Deep: Coldheart: offered" + "Shoal: Lead Deep: Drowned Lantern: offered" + "Shoal: Lead Deep: Hadal Gate: offered" + "Shoal: Lead Deep: Pressure Ridge: offered" + "Shoal: Lead Deep: The Sunken Choir: offered" + "Shoal: Lead Deep: Hadal Floor: offered" + "Shoal: Lead Deep: The Last Fathom: offered" + "Shoal: Lead Deep: The Sepulchre: offered" + "Shoal: Lead Deep: The Trench: offered" + "Shoal: Lead Deep: Nadir: offered" + "Shoal: Lead Deep: Stillwater: offered" == 0
+			"Shoal: Ambush At The Wrecks: Gullwake: offered" + "Shoal: Ambush At The Wrecks: Kelpwater: offered" + "Shoal: Ambush At The Wrecks: Pale Reach: offered" + "Shoal: Ambush At The Wrecks: Shallow Mercy: offered" + "Shoal: Ambush At The Wrecks: Brinefall: offered" + "Shoal: Ambush At The Wrecks: Cold Shelf: offered" + "Shoal: Ambush At The Wrecks: Driftglass: offered" + "Shoal: Ambush At The Wrecks: Lantern Shoal: offered" + "Shoal: Ambush At The Wrecks: Low Tide: offered" + "Shoal: Ambush At The Wrecks: Saltmere: offered" + "Shoal: Ambush At The Wrecks: Barnacle Reach: offered" + "Shoal: Ambush At The Wrecks: Ebbstone: offered" + "Shoal: Ambush At The Wrecks: Greywater: offered" + "Shoal: Ambush At The Wrecks: Hollow Swell: offered" + "Shoal: Ambush At The Wrecks: Siltmarrow: offered" + "Shoal: Ambush At The Wrecks: Undercurrent: offered" + "Shoal: Ambush At The Wrecks: Fogbank: offered" + "Shoal: Ambush At The Wrecks: Murkwell: offered" + "Shoal: Ambush At The Wrecks: Rustcurrent: offered" + "Shoal: Ambush At The Wrecks: The Tangle: offered" + "Shoal: Ambush At The Wrecks: Tidegrave: offered" + "Shoal: Ambush At The Wrecks: Wreckmouth: offered" == 0
+			"Shoal: Silence The Hunter: Barnacle Reach: offered" + "Shoal: Silence The Hunter: Ebbstone: offered" + "Shoal: Silence The Hunter: Greywater: offered" + "Shoal: Silence The Hunter: Hollow Swell: offered" + "Shoal: Silence The Hunter: Siltmarrow: offered" + "Shoal: Silence The Hunter: Undercurrent: offered" + "Shoal: Silence The Hunter: Fogbank: offered" + "Shoal: Silence The Hunter: Murkwell: offered" + "Shoal: Silence The Hunter: Rustcurrent: offered" + "Shoal: Silence The Hunter: The Tangle: offered" + "Shoal: Silence The Hunter: Tidegrave: offered" + "Shoal: Silence The Hunter: Wreckmouth: offered" + "Shoal: Silence The Hunter: Blackwater: offered" + "Shoal: Silence The Hunter: Bonefield: offered" + "Shoal: Silence The Hunter: Gloom Shelf: offered" + "Shoal: Silence The Hunter: Ironsilt: offered" + "Shoal: Silence The Hunter: Lightless Reach: offered" + "Shoal: Silence The Hunter: Midnight Water: offered" + "Shoal: Silence The Hunter: Coldheart: offered" + "Shoal: Silence The Hunter: Drowned Lantern: offered" + "Shoal: Silence The Hunter: Hadal Gate: offered" + "Shoal: Silence The Hunter: Pressure Ridge: offered" + "Shoal: Silence The Hunter: The Sunken Choir: offered" == 0
+			"Shoal: Tow Escort: Gullwake: offered" + "Shoal: Tow Escort: Kelpwater: offered" + "Shoal: Tow Escort: Pale Reach: offered" + "Shoal: Tow Escort: Shallow Mercy: offered" + "Shoal: Tow Escort: Brinefall: offered" + "Shoal: Tow Escort: Cold Shelf: offered" + "Shoal: Tow Escort: Driftglass: offered" + "Shoal: Tow Escort: Lantern Shoal: offered" + "Shoal: Tow Escort: Low Tide: offered" + "Shoal: Tow Escort: Saltmere: offered" == 0
+
+
+test "Shoal Deep Job Stays Active Through The Maw"
+	status active
+	description "An accepted ambush job stays active, not failed or done, as the player flies down through the Maw into the Deep."
+	sequence
+		inject "Shoal Ambush Save"
+		call "Load First Savegame"
+		label retry
+		apply
+			"test: landings" += 1
+		call "Shoal Relanding"
+		input
+			key j
+		input
+			key a
+		input
+			key a
+		input
+			key a
+		input
+			key a
+		input
+			key a
+		input
+			key a
+		input
+			key a
+		input
+			key a
+		input
+			key "escape"
+		branch accepted
+			"shoal: ambush next" > 0
+		branch retry
+			"test: landings" < 40
+		label accepted
+		assert
+			"Shoal: Ambush At The Wrecks: Gullwake: active" + "Shoal: Ambush At The Wrecks: Kelpwater: active" + "Shoal: Ambush At The Wrecks: Pale Reach: active" + "Shoal: Ambush At The Wrecks: Shallow Mercy: active" + "Shoal: Ambush At The Wrecks: Brinefall: active" + "Shoal: Ambush At The Wrecks: Cold Shelf: active" + "Shoal: Ambush At The Wrecks: Driftglass: active" + "Shoal: Ambush At The Wrecks: Lantern Shoal: active" + "Shoal: Ambush At The Wrecks: Low Tide: active" + "Shoal: Ambush At The Wrecks: Saltmere: active" + "Shoal: Ambush At The Wrecks: Barnacle Reach: active" + "Shoal: Ambush At The Wrecks: Ebbstone: active" + "Shoal: Ambush At The Wrecks: Greywater: active" + "Shoal: Ambush At The Wrecks: Hollow Swell: active" + "Shoal: Ambush At The Wrecks: Siltmarrow: active" + "Shoal: Ambush At The Wrecks: Undercurrent: active" + "Shoal: Ambush At The Wrecks: Fogbank: active" + "Shoal: Ambush At The Wrecks: Murkwell: active" + "Shoal: Ambush At The Wrecks: Rustcurrent: active" + "Shoal: Ambush At The Wrecks: The Tangle: active" + "Shoal: Ambush At The Wrecks: Tidegrave: active" + "Shoal: Ambush At The Wrecks: Wreckmouth: active" == 1
+			"shoal: ambush next" == "days since epoch" + 4
+		call "Shoal Wait For Takeoff"
+		call "Shoal Through The Maw"
+		assert
+			"Shoal: Ambush At The Wrecks: Gullwake: active" + "Shoal: Ambush At The Wrecks: Kelpwater: active" + "Shoal: Ambush At The Wrecks: Pale Reach: active" + "Shoal: Ambush At The Wrecks: Shallow Mercy: active" + "Shoal: Ambush At The Wrecks: Brinefall: active" + "Shoal: Ambush At The Wrecks: Cold Shelf: active" + "Shoal: Ambush At The Wrecks: Driftglass: active" + "Shoal: Ambush At The Wrecks: Lantern Shoal: active" + "Shoal: Ambush At The Wrecks: Low Tide: active" + "Shoal: Ambush At The Wrecks: Saltmere: active" + "Shoal: Ambush At The Wrecks: Barnacle Reach: active" + "Shoal: Ambush At The Wrecks: Ebbstone: active" + "Shoal: Ambush At The Wrecks: Greywater: active" + "Shoal: Ambush At The Wrecks: Hollow Swell: active" + "Shoal: Ambush At The Wrecks: Siltmarrow: active" + "Shoal: Ambush At The Wrecks: Undercurrent: active" + "Shoal: Ambush At The Wrecks: Fogbank: active" + "Shoal: Ambush At The Wrecks: Murkwell: active" + "Shoal: Ambush At The Wrecks: Rustcurrent: active" + "Shoal: Ambush At The Wrecks: The Tangle: active" + "Shoal: Ambush At The Wrecks: Tidegrave: active" + "Shoal: Ambush At The Wrecks: Wreckmouth: active" == 1
+			"Shoal: Ambush At The Wrecks: Gullwake: failed" + "Shoal: Ambush At The Wrecks: Kelpwater: failed" + "Shoal: Ambush At The Wrecks: Pale Reach: failed" + "Shoal: Ambush At The Wrecks: Shallow Mercy: failed" + "Shoal: Ambush At The Wrecks: Brinefall: failed" + "Shoal: Ambush At The Wrecks: Cold Shelf: failed" + "Shoal: Ambush At The Wrecks: Driftglass: failed" + "Shoal: Ambush At The Wrecks: Lantern Shoal: failed" + "Shoal: Ambush At The Wrecks: Low Tide: failed" + "Shoal: Ambush At The Wrecks: Saltmere: failed" + "Shoal: Ambush At The Wrecks: Barnacle Reach: failed" + "Shoal: Ambush At The Wrecks: Ebbstone: failed" + "Shoal: Ambush At The Wrecks: Greywater: failed" + "Shoal: Ambush At The Wrecks: Hollow Swell: failed" + "Shoal: Ambush At The Wrecks: Siltmarrow: failed" + "Shoal: Ambush At The Wrecks: Undercurrent: failed" + "Shoal: Ambush At The Wrecks: Fogbank: failed" + "Shoal: Ambush At The Wrecks: Murkwell: failed" + "Shoal: Ambush At The Wrecks: Rustcurrent: failed" + "Shoal: Ambush At The Wrecks: The Tangle: failed" + "Shoal: Ambush At The Wrecks: Tidegrave: failed" + "Shoal: Ambush At The Wrecks: Wreckmouth: failed" == 0
+			"Shoal: Ambush At The Wrecks: Gullwake: done" + "Shoal: Ambush At The Wrecks: Kelpwater: done" + "Shoal: Ambush At The Wrecks: Pale Reach: done" + "Shoal: Ambush At The Wrecks: Shallow Mercy: done" + "Shoal: Ambush At The Wrecks: Brinefall: done" + "Shoal: Ambush At The Wrecks: Cold Shelf: done" + "Shoal: Ambush At The Wrecks: Driftglass: done" + "Shoal: Ambush At The Wrecks: Lantern Shoal: done" + "Shoal: Ambush At The Wrecks: Low Tide: done" + "Shoal: Ambush At The Wrecks: Saltmere: done" + "Shoal: Ambush At The Wrecks: Barnacle Reach: done" + "Shoal: Ambush At The Wrecks: Ebbstone: done" + "Shoal: Ambush At The Wrecks: Greywater: done" + "Shoal: Ambush At The Wrecks: Hollow Swell: done" + "Shoal: Ambush At The Wrecks: Siltmarrow: done" + "Shoal: Ambush At The Wrecks: Undercurrent: done" + "Shoal: Ambush At The Wrecks: Fogbank: done" + "Shoal: Ambush At The Wrecks: Murkwell: done" + "Shoal: Ambush At The Wrecks: Rustcurrent: done" + "Shoal: Ambush At The Wrecks: The Tangle: done" + "Shoal: Ambush At The Wrecks: Tidegrave: done" + "Shoal: Ambush At The Wrecks: Wreckmouth: done" == 0
+
+
+test "Shoal Down The Maw Told Once"
+	status active
+	description "A captain welcomed before 0.5.0 hears about the Maw on the next landing at Breaker's Rest, once."
+	sequence
+		inject "Shoal Ambush Save"
+		call "Load First Savegame"
+		apply
+			"shoal: maw told" = 0
+		call "Shoal Relanding"
+		input
+			key "return"
+		assert
+			"shoal: maw told" == 1
+			"Shoal: Down The Maw: active" == 0
+		apply
+			"test: told" = "shoal: maw told"
+		call "Shoal Relanding"
+		input
+			key j
+		input
+			key "escape"
+		assert
+			"shoal: maw told" == 1
+			"flagship planet: Breaker's Rest" == 1
+
+
+test "Shoal Glass-Edge Cutlass And Reworked Mk IIIs"
+	status active
+	description "DESIGN.md section 19: the Glass-Edge Cutlass exists as hand-to-hand gear (2 installed give capture attack 4.8 and defense 4.4; 3 more ride in the hold), and the reworked Mk IIIs (Abyssal Cell, Undertow Thruster, Eddy Steering, Brine Capacitor with no leak, Coldwater Sink) and the Driftnet Ramscoop Mk III carry their stats."
+	sequence
+		inject "Shoal Cutlass Save"
+		call "Load First Savegame"
+		assert
+			"outfit (installed): Glass-Edge Cutlass" == 2
+			"outfit (cargo): Glass-Edge Cutlass" == 3
+			"outfit: Glass-Edge Cutlass" == 5
+			"flagship attribute: capture attack" == 4800
+			"flagship attribute: capture defense" == 4400
+			"flagship attribute: energy generation" == 21000
+			"flagship attribute: heat generation" == 22800
+			"flagship attribute: ramscoop" == 100000
+			"flagship attribute: fuel generation" == 620
+			"flagship attribute: energy consumption" == 6000
+			"flagship attribute: thrust" == 156000
+			"flagship attribute: thrusting energy" == 9850
+			"flagship attribute: thrusting heat" == 31200
+			"flagship attribute: turn" == 3800000
+			"flagship attribute: turning energy" == 4300
+			"flagship attribute: turning heat" == 17100
+			"flagship attribute: cooling" == 40000
+			"flagship attribute: active cooling" == 90000
+			"flagship attribute: cooling energy" == 6100
+
+
+test "Shoal Lamprey Launcher Reloads From Cargo"
+	status active
+	description "DESIGN.md section 21: a ship with a Lamprey Launcher Mk I (magazine 20), 25 Glass Lampreys and 30 Shoal Glass in its hold opens the outfitter at Breaker's Rest (which sells neither) with ammunition refill set to always: the magazine fills from the hold (20 loaded, 5 left in the hold) and the Shoal Glass stays in the hold, a material, not ammunition."
+	sequence
+		inject "Shoal Lamprey Save"
+		call "Load First Savegame"
+		assert
+			"flagship planet: Breaker's Rest" == 1
+			"outfit (installed): Lamprey Launcher Mk I" == 1
+			"outfit (installed): Glass Lamprey" == 0
+			"outfit (cargo): Glass Lamprey" == 25
+			"outfit (cargo): Shoal Glass" == 30
+			"flagship attribute: glass lamprey capacity" == 20000
+		input
+			key o
+		input
+			key "escape"
+		assert
+			"outfit (installed): Glass Lamprey" == 20
+			"outfit (cargo): Glass Lamprey" == 5
+			"outfit (storage): Glass Lamprey" == 0
+			"flagship attribute: glass lamprey capacity" == 0
+			"outfit (installed): Shoal Glass" == 0
+			"outfit (cargo): Shoal Glass" == 30
+			"outfit: Shoal Glass" == 30

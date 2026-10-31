@@ -1,0 +1,58 @@
+class Rng
+
+// A Park-Miller generator (the minimal standard, multiplier 48271), so that a
+// trail is the same every time from the same seed: DadoScript has no random
+// numbers. Its state is a whole number in 1 ..< 2^31 - 1; products stay below
+// 2^47, exactly representable.
+
+int state = 1
+
+void seed(int s):
+    int m = 2147483647
+    int v = s % m
+    if v < 0:
+        v += m
+    if v == 0:
+        v = 1
+    state = v
+
+int next():
+    state = (state * 48271) % 2147483647
+    return state
+
+// 0 ..< n (0 for n <= 0).
+int below(int n):
+    if n <= 0:
+        return 0
+    return next() % n
+
+// lo ..= hi.
+int between(int lo, int hi):
+    if hi <= lo:
+        return lo
+    return lo + below(hi - lo + 1)
+
+// An index into `weights`, chosen in proportion to them (-1 when they sum to 0).
+int weighted([]int weights):
+    int total = 0
+    for w in weights:
+        if w > 0:
+            total += w
+    if total <= 0:
+        return -1
+    int r = below(total)
+    for w, i in weights:
+        if w <= 0:
+            continue
+        if r < w:
+            return i
+        r -= w
+    return weights.len() - 1
+
+// A hash of a string, for seeds: stable across sessions (a polynomial hash mod 2^31 - 1).
+int hash(string s):
+    int h = 7
+    for k in 0..<s.len():
+        int c = s.code_point_at(k)
+        h = (h * 131 + c) % 2147483647
+    return h

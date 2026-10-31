@@ -1,0 +1,2 @@
+name "Corsair Charts tests"
+about "In-game tests for Corsair Charts (mods/corsair_charts/test/ingame)."

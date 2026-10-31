@@ -1,5 +1,5 @@
 name "Outfit Integration"
-version "0.1"
+version "0.2"
 authors
 	"Anaxarchus"
 about "Shipyard engineers can integrate an outfit installed on your ship into its hull, for a fee of a quarter of its cost. An integrated outfit is 25% lighter and takes up 25% less outfit space, but it can never be uninstalled, sold or plundered. Ammunition cannot be integrated. Needs the Dado mod loader (mod API 5 or newer) in the game's modloaders folder."

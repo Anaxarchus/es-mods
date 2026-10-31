@@ -1,0 +1,63 @@
+class Cipher
+
+// The scrambles of a cipher step (DESIGN.md, "Cipher"). Only the letters A..Z
+// change; everything else (spaces, digits, apostrophes) stays where it is.
+
+string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+// Every letter moved `k` places along the alphabet (wrapping), upper case.
+string shift(string text, int k):
+    string up = text.to_upper()
+    string out = ""
+    int m = ((k % 26) + 26) % 26
+    for i in 0..<up.len():
+        string c = up[i]
+        if alphabet.contains(c) && c.len() == 1:
+            int p = alphabet.index_of(c)
+            out += alphabet[(p + m) % 26]
+        else:
+            out += c
+    return out
+
+// The letters of each word shuffled among themselves (Fisher-Yates, from the
+// generator), upper case. A word whose shuffle comes out unchanged is rotated
+// by one, so a word of two or more different letters always looks scrambled.
+string anagram(string text, Rng rng):
+    string up = text.to_upper()
+    []string words = up.split(" ")
+    []string out = []
+    for w in words:
+        []string cs = []
+        for i in 0..<w.len():
+            cs.append(w[i])
+        int n = cs.len()
+        for i in 0..<n:
+            int j = i + rng.below(n - i)
+            string t = cs[i]
+            cs[i] = cs[j]
+            cs[j] = t
+        string s = cs.join("")
+        if s == w && n > 1:
+            s = w[1..<n] + w[0..<1]
+        out.append(s)
+    return out.join(" ")
+
+// Undo shift (for tests and the hint).
+string unshift(string text, int k):
+    return shift(text, 26 - (((k % 26) + 26) % 26))
+
+// Whether two texts hold the same letters (an anagram's check).
+bool same_letters(string a, string b):
+    []string x = []
+    []string y = []
+    string ua = a.to_upper()
+    string ub = b.to_upper()
+    for i in 0..<ua.len():
+        if ua[i] != " ":
+            x.append(ua[i])
+    for i in 0..<ub.len():
+        if ub[i] != " ":
+            y.append(ub[i])
+    x.sort()
+    y.sort()
+    return x.join("") == y.join("")

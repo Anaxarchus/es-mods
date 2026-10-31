@@ -1,0 +1,1893 @@
+# The Shoal: materials and exotic outfits.
+#
+# None of these are sold by any outfitter. The materials come from the belt,
+# the wrecks and the guardians. Since v0.3 (DESIGN.md section 15) the
+# exotic lines (thirteen since v0.3.4, when the Driftnet Ramscoop joined;
+# fourteen since v0.3.5, the Lamprey Launcher) come only from drowned wrecks
+# and salvage leads (Mk I, rarely Mk II); Mk III only by upgrading at the
+# Breakers' Yard (the mod's code). The workshop
+# (see "shoal workshop.txt") builds only the Warden Steward.
+#
+# Since v0.3 the workshop takes refined materials only (DESIGN.md section 14):
+# 10 Shoal Glass refine into 1 Refined Shoal Glass (sale 40,000) and 3 Warden
+# Cores into 1 Refined Warden Core (sale 180,000), so refining neither gains
+# nor loses sale value.
+#
+# Sale values ("cost") of the exotics were set (v0.2) below what the old
+# workshop recipes consumed to make them (Mk I: 150k + 3 refined glass = 270k; Mk II:
+# 1.59M including the Mk I; Mk III: 5.79M including the Mk II), so crafting
+# and selling never turns a profit:
+#	Mk I 240,000 / Mk II 1,450,000 / Mk III 5,400,000 for every line.
+# The exotic lines (six from v0.1, six from v0.2, one each from v0.3.4 and v0.3.5) all use those prices
+# and the same recipes. The Warden Steward (crew) line has its own, cheaper
+# recipe (Mk I: 2 refined glass + 1 refined core + 100k = 360k; Mk II: 1.16M
+# including the Mk I; Mk III: 3.94M including the Mk II):
+#	Mk I 300,000 / Mk II 1,000,000 / Mk III 3,500,000.
+
+
+
+# =========================================================================
+# Materials (category "Special", cannot be installed, ride in cargo)
+# =========================================================================
+
+outfit "Shoal Glass"
+	plural "Shoal Glass"
+	category "Special"
+	cost 4000
+	thumbnail "outfit/harvested silicon"
+	"flotsam sprite" "effect/flotsam silicon"
+	"mass" 1
+	"installable" -1
+	description "A cloudy blue-green glass that grows in the hollows of the Shoal's rocks and on the hulls of the ships that sank there. It is shot through with fine filaments that still carry a faint charge, as if something in the belt were trying to remember how to be a machine."
+	description "	The Breakers cut it, spin it and fuse it into nearly everything they build. Outside the Shoal, it sells to collectors and laboratories who do not ask where it came from."
+
+outfit "Warden Core"
+	plural "Warden Cores"
+	category "Special"
+	cost 60000
+	thumbnail "outfit/reasoning node"
+	"mass" 4
+	"installable" -1
+	description "The heart of a Shoal Warden: a dense, warm lump of machinery that keeps working long after the hull around it has gone dark. No one has ever found a power source inside one. The Breakers pay well for them, and they never keep one in the same room they sleep in."
+
+outfit "Deep Lattice"
+	plural "Deep Lattices"
+	category "Special"
+	cost 400000
+	thumbnail "outfit/anomalous mass"
+	"flotsam sprite" "effect/flotsam anomalous mass"
+	"mass" 2
+	"installable" -1
+	description "A fist-sized knot of crystal recovered only from the oldest wrecks at the bottom of the Shoal. Light that enters it takes a noticeably long time to come back out. The Breakers say that every piece of drowned-fleet technology they have ever rebuilt was grown around a fragment of lattice, and that there is not much of it left."
+
+# Refined materials: what the workshop actually works with. Made at Breaker's
+# Rest (the refinery button, or the fallback refinery jobs in
+# "shoal refinery.txt"), never dropped.
+
+outfit "Refined Shoal Glass"
+	plural "Refined Shoal Glass"
+	category "Special"
+	cost 40000
+	thumbnail "outfit/harvested yottrite"
+	"mass" 1
+	"installable" -1
+	description "Shoal Glass that the Breakers have melted down, skimmed and spun into clear, pale ingots. Ten measures of raw glass go into each one; what is left is the part that still carries a charge, and it hums very faintly when it is stacked."
+	description "	The yard and the workshop work only refined stock. Raw glass is too full of grit and old dreams, the cutters say, to hold a shape."
+
+outfit "Refined Warden Core"
+	plural "Refined Warden Cores"
+	category "Special"
+	cost 180000
+	thumbnail "outfit/hai pebble core"
+	"mass" 1
+	"installable" -1
+	description "Three Warden Cores, stripped of their dead shells and fused into a single compact heart. The Breakers do it in a shielded pit at the far end of the station, and nobody stands near the pit while it runs. What comes out is small, cool to the touch, and far more willing to do what it is told than the cores it was made from."
+
+
+
+# =========================================================================
+# Tidecutter (Guns, 20 space, pulsed beam)
+# =========================================================================
+# References (damage per second / per outfit space; shield / hull):
+#	Electron Beam (best human beam gun): 21 space, 144 / 198 /s
+#		= 6.86 / 9.43 per space, range 450, 120 energy/s, 216 heat/s.
+#	Heavy Laser: 15 space, 102 / 144 /s = 6.8 / 9.6 per space, range 400.
+#	Korath Fire-Lance: 22 space, 210 / 90 /s (+heat and burn) = 9.5 / 4.1 per space.
+#	Remnant Thrasher Cannon: 10 space, 114 / 138 /s = 11.4 / 13.8 per space, range 360.
+#	Wanderer Moonbeam (structure model: burst beam): 19 space, 160 / 280 /s.
+# Pulsed beam: "reload" 1.5 with a 20-shot burst at 1 frame = 30-frame cycle,
+# beam on 2/3 of the time; damage per second = per-shot damage x 40.
+#	Korath Husk-Slice (the hull cutter): 46 space, 365 / 967 /s = 7.9 / 21.0
+#		per space; Husk-Slice Turret 59 space, 6.2 / 16.4 per space.
+# v0.3.5 (DESIGN.md section 21): an armour cutter, weak against shields, to
+# pair with the Lamprey Launcher, whose disruption, discharge and drain take
+# the shields off. Shield damage about half the old value, hull damage up,
+# and a little piercing on every mark (DamageProfile.cpp: while shields are
+# up they take only 1 - piercing of a hit; that share of the hull damage
+# reaches the hull at once; disruption raises the share further, and once
+# the shields are gone all of it lands). Was (shield / hull per second):
+# Mk I 158 / 216, Mk II 200 / 250, Mk III 270 / 320 (15% piercing).
+# Chosen:
+#	Mk I:    80 / 230 /s =  4.0 / 11.5 per space, 5% piercing: hull x1.16 of
+#		an Electron Beam (198), shields x0.56; range 470, 120 energy/s,
+#		200 heat/s.
+#	Mk II:  100 / 400 /s =  5.0 / 20.0 per space, 10% piercing: Husk-Slice
+#		tier against hull (21.0 per space, no piercing); range 500, 144
+#		energy/s, 224 heat/s.
+#	Mk III: 130 / 520 /s =  6.5 / 26.0 per space, 20% piercing, range 520:
+#		past the Husk-Slice (21.0) and the Moonbeam (25.7); only a few
+#		Successor and Gegno guns cut hull faster per space.
+#		Drawback: 224 energy/s and 480 heat/s (more than twice an Electron
+#		Beam's heat), and 30 tons instead of 18.
+
+outfit "Tidecutter Mk I"
+	category "Guns"
+	series "Guns"
+	index 60010
+	cost 240000
+	thumbnail "outfit/moonbeam"
+	"mass" 18
+	"outfit space" -20
+	"weapon capacity" -20
+	"gun ports" -1
+	weapon
+		sprite "projectile/moonbeam"
+			"random start frame"
+		sound "moonbeam"
+		"fire effect" "moonbeam fleck"
+		"hit effect" "moonbeam impact"
+		"inaccuracy" .6
+		"velocity" 470
+		"lifetime" 1
+		"reload" 1.5
+		"burst count" 20
+		"burst reload" 1
+		"firing energy" 3
+		"firing heat" 5
+		"shield damage" 2
+		"hull damage" 5.75
+		"piercing" .05
+	description "The drowned fleet's ships carried guns that fired in long, rolling pulses, like surf breaking on a reef. The Breakers have learned to coax the old emitters back to life with Shoal Glass lenses. This first rebuild is crude by the standards of whoever made the originals, but it still outshoots anything sold in human space."
+
+outfit "Tidecutter Mk II"
+	category "Guns"
+	series "Guns"
+	index 60020
+	cost 1450000
+	thumbnail "outfit/moonbeam"
+	"mass" 18
+	"outfit space" -20
+	"weapon capacity" -20
+	"gun ports" -1
+	weapon
+		sprite "projectile/moonbeam"
+			"random start frame"
+		sound "moonbeam"
+		"fire effect" "moonbeam fleck"
+		"hit effect" "moonbeam impact"
+		"inaccuracy" .5
+		"velocity" 500
+		"lifetime" 1
+		"reload" 1.5
+		"burst count" 20
+		"burst reload" 1
+		"firing energy" 3.6
+		"firing heat" 5.6
+		"shield damage" 2.5
+		"hull damage" 10
+		"piercing" .1
+	description "Wired to a Warden Core, the Tidecutter's emitter stops fighting the Breakers' modifications and starts cooperating with them. The pulses come cleaner and reach further, and the beam has an unsettling habit of finding the weakest plate on whatever it touches."
+
+outfit "Tidecutter Mk III"
+	category "Guns"
+	series "Guns"
+	index 60030
+	cost 5400000
+	thumbnail "outfit/moonbeam"
+	"mass" 30
+	"outfit space" -20
+	"weapon capacity" -20
+	"gun ports" -1
+	weapon
+		sprite "projectile/moonbeam"
+			"random start frame"
+		sound "moonbeam"
+		"fire effect" "moonbeam fleck"
+		"hit effect" "moonbeam impact"
+		"inaccuracy" .4
+		"velocity" 520
+		"lifetime" 1
+		"reload" 1.5
+		"burst count" 20
+		"burst reload" 1
+		"firing energy" 5.6
+		"firing heat" 12
+		"shield damage" 3.25
+		"hull damage" 13
+		"piercing" .2
+	description "Grown around a sliver of Deep Lattice, this is as close as anyone has come to the guns the drowned fleet actually fought with. Part of every pulse slips through shields as if they were not there. The emitter runs hot enough to blister its own housing, and the Breakers pack it in so much cooling glass that it weighs nearly twice what it should."
+
+
+
+# =========================================================================
+# Riptide Turret (Turrets, 36 space, fast-tracking continuous beam)
+# =========================================================================
+# References (damage per second / per outfit space; shield / hull):
+#	Electron Turret (best human beam turret): 54 space, 288 / 396 /s
+#		= 5.33 / 7.33 per space, turret turn 1.2, range 450, 240 energy/s, 432 heat/s.
+#	Heavy Laser Turret: 40 space, 204 / 288 /s = 5.1 / 7.2 per space, turn 2.2.
+#	Korath Blaze-Pike: 54 space, 426 / 186 /s (+heat) = 7.9 / 3.4 per space, turn 1.2.
+#	Remnant Thrasher Turret: 49 space, 456 / 552 /s = 9.3 / 11.3 per space,
+#		range 360, turn 2.
+#	Wanderer Moonbeam Turret: 35 space, 240 / 420 /s, turn 2.2.
+#	Korath Husk-Slice Turret (the hull cutter): 59 space, 365 / 967 /s =
+#		6.2 / 16.4 per space, turn 0.5.
+# v0.3.5 (DESIGN.md section 21): like the Tidecutter, an armour cutter that
+# leaves the shields to the Lamprey Launcher: shield damage about half,
+# hull damage up, a little piercing. Was (shield / hull per second): Mk I
+# 219 / 303, Mk II 306 / 378, Mk III 414 / 486, no piercing.
+# Chosen (continuous beam, reload 1, damage per second = per-frame x 60):
+#	Mk I:   108 / 324 /s =  3.0 /  9.0 per space, 5% piercing (hull x1.23 of
+#		an Electron Turret, shields x0.56), turn 3.5, range 470, 180
+#		energy/s, 360 heat/s.
+#	Mk II:  144 / 558 /s =  4.0 / 15.5 per space, 10% piercing (Husk-Slice
+#		Turret tier against hull), turn 4.5, range 500, 228 energy/s,
+#		384 heat/s.
+#	Mk III: 180 / 756 /s =  5.0 / 21.0 per space, 20% piercing, turn 5.5,
+#		range 520.
+#		Drawback: 840 heat/s (nearly twice an Electron Turret), 336 energy/s,
+#		48 tons instead of 34.
+
+outfit "Riptide Turret Mk I"
+	category "Turrets"
+	series "Turrets"
+	index 60010
+	cost 240000
+	thumbnail "outfit/moonbeam turret"
+	"mass" 34
+	"outfit space" -36
+	"weapon capacity" -36
+	"turret mounts" -1
+	"required crew" 1
+	weapon
+		sprite "projectile/moonbeam"
+			"random start frame"
+		"hardpoint sprite" "hardpoint/moonbeam turret"
+		"hardpoint offset" 9.
+		sound "moonbeam"
+		"fire effect" "moonbeam fleck"
+		"hit effect" "moonbeam impact"
+		"inaccuracy" .3
+		"turret turn" 3.5
+		"velocity" 470
+		"lifetime" 1
+		"reload" 1
+		"firing energy" 3
+		"firing heat" 6
+		"shield damage" 1.8
+		"hull damage" 5.4
+		"piercing" .05
+	description "The Wardens' turrets swivel faster than the eye can follow, and they never seem to care whether they are shooting at a fighter, a warship or a missile's shadow. The Breakers pried one off a dead Picket, replaced half of it with glass, and found it still wanted to track."
+
+outfit "Riptide Turret Mk II"
+	category "Turrets"
+	series "Turrets"
+	index 60020
+	cost 1450000
+	thumbnail "outfit/moonbeam turret"
+	"mass" 32
+	"outfit space" -36
+	"weapon capacity" -36
+	"turret mounts" -1
+	"required crew" 1
+	weapon
+		sprite "projectile/moonbeam"
+			"random start frame"
+		"hardpoint sprite" "hardpoint/moonbeam turret"
+		"hardpoint offset" 9.
+		sound "moonbeam"
+		"fire effect" "moonbeam fleck"
+		"hit effect" "moonbeam impact"
+		"inaccuracy" .25
+		"turret turn" 4.5
+		"velocity" 500
+		"lifetime" 1
+		"reload" 1
+		"firing energy" 3.8
+		"firing heat" 6.4
+		"shield damage" 2.4
+		"hull damage" 9.3
+		"piercing" .1
+	description "With Warden Cores driving its mount, the Riptide stops merely following targets and starts anticipating them. Gunners who have used one describe the feeling of a second set of hands on the controls, always a little ahead of their own."
+
+outfit "Riptide Turret Mk III"
+	category "Turrets"
+	series "Turrets"
+	index 60030
+	cost 5400000
+	thumbnail "outfit/moonbeam turret"
+	"mass" 48
+	"outfit space" -36
+	"weapon capacity" -36
+	"turret mounts" -1
+	"required crew" 1
+	weapon
+		sprite "projectile/moonbeam"
+			"random start frame"
+		"hardpoint sprite" "hardpoint/moonbeam turret"
+		"hardpoint offset" 9.
+		sound "moonbeam"
+		"fire effect" "moonbeam fleck"
+		"hit effect" "moonbeam impact"
+		"inaccuracy" .2
+		"turret turn" 5.5
+		"velocity" 520
+		"lifetime" 1
+		"reload" 1
+		"firing energy" 5.6
+		"firing heat" 14
+		"shield damage" 3
+		"hull damage" 12.6
+		"piercing" .2
+	description "A Riptide rebuilt around Deep Lattice turns like water and hits like a falling hull. It also pours heat into its mount faster than any human turret ever built, and more than one Breaker crew has learned to fire it in measured bursts or not at all."
+
+
+
+# =========================================================================
+# Glassweave Shield (Systems, 30 space)
+# =========================================================================
+# References (shield generation per frame, per outfit space):
+#	D94-YV Shield Generator: 1.31 / 60 = 0.022, 1 energy per shield, no heat.
+#	S-970 Regenerator (best human regen per space): 2.3 / 37 = 0.062,
+#		3.2 energy per frame (1.39 per shield point), heat 6.
+#	Korath Systems Core (Large): 6.0 / 91 = 0.066 (plus capacity and repair).
+#	Quarg Aspis: 4 / 40 = 0.10; Aegis: 10 / 80 = 0.125.
+# Chosen:
+#	Mk I:   2.15 / 30 = 0.072 per space (S-970 x1.15), 2.45 energy/frame
+#		(1.14 per shield point), heat 1.5.
+#	Mk II:  2.7  / 30 = 0.090 per space (Korath core x1.36, below Quarg),
+#		2.7 energy/frame (1.0 per point), heat 2.
+#	Mk III: 3.9  / 30 = 0.130 per space (beyond the Aegis).
+#		Drawback: 5.3 energy/frame (1.36 per point), heat 9 (more than an
+#		S-970), 44 tons instead of 30.
+
+outfit "Glassweave Shield Mk I"
+	category "Systems"
+	series "Shields"
+	index 60010
+	cost 240000
+	thumbnail "outfit/large regenerator"
+	"mass" 30
+	"outfit space" -30
+	"shield generation" 2.15
+	"shield energy" 2.15
+	"energy consumption" .3
+	"heat generation" 1.5
+	description "Long ribbons of Shoal Glass, woven around an emitter salvaged from a drowned hull. The weave spreads the load of recharging across the whole shield bubble, so it refills quickly and wastes very little of its power as heat."
+
+outfit "Glassweave Shield Mk II"
+	category "Systems"
+	series "Shields"
+	index 60020
+	cost 1450000
+	thumbnail "outfit/large regenerator"
+	"mass" 28
+	"outfit space" -30
+	"shield generation" 2.7
+	"shield energy" 2.4
+	"energy consumption" .3
+	"heat generation" 2
+	description "The Breakers seed the second weave with powdered Warden Core. The glass seems to learn the shape of the ship it protects, and in the middle of a fight the shields knit themselves back together almost as fast as an enemy can tear them open."
+
+outfit "Glassweave Shield Mk III"
+	category "Systems"
+	series "Shields"
+	index 60030
+	cost 5400000
+	thumbnail "outfit/large regenerator"
+	"mass" 44
+	"outfit space" -30
+	"shield generation" 3.9
+	"shield energy" 4.7
+	"energy consumption" .6
+	"heat generation" 9
+	description "A weave grown on a frame of Deep Lattice regenerates faster than any shield humanity knows how to build. It is also hungry: the lattice drinks power whether the shields need it or not, and the glass hums and glows with heat the whole time it is running."
+
+
+
+# =========================================================================
+# Abyssal Cell (Power, 60 space; Mk III 72)
+# =========================================================================
+# References (energy generation per frame, per outfit space; heat per energy):
+#	Fusion Reactor (best human): 18.2 / 100 = 0.182, heat 2.2 per energy.
+#	Armageddon Core: 24.2 / 130 = 0.186, heat 2.9 per energy.
+#	Korath Plasma Core: 11.9 / 54 = 0.220, heat 3.0; Triple Plasma Core 0.258.
+#	Remnant Epoch Cell: 12.7 / 98 = 0.130, heat 1.6.
+#	Quarg Antimatter Core: 12 / 50 = 0.240, heat 0.8.
+# Chosen:
+#	Mk I:   12.6 / 60 = 0.21 per space (Fusion x1.15), heat 26 (2.06 per energy).
+#	Mk II:  15.0 / 60 = 0.25 per space (Korath plasma core tier), heat 27 (1.8).
+#	Mk III (v0.3.4 rework, below): 21 / 72 = 0.29 per space, plus 3000
+#		energy capacity.
+# The v0.3 Mk III (19.2 energy, 48 heat, 95 tons) paid for its "heat
+# shielding" in mass and still ran hotter per unit of energy than the Mk II
+# (2.5 vs 1.8) and than a human Fusion Reactor (2.2): the heavier cell was
+# worse at the one thing the mass was supposed to buy. Reworked so the Mk III
+# is the best power outfit there is at its weight (and in fact at any weight),
+# and the coolest of any reactor of comparable output:
+#
+#	outfit (energy, heat per frame)   mass  energy  heat  energy/ton  heat/energy
+#	Abyssal Cell Mk III (new)            64    21.0  16.8       0.328         0.80
+#	Abyssal Cell Mk III (v0.3)           95    19.2  48.0       0.202         2.50
+#	Abyssal Cell Mk II                   52    15.0  27.0       0.288         1.80
+#	Abyssal Cell Mk I                    58    12.6  26.0       0.217         2.06
+#	Triple Plasma Core (Korath)         169    43.6 154.0       0.258         3.53
+#	Lantern Fission Core                 24     6.0  48.0       0.250         8.00
+#	Large Reactor Module (Heliarch)      98    24.2  45.0       0.247         1.86
+#	Antimatter Core (Quarg)              50    12.0  10.0       0.240         0.83
+#	Double Plasma Core (Korath)          93    22.0  72.0       0.237         3.27
+#	Small Reactor Module (Heliarch)      42     9.8  19.0       0.233         1.94
+#	Plasma Core (Korath)                 54    11.9  36.0       0.220         3.03
+#	Blue Sun Reactor (Wanderer)         152    31.3  39.0       0.206         1.25
+#	Korath Tek'nel Reactor              140    27.1  80.0       0.194         2.95
+#	Armageddon Core                     130    24.2  70.0       0.186         2.89
+#	Fusion Reactor (best human)         100    18.2  40.0       0.182         2.20
+#	Dark Reactor                        142    24.7  28.6       0.174         1.16
+#	Electroweak Reactor                 106    17.3  20.5       0.163         1.19
+#	Epoch Cell (Remnant)                 98    12.7  19.8       0.130         1.56
+#	Quasar Core (Quarg)                 600    37.5  35.0       0.062         0.93
+#	Singularity Core (Quarg)            400    23.5  22.5       0.059         0.96
+#
+# Every outfit in the game data with "energy generation" was checked (the
+# table is the top of that list by energy per ton, plus the coolest large
+# reactors): nothing at 64 tons or below (or above) beats 0.328 energy per ton,
+# and no reactor of 12+ energy runs as cool as 0.80 heat per energy (the
+# Quarg Antimatter Core is next at 0.83; only small cells such as the 5.3-
+# energy Large Cogeneration Module run cooler). Output is 40% above the Mk II.
+# Drawback, instead of heat: the cell needs 72 outfit space (Mk I and II: 60),
+# so a ship needs 12 free space before the yard can fit it.
+
+outfit "Abyssal Cell Mk I"
+	category "Power"
+	series "Generators"
+	index 60010
+	cost 240000
+	thumbnail "outfit/dark reactor"
+	"mass" 58
+	"outfit space" -60
+	"energy generation" 12.6
+	"heat generation" 26
+	description "Many of the drowned ships are still faintly warm. The Breakers found out why: deep in their hulls sit sealed cells that never quite stopped working. Cracked open, packed with glass and restarted, a single cell outperforms a human fusion reactor of nearly twice its size."
+
+outfit "Abyssal Cell Mk II"
+	category "Power"
+	series "Generators"
+	index 60020
+	cost 1450000
+	thumbnail "outfit/dark reactor"
+	"mass" 52
+	"outfit space" -60
+	"energy generation" 15
+	"heat generation" 27
+	description "Fed through a lattice of Warden Cores, the cell settles into a steady, low rhythm that the Breakers call its heartbeat. It produces more power than a Korath plasma core of the same size, and runs noticeably cooler."
+
+outfit "Abyssal Cell Mk III"
+	category "Power"
+	series "Generators"
+	index 60030
+	cost 5400000
+	thumbnail "outfit/dark reactor"
+	"mass" 64
+	"outfit space" -72
+	"energy generation" 21
+	"energy capacity" 3000
+	"heat generation" 16.8
+	description "With a core of Deep Lattice, the cell no longer seems to be generating power so much as remembering it. The output is staggering, a little of it pools in the lattice itself, and the glass shielding around the core drinks the heat so well that the cell runs cooler than anything else of its strength. The shielding is what takes the room: the cell sprawls well past the cradle of the earlier marks."
+
+
+
+# =========================================================================
+# Undertow Thruster (Engines, 60 space, thrust only)
+# =========================================================================
+# References (thrust per outfit space; energy and heat per unit of thrust):
+#	A860 Atomic Thruster (best human): 199.95 / 127 = 1.57, 0.067 energy,
+#		0.146 heat.
+#	A520 Atomic Thruster: 122.85 / 82 = 1.50.
+#	Korath Thruster (Stellar Class): 224.1 / 118 = 1.90, 0.071 energy, 0.19 heat.
+#	Remnant Forge-Class: 51 / 39 = 1.31 (plus reverse thrust).
+#	Quarg Large Graviton Thruster: 185 / 100 = 1.85.
+# Chosen:
+#	Mk I:   108.6 / 60 = 1.81 per space (A860 x1.15), 0.064 energy,
+#		0.138 heat per thrust.
+#	Mk II:  120   / 60 = 2.00 per space (Korath Stellar x1.05), 0.063 energy,
+#		0.138 heat per thrust.
+#	Mk III: 156   / 60 = 2.60 per space.
+#		v0.3: 115 tons (twice Mk I), 0.074 energy and 0.22 heat per thrust.
+#		The mass undid the thrust: on a ship under ~150 tons the Mk III
+#		accelerated worse than the Mk II, and on 300 tons only 11% better.
+#	Mk III (v0.3.4 rework): 54 tons like the Mk II, 156 thrust (+30%), so it
+#		accelerates every ship better than the Mk II (same mass, more
+#		thrust; checked by tools/marks/check.py for ships of 50 to 3000
+#		tons). Energy per thrust as the Mk II (0.063). Drawback: heat,
+#		0.20 per thrust (Korath Stellar 0.19, Mk II 0.1375): 31.2 per frame.
+# Thrust per ton, the best in the game (every outfit with "thrust"):
+#	outfit                              mass  thrust  per ton  energy/thrust  heat/thrust
+#	Undertow Thruster Mk III (new)        54   156.0    2.89      0.063         0.200
+#	Undertow Thruster Mk III (v0.3)      115   156.0    1.36      0.074         0.218
+#	Undertow Thruster Mk II               54   120.0    2.22      0.063         0.138
+#	Undertow Thruster Mk I                56   108.6    1.94      0.064         0.138
+#	Korath Thruster (Stellar Class)      118   224.1    1.90      0.071         0.190
+#	Quarg Large Graviton Thruster        100   185.0    1.85      0.065         0.016
+#	Nelmeb GP Hybrid Thruster             86   156.9    1.82      0.089         0.115
+#	Korath Thruster (Planetary Class)     68   120.0    1.76      0.074         0.189
+#	Quarg Medium Graviton Thruster        70   120.0    1.71      0.067         0.017
+#	Gaktem GP Hybrid Thruster             57    97.4    1.71      0.093         0.113
+#	Small Graviton Thruster (Quarg)       50    80.0    1.60      0.070         0.019
+#	A860 Atomic Thruster (best human)    127   199.9    1.57      0.067         0.146
+#	Remnant Smelter-Class Thruster        76   106.7    1.40      0.089         0.090
+
+outfit "Undertow Thruster Mk I"
+	category "Engines"
+	series "Engines"
+	index 60011
+	"cost" 240000
+	thumbnail "outfit/large remnant thruster"
+	"mass" 56
+	"outfit space" -60
+	"engine capacity" -60
+	"thrust" 108.6
+	"thrusting energy" 7
+	"thrusting heat" 15
+	"flare sprite" "effect/remnant flare/large"
+		"frame rate" 3
+	"flare sound" "plasma large"
+	description "The drowned fleet moved without steering jets, turning only by the pull of whatever it was chasing. The Breakers kept the thrusters and bolted them to ordinary hulls. The exhaust is a pale, cold blue, and the push it gives is enough to snap a careless pilot's head back."
+
+outfit "Undertow Thruster Mk II"
+	category "Engines"
+	series "Engines"
+	index 60021
+	"cost" 1450000
+	thumbnail "outfit/large remnant thruster"
+	"mass" 54
+	"outfit space" -60
+	"engine capacity" -60
+	"thrust" 120
+	"thrusting energy" 7.6
+	"thrusting heat" 16.5
+	"flare sprite" "effect/remnant flare/large"
+		"frame rate" 3
+	"flare sound" "plasma large"
+	description "Rebuilt with Warden Cores in its injectors, the Undertow outpulls a Korath stellar thruster while producing far less waste heat. Breakers who fly it like to say the engine is not pushing the ship forward so much as the Shoal is pulling it."
+
+outfit "Undertow Thruster Mk III"
+	category "Engines"
+	series "Engines"
+	index 60031
+	"cost" 5400000
+	thumbnail "outfit/large remnant thruster"
+	"mass" 54
+	"outfit space" -60
+	"engine capacity" -60
+	"thrust" 156
+	"thrusting energy" 9.85
+	"thrusting heat" 31.2
+	"flare sprite" "effect/remnant flare/large"
+		"frame rate" 3
+	"flare sound" "plasma large"
+	description "Deep Lattice turns the Undertow into something the human engine makers would refuse to believe: a thruster that produces more thrust for its size than anything in known space. The lattice weighs next to nothing; the catch is the exhaust heat, which comes boiling back into the hull every time the engine fires."
+
+
+
+# =========================================================================
+# Coralgraft Mender (Systems, 25 space, hull repair)
+# =========================================================================
+# References (hull repair per frame, per outfit space):
+#	No human hull repair outfit exists; the nearest buyable equivalent is the
+#	Coalition Large Repair Module: 0.57 / 21 = 0.027, 1 energy and 0.88 heat
+#	per hull point.
+#	Heliarch Overclocked Repair Module: 1.4 / 32 = 0.044 (+0.6 heat).
+#	Korath Systems Core (Large): 0.8 / 91 = 0.009 (alongside shields).
+#	Quarg Central Repair Hub: 2.5 / 55 = 0.045, 0.5 energy per hull point.
+# Chosen:
+#	Mk I:   0.78 / 25 = 0.031 per space (Large Repair Module x1.15),
+#		1.15 energy and 0.77 heat per hull point.
+#	Mk II:  1.12 / 25 = 0.045 per space (Heliarch / Quarg tier), 0.98 energy
+#		and 0.71 heat per hull point.
+#	Mk III: 1.75 / 25 = 0.070 per space.
+#		Drawback: 2.6 energy per frame (1.49 per hull point), 2.2 hull heat
+#		plus 1 constant heat, 34 tons instead of 22.
+
+outfit "Coralgraft Mender Mk I"
+	category "Systems"
+	series "Repair"
+	index 60010
+	cost 240000
+	thumbnail "outfit/large nanite fabricator"
+	"mass" 22
+	"outfit space" -25
+	"hull repair rate" .78
+	"hull energy" .9
+	"hull heat" .6
+	description "Something lives on the drowned wrecks: a thin, branching growth of glass that slowly fills in cracks and scars in their hulls. The Breakers learned to cultivate it in tanks and graft it onto living ships. Fed enough power, it closes wounds in the plating while you watch."
+
+outfit "Coralgraft Mender Mk II"
+	category "Systems"
+	series "Repair"
+	index 60020
+	cost 1450000
+	thumbnail "outfit/large nanite fabricator"
+	"mass" 20
+	"outfit space" -25
+	"hull repair rate" 1.12
+	"hull energy" 1.1
+	"hull heat" .8
+	description "Seeded with fragments of Warden Core, the coralgraft spreads faster and seems to know where it is needed. Breakers swear their ships come out of a fight looking better than they went into it."
+
+outfit "Coralgraft Mender Mk III"
+	category "Systems"
+	series "Repair"
+	index 60030
+	cost 5400000
+	thumbnail "outfit/large nanite fabricator"
+	"mass" 34
+	"outfit space" -25
+	"hull repair rate" 1.75
+	"hull energy" 2.6
+	"hull heat" 2.2
+	"heat generation" 1
+	description "Coralgraft grown on Deep Lattice repairs hull faster than any machine in known space, but it does not rest. It burns power constantly, runs warm even when there is nothing to fix, and the Breakers who tend it insist that it is always, slowly, growing."
+
+
+
+# =========================================================================
+# Eddy Steering (Engines, 40 space, steering only)
+# =========================================================================
+# References (turn per outfit space; energy and heat per unit of turn):
+#	A865 Atomic Steering (best human): 5395.5 / 92 = 58.6, 0.00122 energy,
+#		0.00324 heat. A375 (closest human size, 38 space): 48.2.
+#	X5200 Ion Steering: 3913.5 / 89 = 44.0; Tyrant Plasma Steering 52.7.
+#	Korath Steering (Stellar Class): 6007.5 / 89 = 67.5, 0.00137 energy,
+#		0.00444 heat. Nelmeb GP Hybrid Steering: 62.7.
+#	Remnant Smelter-Class Steering: 3184.5 / 55 = 57.9, 0.00164 energy.
+#	Quarg Large Graviton Steering: 3600 / 70 = 51.4.
+# Chosen:
+#	Mk I:   2640 / 40 = 66 per space (A865 x1.13), 0.00117 energy,
+#		0.00303 heat per turn.
+#	Mk II:  3000 / 40 = 75 per space (Korath Stellar x1.11), 0.00113 energy,
+#		0.0028 heat per turn.
+#	Mk III: 3800 / 40 = 95 per space.
+#		v0.3: 76 tons (twice Mk I), 0.00147 energy and 0.005 heat per turn.
+#		The mass undid the turn: on a ship under ~150 tons the Mk III turned
+#		slower than the Mk II, and on 300 tons only 13% faster.
+#	Mk III (v0.3.4 rework): 36 tons like the Mk II, 3800 turn (+27%), so it
+#		turns every ship faster than the Mk II (checked by
+#		tools/marks/check.py for ships of 50 to 3000 tons). Energy per turn
+#		as the Mk II (0.00113). Drawback: heat, 0.0045 per turn (Korath
+#		Stellar 0.00444, Mk II 0.0028): 17.1 per frame.
+# Turn per ton, the best in the game (every outfit with "turn"):
+#	outfit                              mass    turn  per ton  energy/turn  heat/turn
+#	Eddy Steering Mk III (new)            36  3800.0   105.6    0.00113      0.00450
+#	Eddy Steering Mk III (v0.3)           76  3800.0    50.0    0.00147      0.00500
+#	Eddy Steering Mk II                   36  3000.0    83.3    0.00113      0.00280
+#	Eddy Steering Mk I                    38  2640.0    69.5    0.00117      0.00303
+#	Korath Steering (Stellar Class)       89  6007.5    67.5    0.00136      0.00444
+#	Subarashii Rift Steering              90  5850.0    65.0    0.00292      0.00111
+#	Nelmeb GP Hybrid Steering             67  4200.0    62.7    0.00187      0.00238
+#	Korath Steering (Planetary Class)     52  3104.4    59.7    0.00148      0.00457
+#	Ookii Rift Steering                   53  3148.5    59.4    0.00292      0.00116
+#	A865 Atomic Steering (best human)     92  5395.5    58.6    0.00122      0.00324
+#	Remnant Smelter-Class Steering        55  3184.5    57.9    0.00164      0.00195
+#	Quarg Large Graviton Steering         70  3600.0    51.4    0.00167      0.00042
+
+outfit "Eddy Steering Mk I"
+	category "Engines"
+	series "Engines"
+	index 60012
+	"cost" 240000
+	thumbnail "outfit/medium remnant steering"
+	"mass" 38
+	"outfit space" -40
+	"engine capacity" -40
+	"turn" 2640
+	"turning energy" 3.1
+	"turning heat" 8
+	"steering flare sprite" "effect/remnant flare/medium"
+		"frame rate" 4
+	"steering flare sound" "plasma medium"
+	description "The drowned ships did not steer; they were turned. Their hulls are ringed with small vents that once spun the water of some long-gone sea into eddies, and the Breakers found that the vents still pull on space in much the same way. Packed with Shoal Glass and fed a little power, a ring of them swings a hull around faster than any steering jet sold in human space."
+
+outfit "Eddy Steering Mk II"
+	category "Engines"
+	series "Engines"
+	index 60022
+	"cost" 1450000
+	thumbnail "outfit/medium remnant steering"
+	"mass" 36
+	"outfit space" -40
+	"engine capacity" -40
+	"turn" 3000
+	"turning energy" 3.4
+	"turning heat" 8.4
+	"steering flare sprite" "effect/remnant flare/medium"
+		"frame rate" 4
+	"steering flare sound" "plasma medium"
+	description "With a Warden Core setting the rhythm, the vents stop fighting each other and start spinning together. The ship comes about before the pilot has quite finished deciding to turn, and outturns a Korath warship's steering while running cooler."
+
+outfit "Eddy Steering Mk III"
+	category "Engines"
+	series "Engines"
+	index 60032
+	"cost" 5400000
+	thumbnail "outfit/medium remnant steering"
+	"mass" 36
+	"outfit space" -40
+	"engine capacity" -40
+	"turn" 3800
+	"turning energy" 4.3
+	"turning heat" 17.1
+	"steering flare sprite" "effect/remnant flare/medium"
+		"frame rate" 4
+	"steering flare sound" "plasma medium"
+	description "Wound around a sliver of Deep Lattice, the eddy ring whips a ship around as if space itself were draining in a spiral beneath it. The ring is no heavier than before, but it sheds the strain as heat, and every hard turn floods the hull with it."
+
+
+
+# =========================================================================
+# Brine Capacitor (Power, 20 space, energy storage)
+# =========================================================================
+# References (energy capacity per outfit space):
+#	LP576a Battery Pack (best human): 46000 / 80 = 575; LP072a (same size,
+#		20 space): 8800 / 20 = 440. No drain, no heat.
+#	Coalition Large Battery Module: 18000 / 18 = 1000.
+#	Remnant Crystal Capacitor: 13600 / 12 = 1133, drains 0.4 energy/frame.
+#	Quarg Quantum Vacuum Battery: 60000 / 50 = 1200 (plus active cooling).
+#	Successor Heirloom Power Reserve: 26000 / 26 = 1000.
+# Chosen:
+#	Mk I:   13200 / 20 =  660 per space (LP576a x1.15), no drain.
+#	Mk II:  23000 / 20 = 1150 per space (Crystal Capacitor / Quarg tier), no drain.
+#	Mk III: 36000 / 20 = 1800 per space.
+#		Drawback: sheds 1.5 heat per frame, 34 tons instead of 16.
+#		(v0.3 also leaked 0.8 energy per frame: an energy store paying in
+#		energy, so after ~270 s of a fight that drained it a Mk II ship had
+#		more energy left than a Mk III ship. Removed in v0.3.4.)
+
+outfit "Brine Capacitor Mk I"
+	category "Power"
+	series "Batteries"
+	index 60010
+	cost 240000
+	thumbnail "outfit/crystal capacitor"
+	"mass" 18
+	"outfit space" -20
+	"energy capacity" 13200
+	description "The Breakers fill sealed glass cells with the dark, salty slurry that pools in the holds of the drowned ships, and the slurry holds a charge the way a sponge holds water. A rack of these cells stores more energy than a human battery pack four times its size could manage, and the cells slosh faintly when the ship accelerates."
+
+outfit "Brine Capacitor Mk II"
+	category "Power"
+	series "Batteries"
+	index 60020
+	cost 1450000
+	thumbnail "outfit/crystal capacitor"
+	"mass" 16
+	"outfit space" -20
+	"energy capacity" 23000
+	description "Threaded with filaments drawn from a Warden Core, the brine stops settling and starts to circulate on its own, packing charge into itself far more densely. Breakers who have seen a Remnant capacitor say this one holds more, and does not leak."
+
+outfit "Brine Capacitor Mk III"
+	category "Power"
+	series "Batteries"
+	index 60030
+	cost 5400000
+	thumbnail "outfit/crystal capacitor"
+	"mass" 34
+	"outfit space" -20
+	"energy capacity" 36000
+	"heat generation" 1.5
+	description "A cell of brine laced with Deep Lattice holds an absurd amount of energy for its size, but it is never entirely still. It sheds a slow, warm glow all the time, and the cell has to be cased in heavy glass to keep the brine from finding its way into the ship's wiring."
+
+
+
+# =========================================================================
+# Coldwater Sink (Systems, 20 space, cooling)
+# =========================================================================
+# References (cooling per outfit space; energy per point of active cooling):
+#	Liquid Helium Cooler (best human): 69 / 40 = 1.73, passive.
+#	Liquid Nitrogen Cooler: 29 / 20 = 1.45; Water Coolant System: 12 / 10 = 1.2.
+#	Remnant Thermoelectric Cooler: 8 active / 4 = 2.0, 0.05 energy per point.
+#	Korath Large Heat Shunt: 54 / 24 = 2.25, passive.
+#	Korath Liquid Sodium Cooler: 116 active / 34 = 3.41, 0.045 energy per
+#		point plus 2.4 energy/frame.
+#	Ka'het Primary Cooling: 65 active / 14 = 4.64, 0.09 energy per point.
+# Chosen:
+#	Mk I:   40 passive / 20 = 2.0 per space (Liquid Helium x1.16), no energy.
+#	Mk II:  40 passive + 30 active = 70 / 20 = 3.5 per space (Liquid Sodium
+#		tier), 0.045 energy per active point.
+#	Mk III: 40 passive + 90 active = 130 / 20 = 6.5 per space.
+#		Drawback: 6.1 cooling energy (0.068 per active point, more than the
+#		Korath and Remnant coolers), 40 tons instead of 18.
+# v0.3.4: active cooling works in proportion to the ship's heat (Ship.cpp:
+# activeCooling x heat fraction) and stops without energy, so v0.3's split
+# (Mk II 30 + 40 active, Mk III 20 + 110) cooled LESS than the Mk I below 25%
+# / 18% heat and on a ship out of energy (30 / 20 against 40). The passive
+# part now never drops from mark to mark (40 / 40 / 40), so each mark cools at
+# least as well as the one before at any heat and energy (same totals at full
+# heat; tools/marks/check.py).
+
+outfit "Coldwater Sink Mk I"
+	category "Systems"
+	series "Cooling"
+	index 60010
+	cost 240000
+	thumbnail "outfit/water cooling"
+	"mass" 20
+	"outfit space" -20
+	"cooling" 40
+	description "The water in the drowned ships' cooling loops never quite thaws and never quite freezes. The Breakers tap it out, seal it into coils of Shoal Glass and bolt the coils against a living ship's hot spots. The coils carry heat away better than a liquid helium cooler twice their size, and they sweat a fine frost while they do it."
+
+outfit "Coldwater Sink Mk II"
+	category "Systems"
+	series "Cooling"
+	index 60020
+	cost 1450000
+	thumbnail "outfit/water cooling"
+	"mass" 18
+	"outfit space" -20
+	"cooling" 40
+	"active cooling" 30
+	"cooling energy" 1.35
+	description "A Warden Core wired into the coils sets the cold water pumping. When the ship runs hot the coils pull harder, drawing a little power to do it, and the sink can soak up as much heat as a Korath sodium cooler of nearly twice its size."
+
+outfit "Coldwater Sink Mk III"
+	category "Systems"
+	series "Cooling"
+	index 60030
+	cost 5400000
+	thumbnail "outfit/water cooling"
+	"mass" 40
+	"outfit space" -20
+	"cooling" 40
+	"active cooling" 90
+	"cooling energy" 6.1
+	description "Coils grown on Deep Lattice drink heat as if it were being poured down a well. Under load they also drink power at a frightening rate, and the reservoir of black water that feeds them makes the sink twice as heavy as it has any right to be."
+
+
+
+# =========================================================================
+# Glimmer Point Defense (Turrets, 28 space, anti-missile)
+# =========================================================================
+# References (anti-missile strength x shots per second, per outfit space;
+# range = velocity x lifetime; energy per frame):
+#	Heavy Anti-Missile Turret (best human): 8 x 10 / 30 = 2.67, strength 8,
+#		range 200, 1.67 energy/frame, 0.83 heat/frame.
+#	Korath Warder Anti-Missile: 10 x 12 / 28 = 4.29, strength 10, range 350,
+#		4.8 energy/frame.
+#	Remnant Point Defense Turret: 42 x 6 / 33 = 7.64, strength 42, range 270,
+#		6.2 energy/frame, 1.8 heat/frame.
+# (A missile dies when Random::Int(strength) > Random::Int(missile strength);
+# a Korath Piercer has missile strength 23.)
+# Chosen:
+#	Mk I:   9 x 10 / 28 = 3.21 per space (Heavy Anti-Missile x1.2), range 240,
+#		1.67 energy/frame, 0.83 heat/frame.
+#	Mk II:  22 x 10 / 28 = 7.86 per space (Remnant Point Defense tier),
+#		range 320, 4.67 energy/frame, 1.5 heat/frame.
+#	Mk III: 45 x 15 / 28 = 24.1 per space, range 400.
+#		Drawback: 15 energy/frame and 7.5 heat/frame while firing (more than
+#		twice the Remnant turret's energy, four times its heat), 44 tons
+#		instead of 26.
+
+outfit "Glimmer Point Defense Mk I"
+	category "Turrets"
+	series "Anti-Missile"
+	index 60010
+	cost 240000
+	thumbnail "outfit/point defense"
+	"mass" 26
+	"outfit space" -28
+	"weapon capacity" -28
+	"turret mounts" -1
+	weapon
+		"hardpoint sprite" "hardpoint/point defense"
+		"fire effect" "point defense fire"
+		"die effect" "point defense hit"
+		"die effect" "point defense die"
+		"anti-missile" 9
+		"velocity" 240
+		"lifetime" 1
+		"reload" 6
+		"firing energy" 10
+		"firing heat" 5
+	description "Some of the drowned ships are still guarded by little glass eyes set along their spines, and anything that falls toward them too fast is met by a quick, bright glimmer. The Breakers cut the eyes out, rehoused them and taught them to tell the difference between a missile and their owner. Usually."
+
+outfit "Glimmer Point Defense Mk II"
+	category "Turrets"
+	series "Anti-Missile"
+	index 60020
+	cost 1450000
+	thumbnail "outfit/point defense"
+	"mass" 26
+	"outfit space" -28
+	"weapon capacity" -28
+	"turret mounts" -1
+	weapon
+		"hardpoint sprite" "hardpoint/point defense"
+		"fire effect" "point defense fire"
+		"die effect" "point defense hit"
+		"die effect" "point defense die"
+		"anti-missile" 22
+		"velocity" 320
+		"lifetime" 1
+		"reload" 6
+		"firing energy" 28
+		"firing heat" 9
+	description "With a Warden Core behind them, the glass eyes reach further and strike harder. A Glimmer of this mark can burn a heavy missile out of the sky as reliably as the point defense the Remnant guard so jealously."
+
+outfit "Glimmer Point Defense Mk III"
+	category "Turrets"
+	series "Anti-Missile"
+	index 60030
+	cost 5400000
+	thumbnail "outfit/point defense"
+	"mass" 44
+	"outfit space" -28
+	"weapon capacity" -28
+	"turret mounts" -1
+	weapon
+		"hardpoint sprite" "hardpoint/point defense"
+		"fire effect" "point defense fire"
+		"die effect" "point defense hit"
+		"die effect" "point defense die"
+		"anti-missile" 45
+		"velocity" 400
+		"lifetime" 1
+		"reload" 4
+		"firing energy" 60
+		"firing heat" 30
+	description "The eyes grown on Deep Lattice do not so much shoot missiles down as refuse to let them exist. A salvo that would gut a cruiser comes apart in a string of quiet flashes. Each flash costs the ship a gulp of power and a pulse of heat, and in a missile storm those add up faster than most reactors can keep pace with."
+
+
+
+# =========================================================================
+# Coral Plating (Systems, 30 space, armor)
+# =========================================================================
+# References: no stock outfit adds "hull" (checked: no outfit in the game
+# data has a top-level "hull" attribute; it is only on hulls), so plating is
+# measured against the hull a ship design gets per unit of outfit space, and
+# its protection against the stock protection outfits:
+#	Human (best): Bactrian 8600 / 740 = 11.6 hull per space; Vanguard 10.7.
+#	Korath: Rano'erek 16500 / 763 = 21.6. Remnant: Arch-Carrack 19300 / 582
+#		= 33.2, Charm-Shallop 32.1.
+#	Successor Multimodal Armor (Heavy): "hull protection" .2 (High Houses only).
+#	Quarg Aspis Shield Generator: "piercing protection" .4 in 40 space.
+#	Coalition Small Repair Module: "hull repair rate" .12 in 6 space.
+# ("hull protection" and "piercing protection" are read in Entity.cpp; both
+# divide the damage by 1 + value.)
+# Chosen:
+#	Mk I:    400 hull / 30 = 13.3 per space (Bactrian x1.15), .05 hull repair.
+#	Mk II:   960 hull / 30 = 32 per space (Remnant hull tier), .08 hull repair,
+#		.1 piercing protection.
+#	Mk III: 1650 hull / 30 = 55 per space, .15 hull repair, .1 hull protection,
+#		.25 piercing protection.
+#		Drawback: 85 tons (twice Mk I), its repair draws .2 energy and .1
+#		heat per frame.
+
+outfit "Coral Plating Mk I"
+	category "Systems"
+	series "Special Systems"
+	index 60010
+	cost 240000
+	thumbnail "outfit/successor armor heavy"
+	"mass" 42
+	"outfit space" -30
+	"hull" 400
+	"hull repair rate" .05
+	"hull energy" .05
+	description "The Breakers do not forge armor; they grow it. Slabs of glassy coral cut from the drowned hulls are bolted over a ship's ribs and fed a trickle of power, and the coral slowly knits itself into the plating around it. It is heavy, but it soaks up more punishment for the space it takes than any human warship's own hull, and it creeps back over small scars on its own."
+
+outfit "Coral Plating Mk II"
+	category "Systems"
+	series "Special Systems"
+	index 60020
+	cost 1450000
+	thumbnail "outfit/successor armor heavy"
+	"mass" 40
+	"outfit space" -30
+	"hull" 960
+	"hull repair rate" .08
+	"hull energy" .07
+	"piercing protection" .1
+	description "Seeded with Warden Core, the coral grows denser and in layers, like a reef that has had a long time to think about storms. Shots that slip past the shields tend to spend themselves in the outer layers, and the plating is as tough for its size as the hull of a Remnant warship."
+
+outfit "Coral Plating Mk III"
+	category "Systems"
+	series "Special Systems"
+	index 60030
+	cost 5400000
+	thumbnail "outfit/successor armor heavy"
+	"mass" 85
+	"outfit space" -30
+	"hull" 1650
+	"hull repair rate" .15
+	"hull energy" .2
+	"hull heat" .1
+	"hull protection" .1
+	"piercing protection" .25
+	description "Coral grown on Deep Lattice forms a shell that turns aside a part of every blow and closes over the rest. It is also enormously heavy, and it never stops feeding: the plating draws power to heal itself whether it has anything to heal or not."
+
+
+
+# =========================================================================
+# Siltwake Afterburner (Engines, 20 space)
+# =========================================================================
+# References (afterburner thrust per outfit space; fuel, energy and heat per
+# unit of thrust):
+#	Caldera Afterburner (best human): 165 / 37 = 4.46, 0.00455 fuel,
+#		0.255 heat. Volcano Afterburner: 4.07.
+#	Korath Afterburner (Planetary Class): 265.5 / 55 = 4.83, 0.0030 fuel,
+#		0.027 energy, 0.30 heat.
+#	Remnant Bellows-Class Afterburner: 187.5 / 11 = 17.0, 0.0104 fuel,
+#		0.032 energy, 0.384 heat.
+# Chosen:
+#	Mk I:   103 / 20 = 5.15 per space (Caldera x1.15), 0.0043 fuel,
+#		0.233 heat per thrust.
+#	Mk II:  180 / 20 = 9.0 per space (between Korath and Remnant, with far
+#		better fuel economy than the Bellows), 0.0036 fuel, 0.017 energy,
+#		0.233 heat per thrust.
+#	Mk III: 400 / 20 = 20 per space (beyond the Bellows).
+#		Drawback: 2.4 fuel per frame (more than the Bellows), 0.025 energy and
+#		0.425 heat per thrust (hotter than anything stock), 40 tons instead of 20.
+
+outfit "Siltwake Afterburner Mk I"
+	category "Engines"
+	series "Afterburners"
+	index 60010
+	"cost" 240000
+	thumbnail "outfit/remnant afterburner"
+	"mass" 20
+	"outfit space" -20
+	"engine capacity" -20
+	"afterburner thrust" 103
+	"afterburner fuel" .44
+	"afterburner heat" 24
+	"afterburner effect" "remnant afterburner"
+	description "The Breakers line a combustion throat with Shoal Glass and spray hyperspace fuel through it in a fine silt. The burn leaves a long, murky wake behind the ship, like mud stirred up from a sea floor, and it kicks harder than a Caldera afterburner of nearly twice the size."
+
+outfit "Siltwake Afterburner Mk II"
+	category "Engines"
+	series "Afterburners"
+	index 60020
+	"cost" 1450000
+	thumbnail "outfit/remnant afterburner"
+	"mass" 18
+	"outfit space" -20
+	"engine capacity" -20
+	"afterburner thrust" 180
+	"afterburner fuel" .65
+	"afterburner energy" 3
+	"afterburner heat" 42
+	"afterburner effect" "remnant afterburner"
+	description "A Warden Core in the injector shapes the silt into tight, even pulses. The burn is nearly twice as strong as before, and it wastes so little fuel that pilots used to Remnant afterburners tend to forget to watch the gauge."
+
+outfit "Siltwake Afterburner Mk III"
+	category "Engines"
+	series "Afterburners"
+	index 60030
+	"cost" 5400000
+	thumbnail "outfit/remnant afterburner"
+	"mass" 40
+	"outfit space" -20
+	"engine capacity" -20
+	"afterburner thrust" 400
+	"afterburner fuel" 2.4
+	"afterburner energy" 10
+	"afterburner heat" 170
+	"afterburner effect" "remnant afterburner"
+	description "Lit through a ring of Deep Lattice, the Siltwake does not so much push the ship as fling it. A few seconds of burn will empty a fuel tank and set every heat alarm aboard ringing, and the throat needs so much shielding that the burner weighs twice what the Mk I did."
+
+
+
+# =========================================================================
+# Driftnet Ramscoop (Systems, 15 space, fuel collection)
+# =========================================================================
+# How the engine collects fuel (System::GetSolarGeneration, Ship.cpp): per
+# frame, for each stellar object, wind x .03 x scale x sqrt("ramscoop"), where
+# scale is 2 next to the star and falls to .2 far out; "fuel generation" adds
+# a flat amount per frame anywhere. So doubling "ramscoop" gives only 41% more
+# fuel; below, "fuel/s" is at wind 1, scale 1: 60 x (.03 x sqrt(ramscoop) +
+# fuel generation). Every stock ramscoop outfit (human and alien):
+#
+#	outfit                         mass  space  ramscoop  fuel gen  fuel/s  per ton  costs
+#	Ramscoop (human)                 10     10      1        -        1.80    0.18
+#	Emergency Ramscoop (Remnant)      4      4      1.25     -        2.01    0.50
+#	Fuel Processor (Korath)          14     14      2        -        2.55    0.18   (+200 fuel capacity)
+#	Wanderer Ramscoop                 7      7      4        -        3.60    0.51
+#	Successor Fuel Sail               4     14      4        -        3.60    0.90   6 solar heat
+#	Catalytic Ramscoop (human)       16     16      7        -        4.76    0.30
+#	Magnetic Scoop (Avgi)             9      9      6       .03       6.21    0.69   1.2 energy, 2.4 solar heat
+#	Plasmadyne Scoop (Avgi)          60    120     90       .6       53.1     0.89   9 energy, 9 solar heat, 3 drag, gun port + spinal mount, 30M
+#
+# Chosen (heavier than most scoops: about 15 tons; 15 outfit space):
+#	Mk I:   ramscoop 10              14 t   5.69 fuel/s (0.41 per ton): beats
+#		every stock scoop but the Avgi Magnetic and Plasmadyne. No energy.
+#	Mk II:  ramscoop 24, fuel gen .06  15 t  12.4 fuel/s (0.83 per ton): twice
+#		the Magnetic Scoop; .5 energy, .5 heat per frame.
+#	Mk III: ramscoop 100, fuel gen .62  17 t  55.2 fuel/s (3.2 per ton): the
+#		best in the game outright (more ramscoop than the Plasmadyne's 90,
+#		and more fuel per second at any distance from the star), in an eighth
+#		of its space. Drawback: 6 energy and 4.5 heat per frame (the
+#		Plasmadyne draws 9 energy), and 17 tons.
+
+outfit "Driftnet Ramscoop Mk I"
+	category "Systems"
+	series "Ramscoops"
+	index 60010
+	cost 240000
+	thumbnail "outfit/wanderer ramscoop"
+	"mass" 14
+	"outfit space" -15
+	"ramscoop" 10
+	description "The Breakers string fine glass filaments between a ring of drowned-ship struts and let the solar wind tangle itself in them. The net is heavier than any honest ramscoop has a right to be, but it fills a fuel tank faster than anything a human outfitter sells."
+
+outfit "Driftnet Ramscoop Mk II"
+	category "Systems"
+	series "Ramscoops"
+	index 60020
+	cost 1450000
+	thumbnail "outfit/wanderer ramscoop"
+	"mass" 15
+	"outfit space" -15
+	"ramscoop" 24
+	"fuel generation" .06
+	"energy consumption" .5
+	"heat generation" .5
+	description "Warden Core filaments woven through the net hum with a faint charge that pulls the thin gas between the stars toward the ship. It sips a little power and gathers fuel even in the dark between systems, a trickle at first and then a steady stream."
+
+outfit "Driftnet Ramscoop Mk III"
+	category "Systems"
+	series "Ramscoops"
+	index 60030
+	cost 5400000
+	thumbnail "outfit/wanderer ramscoop"
+	"mass" 17
+	"outfit space" -15
+	"ramscoop" 100
+	"fuel generation" .62
+	"energy consumption" 6
+	"heat generation" 4.5
+	description "Knotted around a sliver of Deep Lattice, the net reaches out much farther than its filaments do. Breakers swear it pulls fuel out of nothing at all. It drinks power like a shield generator and runs warm, but no ship that carries one has ever had to wait for a refuel."
+
+
+
+# =========================================================================
+# Lamprey Launcher (Secondary Weapons, 20 space, gun port; v0.3.5)
+# =========================================================================
+# Fires Glass Lampreys: a bead of Shoal Glass spun around a charged filament,
+# one Shoal Glass each (made at Breaker's Rest by the mod's code). Fast,
+# "magnetic" homers that do very little shield or hull damage but drain
+# energy dramatically, add moderate heat, and carry every status effect that
+# takes a ship out of a fight: ion and energy damage to drain it, disruption
+# and a little discharge to strip its shields, slowing to pin it, scrambling
+# to jam its guns.
+#
+# Why a separate ammunition and not Shoal Glass itself (DESIGN.md section
+# 21): the outfitter's automatic refill (OutfitterPanel::Refill) and a manual
+# install (OutfitterPanel::ShipCanAdd) both ask Outfit::CanAdd, which floors
+# every attribute without a minimum override at 0, "installable" included.
+# Shoal Glass ("installable" -1) can therefore never be loaded, and any
+# launcher attribute that let the refill load it ("installable" +N) would also
+# let a captain install glass, Warden Cores, Deep Lattice or any stock
+# mineral by hand, and would label the launcher "This is not an installable
+# item." So the line fires its own ammunition, normal ammunition in every way
+# ("glass lamprey capacity" like "sidewinder capacity"), and Shoal Glass stays
+# a cargo material that sells at full value.
+#
+# How the status damage works (Weapon.cpp, DamageProfile.cpp, Entity.cpp
+# DoStatusEffects, Ship.cpp). Every status level decays 1% per frame, so a
+# point of a damage-over-time type does about 100 points in all, over ~5 s.
+#	energy damage: energy removed at once; 50% blocked while shields are up.
+#	ion damage: ionization level; drains that much energy per frame (about 100
+#		energy per point in all); 50% blocked by shields. A ship whose
+#		ionization exceeds its energy counts as ionized.
+#	heat damage: heat added at once; 50% blocked by shields.
+#	disruption: while the target has shields, the share of every hit that
+#		the shields take is divided by (1 + disruption / 100), so the rest
+#		goes to the hull (Shield Disruptor Turret: 0.24 per frame, a
+#		standing level of 24). Needs shields; full strength while they last.
+#	discharge: that many shields lost per frame (~100 per point in all);
+#		only while the target has shields.
+#	slowing: acceleration and turning divided by (1 + 0.05 x slowness);
+#		50% blocked by shields.
+#	scrambling: each weapon jams with chance 1 - 2^(-scrambling / 70);
+#		50% blocked by shields.
+#
+# Flight ("magnetic", not "homing"): launched slowly (6), then a strong pull
+# (acceleration 2.0 / 2.4 / 2.9) against heavy drag (.10 / .11 / .12) takes it
+# to 95% of its top speed (20 / 21.8 / 24.2 px per frame, a Sidewinder's is 12)
+# within about 22 frames; and because drag bleeds a tenth of its old velocity
+# every frame, its course follows its nose within a few frames instead of
+# drifting through wide arcs. It turns 14 / 17 / 20 degrees per frame (a
+# Sidewinder 4, Swarm 5.35, Shard 8): a full reversal in 13 / 11 / 9 frames, a
+# heading radius of about 80 / 74 / 69 px at top speed. "throttle control"
+# cuts the pull while it swings round, then it snaps back on. "tracking" .94
+# / .97 / 1 (the generic, jam-proof kind: neither radar nor optical jamming nor
+# a cold hull fools it; at .94 a lock is lost on about 2.5% of the twice-a-
+# second checks and usually regained). No "leading": it chases the target
+# itself, as if pulled. Missile strength 20 / 24 / 28 (Sidewinder 18, EMP
+# Torpedo 80, nuke 200): a Heavy Anti-Missile Turret (8) stops about one in
+# six per shot, the Warden Warder (14) one in three, Glimmer Mk III (45) four
+# in five. Straight-line reach 2,670 / 3,040 / 3,490 px in its lifetime
+# (140 / 145 / 150 frames); "range override" 2,300 / 2,600 / 3,000 so the AI
+# fires from where it actually connects.
+#
+# References (per shot / per second at the listed reload; space = outfit space):
+#	weapon (ammo)                  space reload  energy    ion    heat  disrupt  disch  slow  scramble  shield/hull  missile str
+#	Ka'het Nullifier (gun)            97    350  3200/549 220/38  -       -        -      -     10/1.7    120/40        -
+#	EMP Torpedo Bay (Remnant)         18    330   -       48/8.7  -       -        -      -     48/8.7    700/100       80
+#	Ka'het EMP Deployer               26    180   -       48/16   -       -        -      -     48/16     700/100       80
+#	Korath Detainer (gun)             76     35   -       -       -       -        -     40/69   -        320/240        -
+#	Shield Disruptor Turret           35      1   -       -       -     .24/14     -      -      -        3.8/.5         -
+#	Plasma Turret                     60      9   -       -     425/2833  -        -      -      -        63/25          -
+#	Ion Cannon (human)                47     60   -        6/6    -       -        -      -      6/6      168/60         -
+#	Nuclear Missile (the ceiling)     10    400   -       -       -       -        -      -      -       9000/7000      200
+#	Lamprey Mk I                      20     80  1800/1350 24/18 1000/750 50/38   4/3   16/12   12/9      30/15        20
+#	Lamprey Mk II                     20     65  2600/2400 36/33 1500/1385 75/69  6/5.5 24/22   18/17     40/20        24
+#	Lamprey Mk III                    20     50  3800/4560 54/65 2200/2640 110/132 9/11 36/43   26/31     50/25        28
+#
+# Energy actually drained per Lamprey through a target's shields (half the
+# energy damage plus about 100 x half the ion damage): Mk I 2,100, Mk II 3,100,
+# Mk III 4,600; per second from one launcher 1,575 / 2,860 / 5,520. A
+# Bactrian generates 1,092 energy per second (19,200 stored), a Heliarch
+# Judicator 1,422 (7,560; ion protection .2), a Korath Kar Ik Vot 349 3,330
+# (15,000): one Mk I keeps a Bactrian sinking, two Mk IIs or one Mk III ionize
+# even the Kar Ik Vot (Mk III alone in about 7 s). The standing disruption from
+# one launcher (per shot x 100 / reload) is 62 / 115 / 220: 38% / 54% / 69% of
+# every other weapon's shield damage reaches the hull instead. Standing
+# slowing through shields 10 / 18 / 36 (acceleration and turning x0.67 / 0.52 /
+# 0.36); standing scrambling 7.5 / 14 / 26 (7% / 13% / 23% jam chance per
+# shot). So: no damage to speak of, but a capital ship under two or three
+# launchers cannot fire its energy weapons, turn, run or keep its shields.
+# Very powerful, not a nuke: the nuke does 16,000 damage in one hit; a Lamprey
+# kills nothing on its own. Cost: one Shoal Glass (4,000 credits, like an EMP
+# Torpedo's 4,400) per shot, 3,000 / 3,700 / 4,800 credits per second of fire.
+#
+# Mk I -> II -> III improve every damage type, reload, speed, turn, tracking,
+# missile strength and reach (tools/marks/check.py checks them). Magazine 20 /
+# 24 / 30 Lampreys (1 ton each, the glass they are made of). Mk III drawback:
+# 140 energy and 90 heat per shot (Mk I 60 / 30, Mk II 80 / 40: 168 / 108 per
+# second against 45 / 23 and 74 / 37) and 18 tons instead of 12.
+
+outfit "Glass Lamprey"
+	plural "Glass Lampreys"
+	category "Ammunition"
+	series "Ammunition"
+	index 60040
+	cost 4000
+	thumbnail "outfit/shard"
+	"mass" 1
+	"glass lamprey capacity" -1
+	description "A bead of Shoal Glass the size of a fist, spun by the Breakers around a filament that still remembers its charge. One measure of raw glass goes into each. Fired from a Lamprey Launcher, it flies to its target as if it had been called there, fastens on, and drinks."
+	description "	Lampreys are not sold anywhere. The Breakers spin them at Breaker's Rest, and a launcher reloads from the Lampreys in your hold or in storage whenever you land at an outfitter."
+
+outfit "Lamprey Launcher Mk I"
+	category "Secondary Weapons"
+	series "Secondary Weapons"
+	index 60010
+	cost 240000
+	thumbnail "outfit/emp torpedo bay"
+	"mass" 12
+	"outfit space" -20
+	"weapon capacity" -20
+	"gun ports" -1
+	"glass lamprey capacity" 20
+	weapon
+		sprite "projectile/shardactive"
+			"frame rate" 30
+			"random start frame"
+		sound "grab-strike"
+		ammo "Glass Lamprey"
+		icon "icon/shard"
+		"fire effect" "basic launch"
+		"hit effect" "shard impact"
+		"hit effect" "emp ring" 8
+		"hit effect" "emp spark" 8
+		"die effect" "missile death"
+		"inaccuracy" 3
+		"velocity" 6
+		"acceleration" 2
+		"drag" .1
+		"turn" 14
+		"homing"
+			"throttle control"
+		"tracking" .94
+		"lifetime" 140
+		"range override" 2300
+		"reload" 80
+		"firing energy" 60
+		"firing heat" 30
+		"shield damage" 30
+		"hull damage" 15
+		"energy damage" 1800
+		"ion damage" 24
+		"heat damage" 1000
+		"disruption damage" 50
+		"discharge damage" 4
+		"slowing damage" 16
+		"scrambling damage" 12
+		"missile strength" 20
+	description "The drowned fleet's ships did not fight to destroy. Their launchers threw beads of living glass that fastened onto an enemy's hull and drained it until it hung dark and helpless, ready to be taken. The Breakers have one working pattern of those launchers, and a great many beads of glass to feed it."
+	description "	A Lamprey barely scratches a ship's armor, but it pulls the energy out of its reactor, the strength out of its shields and the speed out of its engines. It fires Glass Lampreys, which the Breakers spin from Shoal Glass at Breaker's Rest."
+
+outfit "Lamprey Launcher Mk II"
+	category "Secondary Weapons"
+	series "Secondary Weapons"
+	index 60020
+	cost 1450000
+	thumbnail "outfit/emp torpedo bay"
+	"mass" 12
+	"outfit space" -20
+	"weapon capacity" -20
+	"gun ports" -1
+	"glass lamprey capacity" 24
+	weapon
+		sprite "projectile/shardactive"
+			"frame rate" 30
+			"random start frame"
+		sound "grab-strike"
+		ammo "Glass Lamprey"
+		icon "icon/shard"
+		"fire effect" "basic launch"
+		"hit effect" "shard impact"
+		"hit effect" "emp ring" 10
+		"hit effect" "emp spark" 10
+		"die effect" "missile death"
+		"inaccuracy" 2.5
+		"velocity" 6
+		"acceleration" 2.4
+		"drag" .11
+		"turn" 17
+		"homing"
+			"throttle control"
+		"tracking" .97
+		"lifetime" 145
+		"range override" 2600
+		"reload" 65
+		"firing energy" 80
+		"firing heat" 40
+		"shield damage" 40
+		"hull damage" 20
+		"energy damage" 2600
+		"ion damage" 36
+		"heat damage" 1500
+		"disruption damage" 75
+		"discharge damage" 6
+		"slowing damage" 24
+		"scrambling damage" 18
+		"missile strength" 24
+	description "With a Warden Core humming in its breech, the launcher stops merely throwing its Lampreys and starts calling them home. They leave the tube slowly, then whip around anything in their way and fall onto their target as if pulled on a string, and what they take from it comes out faster."
+
+outfit "Lamprey Launcher Mk III"
+	category "Secondary Weapons"
+	series "Secondary Weapons"
+	index 60030
+	cost 5400000
+	thumbnail "outfit/emp torpedo bay"
+	"mass" 18
+	"outfit space" -20
+	"weapon capacity" -20
+	"gun ports" -1
+	"glass lamprey capacity" 30
+	weapon
+		sprite "projectile/shardactive"
+			"frame rate" 30
+			"random start frame"
+		sound "grab-strike"
+		ammo "Glass Lamprey"
+		icon "icon/shard"
+		"fire effect" "basic launch"
+		"hit effect" "shard impact"
+		"hit effect" "emp ring" 12
+		"hit effect" "emp spark" 12
+		"die effect" "missile death"
+		"inaccuracy" 2
+		"velocity" 6
+		"acceleration" 2.9
+		"drag" .12
+		"turn" 20
+		"homing"
+			"throttle control"
+		"tracking" 1
+		"lifetime" 150
+		"range override" 3000
+		"reload" 50
+		"firing energy" 140
+		"firing heat" 90
+		"shield damage" 50
+		"hull damage" 25
+		"energy damage" 3800
+		"ion damage" 54
+		"heat damage" 2200
+		"disruption damage" 110
+		"discharge damage" 9
+		"slowing damage" 36
+		"scrambling damage" 26
+		"missile strength" 28
+	description "Grown around a sliver of Deep Lattice, this is the launcher the drowned fleet actually fought with: its Lampreys never lose their way, and three or four of them will leave a capital ship adrift, dark and unable to fire. The breech runs hot and the coils drink power with every shot, but the Breakers have never heard a captain complain about that afterwards."
+
+
+
+# =========================================================================
+# Warden Steward (Systems, 4 / 8 / 16 space, fewer crew needed)
+# =========================================================================
+# A negative "required crew". The engine lets outfits lower a ship's required
+# crew but never below 1 on a ship that is not an automaton: Outfit::CanAdd()
+# ("Only automatons may have a required crew of 0") refuses an install that
+# would take it below 1, and Ship::RequiredCrew() floors it at 1. So a
+# Steward Mk III (-20) only fits a ship that needs at least 21 crew. (Stock
+# precedent for negative "required crew": the derelict hulls in
+# human/derelicts.txt, which use it in "add attributes".) No stock outfit does
+# this, so there is no reference outfit; the price is set by the recipe (see
+# "shoal workshop.txt") and stays below it:
+#	Mk I:  -3 crew,  4 space,  6 energy/s,  12 heat/s, sale 300,000.
+#	Mk II: -8 crew,  8 space, 15 energy/s,  24 heat/s, sale 1,000,000.
+#	Mk III: -20 crew, 16 space, 36 energy/s, 60 heat/s, sale 3,500,000.
+
+outfit "Warden Steward Mk I"
+	category "Systems"
+	series "Special Systems"
+	index 60040
+	cost 300000
+	thumbnail "outfit/medium systems core"
+	"mass" 4
+	"outfit space" -4
+	"required crew" -3
+	"energy consumption" .1
+	"heat generation" .2
+	description "A Warden Core, wired into the ship's systems by the Breakers and given a narrow, careful set of jobs: watching the reactor, trimming the engines, running the damage-control boards. It does the work of a few crew members and never asks for pay. It will not, however, pick up a rifle. Fewer hands aboard means fewer defenders if someone tries to board you."
+
+outfit "Warden Steward Mk II"
+	category "Systems"
+	series "Special Systems"
+	index 60050
+	cost 1000000
+	thumbnail "outfit/medium systems core"
+	"mass" 7
+	"outfit space" -8
+	"required crew" -8
+	"energy consumption" .25
+	"heat generation" .4
+	description "Several Warden Cores, linked together and threaded through the ship from bridge to engine room. The Steward now runs whole stations on its own, and a crew that has shipped with one starts to talk to it, though it never answers. The empty bunks it leaves behind are also empty when boarders come aboard."
+
+outfit "Warden Steward Mk III"
+	category "Systems"
+	series "Special Systems"
+	index 60060
+	cost 3500000
+	thumbnail "outfit/medium systems core"
+	"mass" 14
+	"outfit space" -16
+	"required crew" -20
+	"energy consumption" .6
+	"heat generation" 1
+	description "Grown around a fragment of Deep Lattice, the Steward can run most of a large warship by itself. Breakers say the ship feels haunted with one aboard: doors open just before you reach them, and the lights follow you down the corridors. It still cannot fight hand to hand, and a ship crewed mostly by a Steward is a tempting prize for anyone with a boarding party. The Breakers will only fit one to a ship that needs a crew of at least twenty-one: something aboard always has to be human."
+
+
+# =========================================================================
+# Glass-Edge Cutlass (Hand to Hand)
+# =========================================================================
+# The drowned fleet's boarding blades, found in the holds of drowned warships
+# (DESIGN.md section 19). Never sold, never crafted, and the Breakers' Yard
+# does not touch it (it has no attribute the yard classifies). Stock rules for
+# hand-to-hand gear: no mass or space, "unplunderable" (so it rides in the
+# wrecks' holds, where boarding can take it) and "can jettison".
+# Reference: Pug Peacekeeping Staff, capture attack 2.3, defense 2.3, cost
+# 123,456 (the best non-licensed personal weapon; Heliarch gear is 3.1 / 4.9
+# with a license). The cutlass is on par: 2.4 attack, 2.2 defense (the same
+# 4.6 in total, a little more for boarding parties), sale 120,000.
+
+outfit "Glass-Edge Cutlass"
+	plural "Glass-Edge Cutlasses"
+	category "Hand to Hand"
+	series "H2H"
+	index 95010
+	cost 120000
+	thumbnail "outfit/sword"
+	"capture attack" 2.4
+	"capture defense" 2.2
+	"unplunderable" 1
+	"can jettison" 1
+	description "The marines of the drowned fleet went into boarding actions with these: heavy, single-edged blades whose edges are not steel but Shoal glass, grown along the spine and never dulled by the centuries in the dark. A crew that knows how to swing one is worth twice its number in a narrow corridor."
+
+
+
+# Warden-only copies of the stock weapons and engines the Wardens carry. Each
+# block is identical to the stock outfit it copies (same sprites, effects and
+# ammunition handling) apart from its name and "unplunderable", so a disabled
+# Warden cannot be stripped for resale-grade gear. Since v0.3 (DESIGN.md
+# section 15) the weapon copies run at the Breakers' Yard Mk III factors: every
+# damage type x1.35 (anti-missile 10 -> 14), firing energy and heat x1.12.
+# v0.5.0 (DESIGN.md section 22) cut every damage type by 30% (x0.7, so about
+# the stock outfit's damage again); firing costs and anti-missile unchanged.
+# The deeper tiers fire the generated copies "Warden <weapon> 2/3/4" in
+# "shoal deep wardens.txt". The restless wrecks and the ambushers fire these
+# too. The engine copies are unchanged. The Piercer
+# launcher copy fires a Warden copy of the Piercer Missile, also unplunderable.
+# None of these is listed in any outfitter. The materials a Warden carries
+# (Shoal Glass, Warden Core, Deep Lattice) stay plunderable.
+
+outfit "Warden Husk-Slice"
+	category "Guns"
+	series "Guns"
+	index 04040
+	cost 832000
+	"unplunderable" 1
+	thumbnail "outfit/slicer"
+	"mass" 46
+	"outfit space" -46
+	"weapon capacity" -46
+	"gun ports" -1
+	weapon
+		sprite "projectile/slicer"
+			"frame rate" 6
+		sound "slicer"
+		"hit effect" "slicer impact"
+		"inaccuracy" 0
+		"velocity" 520
+		"lifetime" 1
+		"reload" 1.62
+		"burst reload" 1
+		"burst count" 17
+		"firing energy" 6.27
+		"firing heat" 19.94
+		"shield damage" 5.957
+		"hull damage" 15.785
+	description "This massive beam weapon is relatively ineffective against shields, but cuts through hull armor like it's made of paper."
+
+outfit "Warden Particle Cannon"
+	category "Guns"
+	series "Guns"
+	index 01090
+	cost 220000
+	"unplunderable" 1
+	thumbnail "outfit/particle cannon"
+	"mass" 30
+	"outfit space" -30
+	"weapon capacity" -30
+	"gun ports" -1
+	weapon
+		sprite "projectile/particle beam"
+		sound "particle"
+		"hit effect" "particle impact"
+		"inaccuracy" .5
+		"velocity" 30
+		"lifetime" 25
+		"reload" 20
+		"firing energy" 39.2
+		"firing force" 15
+		"firing heat" 134.4
+		"hit force" 120
+		"shield damage" 61.425
+		"hull damage" 58.59
+	description "The Particle Cannon works by accelerating a short burst of particles to near-relativistic speeds. When mounted on a ship that can turn fast enough to keep it trained on approaching ships, it becomes a nearly unbeatable weapon, capable of destroying smaller ships before they can even approach close enough for their comparatively short-ranged weapons to be effective."
+
+outfit "Warden Husk-Slice Turret"
+	category "Turrets"
+	series "Turrets"
+	index 04060
+	cost 1473000
+	"unplunderable" 1
+	thumbnail "outfit/slicer turret"
+	"mass" 59
+	"outfit space" -59
+	"weapon capacity" -59
+	"turret mounts" -1
+	"required crew" 1
+	weapon
+		sprite "projectile/slicer"
+			"frame rate" 6
+		"hardpoint sprite" "hardpoint/slicer turret"
+		"hardpoint offset" 17.
+		sound "slicer"
+		"hit effect" "slicer impact"
+		"inaccuracy" 0
+		"turret turn" 2.6
+		"velocity" 520
+		"lifetime" 1
+		"reload" 1.62
+		"burst reload" 1
+		"burst count" 17
+		"firing energy" 6.27
+		"firing heat" 19.94
+		"shield damage" 5.957
+		"hull damage" 15.785
+	description "This turret fires a tightly focused energy beam that is particularly effective against hull armor. When paired with a disruptor turret, it is a deadly combination."
+
+outfit "Warden Shield Disruptor Turret"
+	category "Turrets"
+	series "Turrets"
+	index 04070
+	cost 983000
+	"unplunderable" 1
+	thumbnail "outfit/disruptor"
+	"mass" 35
+	"outfit space" -35
+	"weapon capacity" -35
+	"turret mounts" -1
+	"required crew" 1
+	weapon
+		sprite "projectile/disruptor"
+			"frame rate" 15
+		"hardpoint sprite" "hardpoint/disruptor"
+		"hardpoint offset" 15.
+		sound "disruptor"
+		"hit effect" "disruptor impact"
+		"inaccuracy" 1
+		"turret turn" 1.6
+		"velocity" 480
+		"lifetime" 1
+		"reload" 1
+		"firing energy" 8.96
+		"firing heat" 3.02
+		"shield damage" 3.591
+		"hull damage" 0.476
+		"disruption damage" 0.224
+	description "Shield Disruptor Turrets interfere with a ship's shields, allowing a ship's hull to be damaged even when shields are up. However, they do very little hull damage by themselves."
+
+outfit "Warden Thermal Repeater Turret"
+	category "Turrets"
+	series "Turrets"
+	index 04010
+	cost 874000
+	"unplunderable" 1
+	thumbnail "outfit/repeater turret"
+	"mass" 29
+	"outfit space" -29
+	"weapon capacity" -29
+	"energy capacity" 200
+	"required crew" 1
+	"turret mounts" -1
+	weapon
+		sprite "projectile/repeater"
+			"frame rate" 5
+		"hardpoint sprite" "hardpoint/repeater turret"
+		"hardpoint offset" 7.
+		sound "repeater"
+		"hit effect" "repeater impact"
+		"inaccuracy" 3
+		"turret turn" 2.6
+		"velocity" 13
+		"lifetime" 40
+		"reload" 5
+		"burst reload" 2
+		"burst count" 6
+		"cluster"
+		"firing energy" 26.88
+		"firing heat" 120.96
+		"shield damage" 24.57
+		"hull damage" 20.79
+		"heat damage" 31.185
+	description "Thermal Repeaters fire compact bolts of superheated plasma at their targets. For every one of these turrets installed on a ship, an auxiliary cooling system is typically required to cope with its heat output."
+
+outfit "Warden Korath Detainer"
+	category "Guns"
+	series "Guns"
+	index 04060
+	cost 1340000
+	"unplunderable" 1
+	thumbnail "outfit/detainer"
+	"mass" 76
+	"outfit space" -76
+	"weapon capacity" -76
+	"energy capacity" 1600
+	"gun ports" -1
+	weapon
+		sprite "projectile/detainer"
+			"frame rate" 2.5
+		sound "detainer"
+		"hit effect" "detainer impact" 3
+		"hit effect" "detainer smoke" 5
+		"live effect" "detainer sparks" 50
+		"inaccuracy" .5
+		"velocity" 14
+		"lifetime" 140
+		"reload" 60
+		"burst reload" 10
+		"burst count" 2
+		"firing energy" 846.72
+		"firing force" 60
+		"firing heat" 448
+		"hit force" 120
+		"shield damage" 302.4
+		"hull damage" 226.8
+		"slowing damage" 37.8
+		"blast radius" 20
+	description "Although not the most damaging weapon of its size, the Korath Detainer is feared for two reasons: its exceptionally long range, and its ability to interfere with the propulsion systems of any ship it strikes. Its reputation has earned it the honor of being named for the Korath themselves."
+
+outfit "Warden Warder Anti-Missile"
+	category "Turrets"
+	series "Anti-Missile"
+	index 04010
+	cost 845000
+	"unplunderable" 1
+	thumbnail "outfit/warder"
+	"mass" 28
+	"outfit space" -28
+	"weapon capacity" -28
+	"energy capacity" 50
+	"turret mounts" -1
+	weapon
+		"hardpoint sprite" "hardpoint/warder"
+		"hardpoint offset" 3.
+		"hit effect" "korath warder"
+		"anti-missile" 14
+		"velocity" 350
+		"lifetime" 1
+		"reload" 5
+		"firing energy" 26.88
+		"firing heat" 11.2
+	description "This anti-missile system helps defend Korath warships from long-range attacks."
+
+outfit "Warden Piercer Missile Launcher"
+	category "Secondary Weapons"
+	series "Secondary Weapons"
+	index 04030
+	cost 593000
+	"unplunderable" 1
+	thumbnail "outfit/piercer launcher"
+	"mass" 7
+	"outfit space" -21
+	"weapon capacity" -21
+	"energy capacity" 50
+	"gun ports" -1
+	"piercer capacity" 197
+	weapon
+		sprite "projectile/piercer"
+			"frame rate" 5
+			"random start frame"
+		sound "piercer"
+		ammo "Warden Piercer Missile"
+		icon "icon/piercer"
+		"fire effect" "piercer fire"
+		"hit effect" "piercer impact"
+		"hit effect" "piercer explosion"
+		"die effect" "piercer death"
+		"inaccuracy" 1.5
+		"velocity" 18
+		"lifetime" 47
+		"reload" 23
+		"firing energy" 10.08
+		"firing heat" 51.52
+		"shield damage" 122.85
+		"hull damage" 186.165
+		"piercing" .2
+		"hit force" 144
+		"missile strength" 23
+		"stream"
+	description "Korath Piercer Missiles carry a pair of warheads. The first, a smaller one in the very tip of the missile, explodes on impact to blast a hole in the ship's shields to allow some of the subsequent, larger explosion to pierce through."
+	description "	Ammunition for this weapon can be restocked at any outfitter."
+		to display
+			has "gamerule: universal ammo restocking"
+
+outfit "Warden Piercer Missile"
+	category "Ammunition"
+	series "Ammunition"
+	index 04030
+	cost 830
+	"unplunderable" 1
+	thumbnail "outfit/piercer"
+	"mass" .07
+	"piercer capacity" -1
+	description "This missile is fired from a Piercer Missile Launcher."
+
+outfit "Warden Thruster (Comet Class)"
+	plural "Thrusters (Comet Class)"
+	category "Engines"
+	series "Engines"
+	index 04031
+	"cost" 249000
+	"unplunderable" 1
+	thumbnail "outfit/small korath thruster"
+	"mass" 24
+	"outfit space" -24
+	"engine capacity" -24
+	"thrust" 37.53
+	"thrusting energy" 2.8
+	"thrusting heat" 6.5
+	"flare sprite" "effect/korath flare/small"
+		"frame rate" 7.5
+	"flare sound" "plasma small"
+	description "Like most Korath technology, this thruster's power is offset by its energy requirements and heat output."
+
+outfit "Warden Thruster (Planetary Class)"
+	plural "Thrusters (Planetary Class)"
+	category "Engines"
+	series "Engines"
+	index 04051
+	"cost" 1216000
+	"unplunderable" 1
+	thumbnail "outfit/large korath thruster"
+	"mass" 68
+	"outfit space" -68
+	"engine capacity" -68
+	"thrust" 120.0
+	"thrusting energy" 8.9
+	"thrusting heat" 22.7
+	"flare sprite" "effect/korath flare/large"
+		"frame rate" 6.5
+	"flare sound" "plasma large"
+	description "The Quarg, who do all things efficiently, view the Korath propulsion systems with particular distaste."
+
+outfit "Warden Steering (Lunar Class)"
+	plural "Steerings (Lunar Class)"
+	category "Engines"
+	series "Engines"
+	index 04040
+	"cost" 473000
+	"unplunderable" 1
+	thumbnail "outfit/medium korath steering"
+	"mass" 30
+	"outfit space" -30
+	"engine capacity" -30
+	"turn" 1584.0
+	"turning energy" 2.5
+	"turning heat" 7.4
+	"steering flare sprite" "effect/korath flare/medium"
+		"frame rate" 7
+	"steering flare sound" "plasma medium"
+	description "Korath engines can be fitted into just about any ship, but unless accompanied by some Korath cooling systems as well, their heat output will often be more than the ship can handle."
+
+outfit "Warden Steering (Planetary Class)"
+	plural "Steerings (Planetary Class)"
+	category "Engines"
+	series "Engines"
+	index 04050
+	"cost" 1077000
+	"unplunderable" 1
+	thumbnail "outfit/large korath steering"
+	"mass" 52
+	"outfit space" -52
+	"engine capacity" -52
+	"turn" 3104.4
+	"turning energy" 4.6
+	"turning heat" 14.2
+	"steering flare sprite" "effect/korath flare/large"
+		"frame rate" 6.5
+	"steering flare sound" "plasma large"
+	description "Where other species might focus on converting energy into thrust as efficiently as possible, the Korath instead strive to pack as much power as possible into the smallest area. This steering system is a classic example of their work."
+
+outfit "Warden Steering (Comet Class)"
+	plural "Steerings (Comet Class)"
+	category "Engines"
+	series "Engines"
+	index 04030
+	"cost" 221000
+	"unplunderable" 1
+	thumbnail "outfit/small korath steering"
+	"mass" 18
+	"outfit space" -18
+	"engine capacity" -18
+	"turn" 853.2
+	"turning energy" 1.4
+	"turning heat" 4.1
+	"steering flare sprite" "effect/korath flare/small"
+		"frame rate" 7.5
+	"steering flare sound" "plasma small"
+	description "This compact steering system is a classic example of Korath technology: small, powerful, and woefully inefficient."
+
+outfit "Warden Steering (Stellar Class)"
+	plural "Steerings (Stellar Class)"
+	category "Engines"
+	series "Engines"
+	index 04060
+	"cost" 2435000
+	"unplunderable" 1
+	thumbnail "outfit/huge korath steering"
+	"mass" 89
+	"outfit space" -89
+	"engine capacity" -89
+	"turn" 6007.5
+	"turning energy" 8.2
+	"turning heat" 26.7
+	"steering flare sprite" "effect/korath flare/huge"
+		"frame rate" 6
+	"steering flare sound" "plasma huge"
+	description "After millennia of war, the Korath have developed some truly enormous warships. These steering systems give even their largest warships a reasonable amount of agility in combat."

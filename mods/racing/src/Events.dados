@@ -1,0 +1,272 @@
+class Events
+
+// Daily events for the player's team (Incident): a blunder or a windfall
+// somewhere in the team, with three answers. Each day there is CHANCE% of
+// one (none in a team's first week, and none while QUEUE wait).
+//
+// Every event secretly has a "right" approach: a hidden roll h (0 .. 2,
+// weighted by the template) that the player never sees. A blunder's first
+// two answers are handling it aggressively or conservatively, and they play
+// rock-paper-scissors against h:
+//                h = 0       h = 1       h = 2
+//   aggressive   in between  costs a lot wins big
+//   conservative wins big    in between  costs a lot
+// A windfall's two answers are its own (cash now or an investment, a deal
+// or not), each with an outcome by h. The third answer is always to let the
+// chief handle it: the person in the responsible seat (pilot, engineer,
+// research, pit crew or commercial, as the event fits) rolls on their hidden
+// skill: a good outcome CHIEF_GOOD + CHIEF_SKILL x skill of the time, a bad
+// one CHIEF_BAD - CHIEF_BAD_SKILL x skill, else in between. That outcome
+// goes on their record (Person.ev_*: good, bad, of how many), which the
+// staff market prices on (Staff.rating). An empty seat's stand-in handles it
+// badly more often and has no record.
+//
+// The mod can open a dialog only from the planet screen's hooks, so: an
+// event in flight posts a short message and waits; it opens on the next
+// landing (several chain, one after another), or at the next click on the
+// Racing button. One not answered within DAYS days is handled by the chief
+// alone, on their record.
+//
+// Templates are lines: kind (B blunder, W windfall) | role | title | text |
+// first answer | its effects | second answer | its effects | the chief's
+// effects | weights of h | the good, middling and bad outcome's line.
+// An effect is "kind:size:t0,t1,t2" (the tier for h = 0, 1, 2; for the
+// chief: good, middling, bad), several joined with "+". Kinds: cash (x SCALE,
+// by league), dev (the event's department, in levels at B scale), dev0
+// .. dev4 (that department), form (the pilot's lap factor at the next race),
+// deal (the sponsor's weekly pay, a fraction; with no deal, cash).
+
+float CHANCE = 6.0
+int QUEUE = 3
+int DAYS = 5
+int GRACE = 7
+float CHIEF_GOOD = 0.35
+float CHIEF_SKILL = 0.3
+float CHIEF_BAD = 0.25
+float CHIEF_BAD_SKILL = 0.2
+// Events' money by league: less than the leagues' own scale, so an event is
+// felt in the B League and never decides a season in the S League.
+[]float SCALE = [1.0, 4.0, 12.0]
+// A level gain counts at B scale: in a league with faster cars, more.
+float LEVEL_REF = 30.0
+
+[]string templates = [
+    "B|0|Bar brawl|{pilot} got into a brawl with {rival}'s pilot in a spaceport bar on the eve of the {circuit}. The stewards want a statement.|Defend {pilot} in public|cash:30000:-1,-3,1|Apologise and pay the damages|cash:30000:1,-1,-3|cash:30000:1,-1,-3|1,1,1|The stewards let it go, and the story wins the team fans.|The stewards issue a fine.|The stewards come down hard, and the press piles on.",
+    "B|1|The wrong setup sheet|{engineer}'s crew loaded an old setup into the car before shakedown; the data from the first runs is useless.|Rebuild the setup overnight|form:0.003:-1,-3,1|Fall back on a safe baseline|form:0.003:1,-1,-3|form:0.003:1,-1,-3|1,1,1|The car is better than before.|The car is a little off the pace.|The car is a handful all weekend.",
+    "B|2|Leaked designs|Plans for the team's new {dept} parts have turned up in {rival}'s garage.|Take {rival} to the league tribunal|cash:50000:-1,-3,1|Redesign the parts quietly|dev:1.2:1,-1,-3|dev:1.2:1,-1,-3|1,2,1|The team comes out ahead.|It costs the team something.|It costs the team dearly.",
+    "B|3|Pit crew walkout|{pit}'s crew are threatening to walk out over overtime before the {circuit}.|Call their bluff|cash:25000:-1,-3,1|Pay the overtime|cash:25000:1,-1,-3|cash:25000:1,-1,-3|1,1,2|The crew comes back keener than ever.|The crew grumbles, and it costs a little.|The crew walks out, and temporary hands cost a fortune.",
+    "B|4|The misspelt livery|The new livery misspells {sponsor}'s name, and the holovid shows have noticed.|Laugh it off in public|deal:0.06:-1,-3,1|Repaint and apologise|deal:0.06:1,-1,-3|deal:0.06:1,-1,-3|1,1,1|{sponsor} loves the attention.|{sponsor} is cool about it.|{sponsor} is furious.",
+    "B|0|Training crash|{pilot} wrote off the practice car in a training run near {circuit}.|Push on with the spare chassis|cash:40000:-1,-3,1|Rest {pilot} and rebuild properly|cash:40000:1,-1,-3|cash:40000:1,-1,-3|2,1,1|The team gets away lightly.|The rebuild costs a fair sum.|The spare breaks too, and the bills pile up.",
+    "B|1|Fuel irregularity|The scrutineers question the fuel mixture {engineer} signed off for the {circuit}.|Contest the ruling|cash:35000:-1,-3,1|Accept a fine|cash:35000:1,-1,-3|cash:35000:1,-1,-3|1,1,1|The ruling is overturned with costs.|A fine is paid.|The fine is doubled for wasting the stewards' time.",
+    "B|2|Simulator fire|A fire in the simulation bay has destroyed weeks of {research}'s data.|Rebuild it bigger and faster|dev4:1.5:-1,-3,1|Patch it up and carry on|dev4:1.5:1,-1,-3|dev4:1.5:1,-1,-3|1,1,1|The simulator comes back better than before.|The simulator loses some ground.|The simulator programme is set back badly.",
+    "B|3|Spares stuck in transit|Spares for the {circuit} are stuck on a freighter two jumps out.|Charter a fast courier|cash:20000:-1,-3,1|Make do with what the team has|form:0.004:1,-1,-3|form:0.004:1,-1,-3|1,2,1|It works out well.|It works out, at a price.|It goes wrong.",
+    "B|4|Sponsor scandal|{sponsor} is in the news for all the wrong reasons, and reporters want to know whether the team stands by it.|Stand by {sponsor}|deal:0.08:-1,-3,1|Distance the team from {sponsor}|deal:0.08:1,-1,-3|deal:0.08:1,-1,-3|1,1,1|{sponsor} rewards the team's handling of it.|The relationship cools a little.|The relationship sours badly.",
+    "B|1|Rival protest|{rival} has protested the legality of the team's {dept} parts.|Fight it before the stewards|dev:1.2:-1,-3,1|Swap in older parts|dev:1.2:1,-1,-3|dev:1.2:1,-1,-3|1,1,1|The parts stay, and the team learns from the scrutiny.|The team loses a little ground.|The team loses a lot of ground.",
+    "B|0|Agent trouble|{pilot}'s agent is talking to other teams, and the press smells a story.|Call the agent's bluff|form:0.004:-1,-3,1|Pay {pilot} a loyalty bonus|cash:25000:1,-1,-3|cash:25000:1,-1,-3|1,1,1|{pilot} is fired up and focused.|It costs something to settle.|The saga drags on and costs plenty.",
+    "B|2|Budget overrun|{research} has blown the {dept} budget on a part that does not fit the car.|Force it to fit|dev:1.0:-1,-3,1|Scrap it and write off the cost|cash:20000:1,-1,-3|cash:20000:1,-1,-3|1,1,2|It turns out well.|It costs the team a little.|It costs the team a lot.",
+    "B|3|Unsafe release|The stewards are investigating {pit}'s crew for an unsafe release at the {circuit}.|Argue the case|cash:30000:-1,-3,1|Accept the penalty|cash:30000:1,-1,-3|cash:30000:1,-1,-3|2,1,1|The case is dropped, and the league covers the team's costs.|A fine is paid.|A heavy fine is paid.",
+    "B|4|Hospitality disaster|The team's hospitality suite at the {circuit} gave {sponsor}'s guests food poisoning.|Blame the caterer loudly|deal:0.08:-1,-3,1|Make it right with {sponsor}|deal:0.08:1,-1,-3|deal:0.08:1,-1,-3|1,1,1|{sponsor} comes away impressed.|{sponsor} is unhappy.|{sponsor} is livid.",
+    "B|0|Reckless remarks|{pilot} called {rival}'s pilot a coward on a live holovid.|Back {pilot} to the hilt|form:0.003:-1,-3,1|Make {pilot} apologise|form:0.003:1,-1,-3|form:0.003:1,-1,-3|1,1,1|{pilot} drives like a demon.|{pilot} is subdued.|{pilot} is rattled for the race.",
+    "W|2|Breakthrough|{research}'s team has a promising idea for the {dept} department.|Patent it and license it out|cash:20000:2,2,2|Build it into the car|dev:1.0:1,2,4|dev:1.0:4,2,1|1,1,1|It pays off handsomely.|It pays off.|It pays off, a little.",
+    "W|4|An appearance fee|{sponsor} offers a fee if {pilot} films an advert during race week.|Take the money|cash:15000:3,3,3+form:0.002:0,-1,-2|Keep {pilot} focused on racing|form:0.002:0,1,2|cash:15000:3,2,1|1,1,1|It works out very well.|It works out.|It barely pays.",
+    "W|0|Fan favourite|{pilot}'s last race has gone viral on the holonets.|Sell merchandise|cash:10000:1,3,5|Pitch it to the sponsors|deal:0.04:1,2,3|cash:10000:5,3,1|1,1,1|A bonanza.|A good earner.|A modest earner.",
+    "W|3|Surplus parts|{pit} found crates of unused spares from the last regulation cycle.|Sell them|cash:15000:2,2,2|Strip them for reliability parts|dev2:1.0:0,2,4|dev2:1.0:4,2,1|1,1,1|It pays off handsomely.|It pays off.|It comes to little.",
+    "W|1|Cheap simulator time|A supplier going under offers {engineer} a week on its simulator at a discount.|Decline and bank the savings|cash:10000:1,1,1|Buy the time|cash:-10000:1,1,1+form:0.003:-1,1,3|form:0.003:3,1,0|1,1,1|The car is transformed.|The car is a touch quicker.|Nothing much comes of it.",
+    "W|4|A bidding war|Two sponsors want the space on the car's nose, and {sponsor} is one of them.|Take {sponsor}'s steady offer|deal:0.05:1,1,1|Play them off against each other|deal:0.05:-2,1,3|deal:0.05:3,1,-1|1,1,1|A great deal.|A fair deal.|A poorer deal.",
+    "W|2|A gifted intern|A brilliant engineering student wants to intern under {research}.|Take the intern on|dev:0.6:0,1,3|Sell the research grant on|cash:12000:2,2,2|dev:0.6:3,1,0|1,1,1|A real find.|A useful pair of hands.|Not much help.",
+    "W|0|A charity race|{pilot} is invited to an exhibition race at the {circuit} for charity.|Race it flat out|cash:15000:-2,2,4|Drive a parade lap|cash:15000:1,1,1|cash:15000:3,1,-1|1,1,1|A triumph, and the gate money flows.|A pleasant day out.|The car comes back in pieces.",
+    "W|4|A wealthy fan|A wealthy fan offers to put money into the team for a seat at the pit wall.|Take the money|cash:40000:2,2,2|Turn it into a sponsorship pitch|deal:0.06:0,2,3|cash:40000:3,2,0|1,1,1|It pays off handsomely.|It pays off.|It comes to little.",
+    "W|1|Rival's data|A disgruntled mechanic from {rival} offers {engineer} their setup data.|Buy it|cash:-15000:1,1,1+form:0.004:-2,1,3|Turn it down and report it|cash:10000:1,1,1|form:0.003:3,1,-1|1,1,1|It is gold.|It helps.|It was a plant."
+]
+
+Names names = Names()
+Fmt fmt = Fmt()
+
+int count():
+    return templates.len()
+
+[]string fields(int t):
+    return templates[t].split("|")
+
+bool is_blunder(int t):
+    return fields(t)[0] == "B"
+
+int role(int t):
+    return fields(t)[1].to_int()
+
+[]int weights(int t):
+    []int out = []
+    for part in fields(t)[9].split(","):
+        out.append(part.to_int())
+    return out
+
+// The tier of option `option` (0, 1) for hidden roll `h`, summed over its
+// effects' first tiers; for tests and the outcome line.
+int tier(int t, int option, int h):
+    string spec = fields(t)[5 if option == 0 else 7]
+    []string first = spec.split("+")[0].split(":")
+    return first[2].split(",")[h].to_int()
+
+// ---- Each day ----
+
+void daily(World w):
+    if !w.has_team():
+        return
+    Team me = w.mine()
+    // Unanswered for DAYS days: the chief handles it.
+    for inc in w.incidents.copy():
+        if w.day > inc.deadline:
+            string what = resolve(w, inc, 2)
+            w.player_events.append("Racing: no answer from you, so " + chief_name(w, inc) + " dealt with \"" + title(w, inc) + "\": " + what)
+    if w.incidents.len() >= QUEUE || w.day - me.founded < GRACE:
+        return
+    if !w.rng.chance(CHANCE):
+        return
+    Incident inc = make(w, w.rng.range(0, count() - 1))
+    w.incidents.append(inc)
+    string kind = "trouble" if is_blunder(inc.template) else "news"
+    w.player_events.append("Racing: " + kind + " at " + me.name + ": " + title(w, inc) + ". Land to respond within " + string(DAYS) + " days, or " + chief_name(w, inc) + " deals with it.")
+
+Incident make(World w, int t):
+    Team me = w.mine()
+    Incident inc = Incident()
+    inc.id = w.next_incident
+    w.next_incident += 1
+    inc.template = t
+    []int wt = weights(t)
+    int total = wt[0] + wt[1] + wt[2]
+    int r = w.rng.range(1, total)
+    inc.roll = 0 if r <= wt[0] else (1 if r <= wt[0] + wt[1] else 2)
+    inc.chief = me.seats[role(t)]
+    inc.day = w.day
+    inc.deadline = w.day + DAYS
+    []Deal mine_deals = w.deals_of(me.id)
+    inc.sponsor = mine_deals[w.rng.range(0, mine_deals.len() - 1)].sponsor if mine_deals.len() > 0 else ""
+    if inc.sponsor == "":
+        []Sponsor pool = w.sponsoring.offering(w)
+        inc.sponsor = pool[w.rng.range(0, pool.len() - 1)].name if pool.len() > 0 else "a sponsor"
+    []Team rivals = w.league_teams(me.league).filter(bool(Team x): return !x.player)
+    inc.rival = rivals[w.rng.range(0, rivals.len() - 1)].name if rivals.len() > 0 else "a rival"
+    int round = w.round_now()
+    int ci = w.circuit_of(me.league, round if round >= 0 else 0)
+    inc.circuit = names.circuit_titles[ci]
+    inc.dept = w.rng.range(0, 4)
+    return inc
+
+// ---- Words ----
+
+string chief_name(World w, Incident inc):
+    Person p = w.person(inc.chief)
+    if p.id == 0 || p.team != w.player_team:
+        return "a stand-in " + names.role_names[role(inc.template)].to_lower()
+    return names.role_short[p.role].to_lower() + " " + p.name if p.role != 0 else "pilot " + p.name
+
+string fill(World w, Incident inc, string text):
+    Team me = w.mine()
+    string s = text
+    []string keys = ["{pilot}", "{engineer}", "{research}", "{pit}", "{commercial}"]
+    for k in 0..<5:
+        Person p = w.seat(me, k)
+        string who = p.name if p.id != 0 else "the stand-in " + names.role_short[k].to_lower()
+        s = s.replace_all(keys[k], who)
+    s = s.replace_all("{sponsor}", inc.sponsor)
+    s = s.replace_all("{rival}", inc.rival)
+    s = s.replace_all("{circuit}", inc.circuit)
+    s = s.replace_all("{team}", me.name)
+    s = s.replace_all("{dept}", names.dept_names[inc.dept].to_lower())
+    return s
+
+string title(World w, Incident inc):
+    return fill(w, inc, fields(inc.template)[2])
+
+string text(World w, Incident inc):
+    return fill(w, inc, fields(inc.template)[3])
+
+string label(World w, Incident inc, int option):
+    if option == 2:
+        return "Let " + chief_name(w, inc) + " handle it"
+    return fill(w, inc, fields(inc.template)[4 if option == 0 else 6])
+
+// ---- Outcomes ----
+
+// The chief's roll: 0 good, 1 middling, 2 bad.
+int chief_roll(World w, Person p):
+    float s = p.skill
+    float u = w.rng.unit()
+    if u < CHIEF_GOOD + CHIEF_SKILL * s:
+        return 0
+    if u > 1.0 - (CHIEF_BAD - CHIEF_BAD_SKILL * s):
+        return 2
+    return 1
+
+// Answer an incident: 0 and 1 the template's answers, 2 the chief. Applies
+// the effects, puts a chief's outcome on their record, removes the incident
+// and answers the outcome's line.
+string resolve(World w, Incident inc, int option):
+    []string f = fields(inc.template)
+    Team me = w.mine()
+    string spec = f[5] if option == 0 else (f[7] if option == 1 else f[8])
+    int index = inc.roll
+    Person chief = w.person(inc.chief)
+    bool real = chief.id != 0 && chief.team == me.id
+    if option == 2:
+        index = chief_roll(w, chief if real else w.stand_in)
+    []string parts = []
+    int lead = 0
+    bool first = true
+    for one in spec.split("+"):
+        []string e = one.split(":")
+        int t = e[2].split(",")[index].to_int()
+        if first:
+            lead = t
+            first = false
+        string said = apply(w, me, inc, e[0], e[1].to_float(), t)
+        if said != "":
+            parts.append(said)
+    // The outcome's line: by the chief's roll, else by how the answer turned out.
+    int band = 0
+    if option == 2:
+        band = index
+    else:
+        if is_blunder(inc.template):
+            band = 0 if lead >= 1 else (2 if lead <= -3 else 1)
+        else:
+            band = 0 if lead >= 3 else (2 if lead <= 0 else 1)
+    if option == 2 && real:
+        w.staff.crisis(chief, 1 if index == 0 else (-1 if index == 2 else 0))
+    string line = fill(w, inc, f[10 + band])
+    w.incidents = w.incidents.filter(bool(Incident x): return x.id != inc.id)
+    string effects = parts.join("; ") if parts.len() > 0 else "no lasting effect"
+    return line + " (" + effects + ".)"
+
+// One effect; answers how it reads ("" for none).
+string apply(World w, Team me, Incident inc, string kind, float size, int t):
+    if t == 0 || me.id == 0:
+        return ""
+    float s = SCALE[me.league]
+    if kind == "cash":
+        float amount = size * float(t) * s
+        if amount >= 0.0:
+            w.earn(me, amount)
+            return "+" + fmt.credits(amount) + " credits"
+        w.spend(me, -amount)
+        return "-" + fmt.credits(-amount) + " credits"
+    if kind == "form":
+        me.form = me.form + size * float(t)
+        return ("the pilot's form is up" if t > 0 else "the pilot's form suffers") + " for the next race"
+    if kind == "deal":
+        for d in w.deals_of(me.id):
+            if d.sponsor == inc.sponsor:
+                float before = d.pay
+                d.pay = d.pay * (1.0 + size * float(t))
+                d.pay = d.pay if d.pay > 0.0 else 0.0
+                d.bonus = d.pay * w.sponsoring.BONUS
+                return d.sponsor + " pays " + fmt.credits(d.pay) + " a week (was " + fmt.credits(before) + ")"
+        return apply(w, me, inc, "cash", 10000.0, t)
+    if kind.starts_with("dev"):
+        int d = inc.dept if kind == "dev" else kind[3..<4].to_int()
+        float gain = size * float(t) * me.levels[d] / LEVEL_REF
+        me.levels[d] = me.levels[d] + gain
+        me.levels[d] = me.levels[d] if me.levels[d] > 1.0 else 1.0
+        return names.dept_names[d].to_lower() + " " + ("+" if gain >= 0.0 else "") + fmt.one_decimal(gain)
+    return ""

@@ -76,6 +76,7 @@ void apply_reputations(es.Game game):
         game.set_reputation(factions.flotilla_government(f), rep)
     keep_standing(game)
     mark_worlds(game)
+    mark_ships(game)
 
 // A member is welcome on every world of its faction: standing with the
 // faction's own government (which owns its systems; the flotillas fly under
@@ -119,6 +120,21 @@ void mark_worlds(es.Game game):
     if factions.is_major(m):
         game.change("government \"" + factions.governments[m] + "\"\n\tcolor " + tune.member_color)
     state.put(game, "colored", m if factions.is_major(m) else 0)
+
+// A member's ships fly in its faction's colours: the player's government
+// ("Escort") takes the faction's swizzle while they are a member
+// ("swizzled" remembers whose), and its own (Factions.PLAYER_SWIZZLE) back on
+// leaving. The game gives a ship its government's colours when it takes
+// that government, so ships already in space may keep the old ones until the
+// pilot is next loaded.
+void mark_ships(es.Game game):
+    int m = state.member(game)
+    int want = m if factions.is_major(m) else 0
+    if state.get(game, "swizzled") == want:
+        return
+    int swizzle = factions.swizzles[want] if want > 0 else factions.PLAYER_SWIZZLE
+    game.change("government \"Escort\"\n\tswizzle " + string(swizzle))
+    state.put(game, "swizzled", want)
 
 void update_enemy(es.Game game):
     int e = enemy(game)

@@ -17,7 +17,9 @@ int MAP = 4
 int ORDERS = 5
 // (M3) The player's own company (Charter).
 int COMPANY = 6
-[]string tab_names = ["market", "portfolio", "contracts", "news", "map layers", "orders", "your company"]
+// (0.4) The chiefs' pool (Executives): browse, hire, poach, let go.
+int CHIEFS = 7
+[]string tab_names = ["market", "portfolio", "contracts", "news", "map layers", "orders", "your company", "chief executives"]
 // The news filter (a click on the News heading steps through them): every
 // line, lines about companies the player holds, shipyards and hulls, the war
 // and the military.
@@ -54,6 +56,31 @@ int IPO_OK = 23
 int DISSOLVE_OK = 24
 int PAYOUT_OK = 25
 int DIRECT_OK = 26
+// (M4) The company tab's topics, a board seat's research and new shares,
+// and the player's company bidding for a rival.
+int INJECT_ASK = 27
+int BUILD_ASK = 28
+int PLAN_ASK = 29
+int BUDGET_ASK = 30
+int OWN_PAYOUT_ASK = 31
+int OFFER_ASK = 32
+int BUYBACK_ASK = 33
+int BOARD_FOCUS_ASK = 34
+int BOARD_BUDGET_ASK = 35
+int BOARD_CAPITAL_ASK = 36
+int TAKEOVER_OK = 37
+int FOUND_OK = 38
+int FOCUS_OK = 39
+// (0.4) The chiefs' tab.
+int CHIEF_HIRE_OK = 40
+int CHIEF_POACH_OK = 41
+int CHIEF_FIRE_OK = 42
+int CHIEF_MATCH_OK = 43
+// The chief chosen on the chiefs' tab (its id), each row's chief, and the
+// chief a confirm is about.
+int chief_choice = 0
+[]int chief_items = []
+int pending_chief = 0
 // The board action or charter choice waiting for its confirm.
 int pending_level = 0
 // The player's ships on the company tab (UUIDs), and the one chosen.
@@ -123,6 +150,8 @@ void show(es.Game game, Market market):
         orders_table(game, market)
     else if tab == COMPANY:
         company_table(game, market)
+    else if tab == CHIEFS:
+        chiefs_table(game, market)
     else:
         market_table(game, market)
     int chosen = row_ids.index_of(selected) if selected != 0 && row_ids.contains(selected) else -1
@@ -130,6 +159,8 @@ void show(es.Game game, Market market):
         chosen = order_items.index_of(order_choice) if order_choice != "" && order_items.contains(order_choice) else -1
     if tab == COMPANY:
         chosen = ship_items.index_of(ship_choice) if ship_choice != "" && ship_items.contains(ship_choice) else -1
+    if tab == CHIEFS:
+        chosen = chief_items.index_of(chief_choice) if chief_choice != 0 && chief_items.contains(chief_choice) else -1
     game.panel_select(chosen)
     // Always the same buttons, in the same places, so their keys stay put.
     button(game, "Market", "market")
@@ -141,6 +172,12 @@ void show(es.Game game, Market market):
     if builder.id != 0:
         button(game, "Orders", "orders")
     button(game, "Company", "company")
+    button(game, "Chiefs", "chiefs")
+    if tab == CHIEFS:
+        chief_buttons(game, market)
+        button(game, "Leave", "close")
+        note = ""
+        return
     if tab == COMPANY:
         company_buttons(game, market)
         button(game, "Leave", "close")
@@ -177,8 +214,14 @@ void show(es.Game game, Market market):
             if market.board.has_seat(market, c) && c.owner == 0:
                 button(game, "Payout", "payout")
                 button(game, "Direct bids", "direct")
+                button(game, "Research", "board research")
+                button(game, "New shares", "board capital")
             if market.board.may_sell(market, c):
                 button(game, "Sell to suitor", "sell suitor")
+        // (M4) The player's company may bid for it.
+        Company mine = market.charter.mine(market)
+        if mine.id != 0 && mine.id != c.id && !c.canon && market.may_buy(mine, c) && c.suitor == 0:
+            button(game, "Take over", "take over")
     button(game, "Leave", "close")
     note = ""
 
@@ -461,6 +504,8 @@ string sidebar(es.Game game, Market market):
         return top + orders_text(game, market)
     if tab == COMPANY:
         return top + charter_text(game, market)
+    if tab == CHIEFS:
+        return top + chief_text(game, market)
     if selected != 0 && market.by_id.has(selected):
         return top + company_text(game, market, market.by_id[selected])
     return top + summary(game, market)
@@ -518,7 +563,8 @@ string company_text(es.Game game, Market market, Company c):
     t = t + "Book value " + fmt.price(market.book(c)) + " a share. P/E " + pe(market, c) + ". Yield " + yield_of(c) + ".\n"
     t = t + "Last reports: " + reports(c) + ".\n\n"
     t = t + "Cash " + fmt.short_credits(c.cash) + ", debt " + fmt.short_credits(c.debt) + ".\n"
-    t = t + "Capacity " + fmt.one_decimal(c.capacity) + " units a day, " + fmt.whole_percent(c.load / c.capacity if c.capacity > 0.0 else 0.0) + " busy. Reliability " + fmt.whole_percent(c.reliability) + ".\n"
+    t = t + "Takes on " + fmt.short_credits(market.eff(c) * market.UNIT) + " of work a day, " + fmt.whole_percent(c.load / market.eff(c) if c.capacity > 0.0 else 0.0) + " busy. Reliability " + fmt.whole_percent(c.reliability) + ".\n"
+    t = t + tech_text(market, c)
     t = t + "Recent contracts: " + recent_contracts(market, c) + "\n"
     t = t + m3_text(game, market, c)
     t = t + m2_text(game, market, c)
@@ -531,6 +577,23 @@ string company_text(es.Game game, Market market, Company c):
         float paid = market.basis.get(c.id, 0.0)
         t = t + "\nYou hold " + fmt.credits(float(held)) + " shares (" + fmt.whole_percent(float(held) / float(c.shares)) + "), worth " + fmt.credits(value) + " credits: " + fmt.percent(value / paid - 1.0 if paid > 0.0 else 0.0) + " on what you paid.\n"
     t = t + "\nYou have " + fmt.credits(float(game.condition("credits"))) + " credits."
+    return t
+
+// (M4) Its technology against its sector's best, and its research.
+string tech_text(Market market, Company c):
+    Research r = market.research
+    []string parts = []
+    for f in 0..<3:
+        int best = r.frontier_of(market, c.sector, f)
+        parts.append(r.focus_names[f] + " " + string(c.tech[f]) + (" (leads)" if c.tech[f] >= best && best > 0 else ""))
+    string t = "Technology: " + parts.join(", ") + ". Research: " + r.rd_names[c.rd] + (" budget, on " + r.focus_words[c.focus] if c.rd > 0 else "") + ".\n"
+    if c.growth > 0.05 || c.growth < -0.05:
+        t = t + ("Growing" if c.growth > 0.0 else "Shrinking") + " about " + fmt.whole_percent(c.growth if c.growth > 0.0 else -c.growth) + " a year.\n"
+    if c.capital_policy < 0:
+        t = t + "Its board forbids new shares.\n"
+    // (M4) A security company's fleet.
+    if c.sector == 7 && (c.fleet != "" || market.fleets.away(market, c)):
+        t = t + "Fleet: " + market.fleets.describe(market, c.fleet) + (" at home; more on a sweep against pirates" if market.fleets.away(market, c) else "") + ".\n"
     return t
 
 // ---- What the player does ----
@@ -585,6 +648,8 @@ void press(es.Game game, Market market, int index):
         note = "You can't buy shares of " + c.name + " now: you lack the credits, or you already hold " + fmt.whole_percent(market.MAX_HOLDING) + " of it."
     else if action == "company":
         tab = COMPANY
+    else if action == "chiefs":
+        tab = CHIEFS
     else if press_m3(game, market, action):
         return
     else if action == "sell" && market.by_id.has(selected):
@@ -596,6 +661,11 @@ void press(es.Game game, Market market, int index):
     show(game, market)
 
 void row(es.Game game, Market market, int index):
+    if tab == CHIEFS:
+        if index >= 0 && index < chief_items.len():
+            chief_choice = chief_items[index]
+            show(game, market)
+        return
     if tab == COMPANY:
         if index >= 0 && index < ship_items.len():
             ship_choice = ship_items[index]
@@ -859,7 +929,7 @@ string demand_text(Market market, Company c):
 string m3_text(es.Game game, Market market, Company c):
     string t = ""
     if c.ceo != "":
-        t = t + "Chief executive: " + (c.ceo + " (you)" if c.ceo == "you" else market.execs.label(c)) + ", since " + fmt.date(c.ceo_since) + ".\n"
+        t = t + "Chief executive: " + ("you" if c.ceo == "you" else market.execs.label(c)) + ", since " + fmt.date(c.ceo_since) + chief_brief(market, c) + ".\n"
     if c.status == c.NATIONALISED:
         t = t + "Nationalised on day " + string(c.since) + ".\n"
     if market.frozen(c):
@@ -907,88 +977,244 @@ bool press_m3(es.Game game, Market market, string action):
         int held = market.holdings.get(c.id, 0)
         game.confirm("Sell your " + fmt.credits(float(held)) + " shares of " + c.name + " to " + b.name + " at " + fmt.price(c.offer * (1.0 + market.board.PREMIUM)) + " each (its offer plus " + fmt.whole_percent(market.board.PREMIUM) + ")? The regulator will take note.", SELL_SUITOR_OK)
         return true
-    Company mine = market.charter.mine(market)
-    if action == "charter":
-        game.ask_number("Charter your own company for " + fmt.credits(float(market.charter.FEE)) + " credits (half becomes its first cash): 1 freight, 2 security.", CHARTER_ASK, 2)
+    // (M4) A board seat: research and new shares.
+    if action == "board research" && c.id != 0:
+        game.ask_number("Direct " + c.name + "'s research: 1 its production process (cheaper work), 2 throughput (more work from its yards), 3 quality (fewer failures).", BOARD_FOCUS_ASK, 3)
         return true
+    if action == "board capital" && c.id != 0:
+        game.ask_number("New shares at " + c.name + ": 1 allow offerings when its chief wants them, 2 forbid them (your stake is not diluted), 3 leave it to the chief.", BOARD_CAPITAL_ASK, 3)
+        return true
+    // (M4) The player's company bids for this one.
+    if action == "take over" && c.id != 0:
+        Company mine = market.charter.mine(market)
+        string why = market.takeover_refusal(mine, c)
+        if why != "":
+            note = why
+            return false
+        game.confirm("Have " + mine.name + " bid for " + c.name + " at " + fmt.price(c.price * market.TAKEOVER_PREMIUM) + " a share (" + fmt.short_credits(market.takeover_cost(c)) + " in all, " + fmt.whole_percent(market.TAKEOVER_PREMIUM - 1.0) + " over the market)? The deal completes in a week if the financing, the regulator and its board allow; your company pays from its cash and what it can borrow.", TAKEOVER_OK)
+        return true
+    Company mine = market.charter.mine(market)
+    if action.starts_with("found "):
+        int t = action[6..<action.len()].to_int()
+        int sector = ship_choice[2..<ship_choice.len()].to_int() if ship_choice.starts_with("s:") else -1
+        if sector < 0:
+            note = "Choose a sector first."
+            return false
+        pending_level = sector * 10 + t
+        game.confirm("Found a company in " + market.names.sectors[sector].to_lower() + " with " + market.charter.tier_names[t] + " credits (" + fmt.credits(float(market.charter.found_cost(t))) + " with the registration fee)? Most of it goes into yards; the rest is its first cash.", FOUND_OK)
+        return true
+    if action.starts_with("chief "):
+        return press_chief(game, market, action, mine)
     if mine.id == 0:
         return false
-    if action == "assign" && ship_choice != "":
-        game.confirm("Assign the " + game.fleet_ship_name(ship_choice) + " to " + mine.name + "? It is parked while it works for the company, adding " + fmt.one_decimal(market.charter.ship_capacity(game, mine, ship_choice)) + " to its capacity.", ASSIGN_OK)
+    if action == "contribute" && ship_choice != "":
+        float cap = market.charter.contribution(game, mine, ship_choice)
+        game.confirm("Hand the " + game.fleet_ship_name(ship_choice) + " over to " + mine.name + " for good? It leaves your fleet with everything aboard and never comes back; the company can take on " + fmt.short_credits(cap * market.UNIT) + " more work a day for as long as it stands" + (", and you get new shares for it" if mine.ipo else "") + ".", ASSIGN_OK)
         return true
-    if action == "unassign" && ship_choice != "":
-        game.confirm("Take the " + game.fleet_ship_name(ship_choice) + " back from " + mine.name + "? It is unparked, and the company loses its capacity.", UNASSIGN_OK)
-        return true
-    if action == "sell ship" && ship_choice != "":
-        int price = market.charter.sale_price(game, ship_choice)
-        if float(price) > mine.cash:
-            note = mine.name + " can't pay " + fmt.credits(float(price)) + " credits for the " + game.fleet_ship_name(ship_choice) + "; it has " + fmt.credits(mine.cash) + "."
+    if action == "inject":
+        int most = game.condition("credits") / 1000
+        if most < 1:
+            note = "You have too few credits to put any in."
             return false
-        game.confirm("Sell the " + game.fleet_ship_name(ship_choice) + " to " + mine.name + " for good? It leaves your fleet with everything aboard; the company pays you " + fmt.credits(float(price)) + " credits (" + fmt.whole_percent(market.charter.SALE_PAY) + " of a new one's price).", SELLSHIP_OK)
+        game.ask_number("Put money into " + mine.name + ", in thousands of credits (you have " + fmt.credits(float(game.condition("credits"))) + "). " + ("It is listed: you get new shares at " + fmt.price(mine.price) + " each." if mine.ipo else "It is private: the money is its cash, and yours.") + " Up to " + fmt.credits(float(most)) + " thousand.", INJECT_ASK, most)
         return true
-    if action == "capacity":
-        game.ask_number("Buy capacity for " + mine.name + " at " + fmt.credits(market.charter.CAPITAL) + " credits a unit (work a day).", CAPACITY_ASK, 10)
+    if action == "build":
+        int most = int(market.charter.buildable(market, mine) / 1000.0)
+        if most < 1:
+            note = mine.name + " has no cash to spare for yards: put money in first."
+            return false
+        game.ask_number("Build yards for " + mine.name + " with its cash, in thousands of credits. Each " + fmt.short_credits(market.CAPITAL / 100.0) + " adds " + fmt.short_credits(market.UNIT / 100.0) + " a day to the work it can take on. Up to " + fmt.credits(float(most)) + " thousand.", BUILD_ASK, most)
+        return true
+    if action == "plan":
+        game.ask_number("Set " + mine.name + "'s growth when busy: 1 hold (build nothing yourself), 2 steady, 3 fast (it borrows to build).", PLAN_ASK, 3)
+        return true
+    if action.starts_with("focus "):
+        int f = action[6..<action.len()].to_int()
+        if f != mine.focus:
+            game.confirm("Turn " + mine.name + "'s research to " + market.research.focus_words[f] + "? What it has spent toward its current focus is lost.", FOCUS_OK)
+            pending_level = f
+            return true
+        note = "Its research is already on " + market.research.focus_words[f] + "."
+        return false
+    if action == "budget":
+        game.ask_number("Set " + mine.name + "'s research budget: 1 none, 2 light, 3 steady, 4 heavy, 5 all-in. Research is paid every day, in good months and bad.", BUDGET_ASK, 5)
+        return true
+    if action == "own payout":
+        game.ask_number("Set " + mine.name + "'s dividend: 1 low (" + fmt.whole_percent(market.board.payouts[0]) + " of earnings), 2 normal (" + fmt.whole_percent(market.board.payouts[1]) + "), 3 high (" + fmt.whole_percent(market.board.payouts[2]) + "). You are paid your share of it.", OWN_PAYOUT_ASK, 3)
+        return true
+    if action == "offering":
+        game.ask_number("Sell new shares of " + mine.name + " to the market, in percent of its shares (1 to " + string(int(market.capital.PLAYER_ISSUE * 100.0)) + "), at " + fmt.whole_percent(market.capital.DISCOUNT) + " under the price. The money is the company's; your stake is diluted.", OFFER_ASK, int(market.capital.PLAYER_ISSUE * 100.0))
+        return true
+    if action == "buy back":
+        game.ask_number("Have " + mine.name + " buy back its own shares with its spare cash, in percent of its shares (1 to 10). Your stake grows.", BUYBACK_ASK, 10)
         return true
     if action == "policy":
         game.ask_number("Set " + mine.name + "'s margins: 1 low (wins more, earns less), 2 normal, 3 high.", POLICY_ASK, 3)
-        return true
-    if action == "hire":
-        game.ask_number("Hire a chief executive for " + fmt.credits(float(market.charter.HIRE_FEE)) + " credits: 1 aggressive, 2 prudent, 3 visionary, 4 crooked.", HIRE_ASK, 4)
         return true
     if action == "ipo":
         game.confirm("List " + mine.name + " on the exchange? The market buys " + fmt.whole_percent(market.charter.IPO_SHARE) + " of it in new shares and the company keeps the money, but rivals may then bid for it.", IPO_OK)
         return true
     if action == "dissolve":
-        game.confirm("Dissolve " + mine.name + "? Its ships come back to you and its books are paid out to its holders.", DISSOLVE_OK)
+        game.confirm("Dissolve " + mine.name + "? Its ships come back to you, its yards are sold for half their value, and its books are paid out to its holders.", DISSOLVE_OK)
         return true
     return false
 
-// The company tab: the player's fleet, each ship assigned or not.
+// ---- (M4) The company tab ----
+
+// Topics: what the chosen row of the company tab is about ("t:research",
+// "t:growth", "t:finance", "t:strategy"), a ship's UUID, or "s:<sector>" to
+// found a company in.
 void company_table(es.Game game, Market market):
     ship_items = []
     Company mine = market.charter.mine(market)
-    game.panel_columns("Ship\tModel\tCategory\tFor your company")
+    game.panel_columns("Your company\tNow\t")
     if mine.id == 0:
+        for s in 0..<8:
+            int peers = market.peers(s)
+            game.panel_row("Found a company in " + names.sectors[s].to_lower() + "\t" + string(peers) + (" company" if peers == 1 else " companies") + " listed\t" + names.sector_short[s])
+            row_ids.append(0)
+            ship_items.append("s:" + string(s))
+        return
+    Research r = market.research
+    game.panel_row("Research\t" + r.focus_names[mine.focus] + ", " + r.rd_names[mine.rd] + "\t" + string(mine.tech[0]) + " / " + string(mine.tech[1]) + " / " + string(mine.tech[2]))
+    row_ids.append(0)
+    ship_items.append("t:research")
+    float util = mine.load / market.eff(mine) if mine.capacity > 0.0 else 0.0
+    game.panel_row("Growth\t" + market.capital.plan_names[market.capital.plan_of(mine)] + "\t" + fmt.short_credits(market.eff(mine) * market.UNIT) + " a day, " + fmt.whole_percent(util) + " busy")
+    row_ids.append(0)
+    ship_items.append("t:growth")
+    game.panel_row("Finance\t" + fmt.short_credits(mine.market_value()) + "\tcash " + fmt.short_credits(mine.cash) + ", debt " + fmt.short_credits(mine.debt))
+    row_ids.append(0)
+    ship_items.append("t:finance")
+    game.panel_row("Strategy\t" + ["low", "normal", "high"][mine.policy + 1] + " margins\tchief: " + (mine.ceo if mine.ceo != "you" else "you"))
+    row_ids.append(0)
+    ship_items.append("t:strategy")
+    if !market.api_remove || !market.charter.ship_sector(mine):
         return
     for k in 0..<game.fleet_count():
         string ship = game.fleet_ship(k)
         string model = game.fleet_ship_model(ship)
-        bool on = market.charter.has_ship(mine, ship)
-        game.panel_row(game.fleet_ship_name(ship) + "\t" + model + "\t" + game.model_category(model) + "\t" + ("assigned (" + fmt.one_decimal(market.charter.ship_capacity(game, mine, ship)) + ")" if on else "-"))
+        game.panel_row("Ship: " + game.fleet_ship_name(ship) + "\t" + model + "\twould add " + fmt.short_credits(market.charter.contribution(game, mine, ship) * market.UNIT) + " a day")
         row_ids.append(0)
         ship_items.append(ship)
 
 void company_buttons(es.Game game, Market market):
     Company mine = market.charter.mine(market)
     if mine.id == 0:
-        if game.planet() != "" && game.planet_service(game.planet(), "bank"):
-            button(game, "Charter", "charter")
+        if ship_choice.starts_with("s:") && game.planet() != "" && game.planet_service(game.planet(), "bank"):
+            for t in 0..<market.charter.tiers.len():
+                if game.condition("credits") >= market.charter.found_cost(t):
+                    button(game, "Found (" + market.charter.tier_names[t] + ")", "found " + string(t))
         return
-    if market.api_park && ship_choice != "":
-        if market.charter.has_ship(mine, ship_choice):
-            button(game, "Take back", "unassign")
-        else:
-            button(game, "Assign", "assign")
-            if market.api_remove && !mine.ipo:
-                button(game, "Sell ship", "sell ship")
-    if !market.api_park:
-        button(game, "Capacity", "capacity")
-    button(game, "Margins", "policy")
-    button(game, "Hire chief", "hire")
-    if market.charter.may_ipo(mine):
-        button(game, "IPO", "ipo")
-    if market.charter.may_dissolve(market, mine):
-        button(game, "Dissolve", "dissolve")
+    if ship_choice == "t:research":
+        button(game, "Process", "focus 0")
+        button(game, "Scale", "focus 1")
+        button(game, "Quality", "focus 2")
+        button(game, "Budget", "budget")
+    else if ship_choice == "t:growth":
+        button(game, "Build", "build")
+        button(game, "Plan", "plan")
+    else if ship_choice == "t:finance":
+        button(game, "Put money in", "inject")
+        button(game, "Dividend", "own payout")
+        if market.charter.may_ipo(mine):
+            button(game, "IPO", "ipo")
+        if mine.ipo:
+            button(game, "Offering", "offering")
+            button(game, "Buy back", "buy back")
+        if market.charter.may_dissolve(market, mine):
+            button(game, "Dissolve", "dissolve")
+    else if ship_choice == "t:strategy":
+        button(game, "Margins", "policy")
+        button(game, "Chiefs", "chiefs")
+        if mine.chief != 0:
+            button(game, "Let chief go", "chief fire")
+    else if ship_choice != "" && !ship_choice.starts_with("t:") && market.charter.may_contribute(market, mine):
+        button(game, "Hand over", "contribute")
 
 string charter_text(es.Game game, Market market):
     Company mine = market.charter.mine(market)
     if mine.id == 0:
-        return "You have no company of your own. At a planet with a bank you can charter one in freight or security for " + fmt.credits(float(market.charter.FEE)) + " credits. It bids for contracts like any company; " + ("your ships give it capacity: each one you assign is parked while it works." if market.api_park else "you buy its capacity with credits.") + "\n\nYou have " + fmt.credits(float(game.condition("credits"))) + " credits."
-    string t = company_text(game, market, mine) + "\n\n"
-    t = t + "Margins: " + ["low", "normal", "high"][mine.policy + 1] + ". " + ("Listed on the exchange: rivals may bid for it; vote your shares to defend it." if mine.ipo else "Private: only you hold its shares.") + "\n"
-    if market.api_park:
-        t = t + "Click one of your ships to assign it (it is parked while assigned) or take it back."
+        string t = "You have no company of your own. At a planet with a bank you can found one in any sector: choose a sector, then its size, " + market.charter.tier_names.join(", ") + " credits (and " + fmt.whole_percent(market.charter.REG_FEE) + " to register it). Most of the money becomes yards, the rest its first cash. It bids for work like any company, researches, grows when busy, and you can put more money in whenever you like.\n\n"
+        if ship_choice.starts_with("s:"):
+            int s = ship_choice[2..<ship_choice.len()].to_int()
+            t = t + topic_sector(market, s) + "\n\n"
+        return t + "You have " + fmt.credits(float(game.condition("credits"))) + " credits."
+    string t = ""
+    if ship_choice == "t:research":
+        t = research_text(market, mine) + "\n\n"
+    else if ship_choice == "t:growth":
+        t = growth_text(market, mine) + "\n\n"
+    else if ship_choice == "t:finance":
+        t = finance_text(game, market, mine) + "\n\n"
+    else if ship_choice == "t:strategy":
+        t = "Margins: " + ["low", "normal", "high"][mine.policy + 1] + ". Low margins win more work and earn less on it.\nChief executive: " + (mine.ceo + chief_brief(market, mine) if mine.ceo != "you" else "you") + ". Hire, poach or let go a chief on the Chiefs tab.\n\n"
+    else if market.api_remove && market.charter.ship_sector(mine):
+        t = "Click one of your ships to hand it over to the company for good: it leaves your fleet, and the company can take on more work a day from then on.\n\n"
+    else:
+        t = "Choose a topic: research, growth, finance or strategy.\n\n"
+    return t + company_text(game, market, mine)
+
+// A sector as a newcomer sees it: how many companies, how busy, who leads.
+string topic_sector(Market market, int s):
+    float load = 0.0
+    float cap = 0.0
+    Company top = Company()
+    for c in market.companies:
+        if c.listed() && c.sector == s:
+            load += c.load
+            cap += market.eff(c)
+            if top.id == 0 || c.market_value() > top.market_value():
+                top = c
+    string t = names.sectors[s] + ": " + string(market.peers(s)) + " listed companies, " + fmt.whole_percent(load / cap if cap > 0.0 else 0.0) + " busy."
+    if top.id != 0:
+        t = t + " The largest is " + top.name + ", worth " + fmt.short_credits(top.market_value()) + "."
+    if (s == 6 || s == 7) && market.api_remove:
+        t = t + " You can hand ships over to a " + names.sectors[s].to_lower() + " company for good: each adds to the work it can take on."
     return t
+
+string research_text(Market market, Company c):
+    Research r = market.research
+    string t = "Technology (level, and the best in " + names.sectors[c.sector].to_lower() + "):\n"
+    for f in 0..<3:
+        t = t + "  " + r.focus_names[f] + " " + string(c.tech[f]) + " (best " + string(r.frontier_of(market, c.sector, f)) + ")\n"
+    t = t + "Research: " + r.rd_names[c.rd] + " budget"
+    if c.rd > 0:
+        t = t + ", about " + fmt.short_credits(r.daily_cost(market, c) * 30.0) + " a month, on " + r.focus_words[c.focus] + ": " + r.along_word(market, c) + "."
+    else:
+        t = t + "."
+    t = t + "\nProcess makes its work cheaper, scale gets more work from the same yards, quality means fewer failed deliveries. Levels come from research; they are never lost."
+    return t
+
+string growth_text(Market market, Company c):
+    float util = c.load / market.eff(c) if c.capacity > 0.0 else 0.0
+    string t = "It can take on " + fmt.short_credits(market.eff(c) * market.UNIT) + " of work a day and is " + fmt.whole_percent(util) + " busy.\n"
+    t = t + "Plan: " + market.capital.plan_names[market.capital.plan_of(c)] + ". When busy it builds more yards with its spare cash" + (", and borrows for it" if market.capital.plan_of(c) == 2 else "") + "; on hold it builds only what you tell it to.\n"
+    t = t + "Its cash could build " + fmt.short_credits(market.charter.buildable(market, c)) + " of yards now."
+    return t
+
+string finance_text(es.Game game, Market market, Company c):
+    string t = "Worth " + fmt.short_credits(c.market_value()) + (" (" + fmt.price(c.price) + " a share)" if c.ipo else "") + ". Cash " + fmt.short_credits(c.cash) + ", debt " + fmt.short_credits(c.debt) + ".\n"
+    if c.status != c.LISTED:
+        t = t + "It is in trouble: out of cash at its debt limit. Put money in to save it, or it will be sold to a rival or wound up.\n"
+    t = t + "Dividend: " + market.board.payout_names[payout_level(market, c)] + ".\n"
+    if c.ipo:
+        t = t + "Listed: you hold " + fmt.whole_percent(market.board.share(market, c)) + ". Rivals may bid for it; your votes defend it.\n"
+    else if market.charter.may_ipo(c):
+        t = t + "It has the record to list on the exchange (IPO).\n"
+    else:
+        t = t + "Private. After " + string(market.charter.IPO_REPORTS) + " reports it can list on the exchange.\n"
+    t = t + "You can put money in at any time: you have " + fmt.credits(float(game.condition("credits"))) + " credits."
+    return t
+
+int payout_level(Market market, Company c):
+    int best = 0
+    for i in 0..<market.board.payouts.len():
+        float d1 = market.board.payouts[i] - c.payout
+        float d0 = market.board.payouts[best] - c.payout
+        if (d1 if d1 > 0.0 else -d1) < (d0 if d0 > 0.0 else -d0):
+            best = i
+    return best
 
 bool number_m3(es.Game game, Market market, int token, int value):
     Company c = market.by_id.get(selected, Company())
@@ -1014,19 +1240,47 @@ bool number_m3(es.Game game, Market market, int token, int value):
         pending_level = 1 if value == 1 else -1
         game.confirm("Direct " + c.name + " to bid " + ("aggressively" if pending_level == 1 else "conservatively") + " for " + string(market.board.DIRECT_DAYS) + " days?", DIRECT_OK)
         return false
-    else if token == CHARTER_ASK:
-        pending_level = 6 if value == 1 else 7
-        game.confirm("Charter a " + market.names.sectors[pending_level].to_lower() + " company for " + fmt.credits(float(market.charter.FEE)) + " credits?", CHARTER_OK)
+    else if token == BOARD_FOCUS_ASK && c.id != 0:
+        pending_level = value - 1
+        game.ask_number("And its research budget: 1 none, 2 light, 3 steady, 4 heavy, 5 all-in.", BOARD_BUDGET_ASK, 5)
         return false
+    else if token == BOARD_BUDGET_ASK && c.id != 0:
+        market.board.research(game, market, c, pending_level, value - 1, market.day)
+        note = c.name + "'s board turns its research to " + market.research.focus_words[c.focus] + " (" + market.research.rd_names[c.rd] + " budget)."
+        changed = true
+    else if token == BOARD_CAPITAL_ASK && c.id != 0:
+        market.board.capital(game, market, c, [1, -1, 0][value - 1], market.day)
+        note = c.name + "'s board " + ["will allow new shares", "forbids new shares", "leaves new shares to its chief"][value - 1] + "."
+        changed = true
+    else if token == INJECT_ASK && mine.id != 0:
+        changed = market.capital.inject(game, market, mine, float(value) * 1000.0, market.day)
+        note = ("You put " + fmt.credits(float(value) * 1000.0) + " credits into " + mine.name + ".") if changed else "That didn't go through."
+    else if token == BUILD_ASK && mine.id != 0:
+        float spent = market.charter.build(game, market, mine, float(value) * 1000.0)
+        changed = spent > 0.0
+        note = (mine.name + " builds " + fmt.credits(spent) + " credits of yards.") if changed else "It can't build that now."
+    else if token == PLAN_ASK && mine.id != 0:
+        mine.plan = value - 1
+        changed = true
+    else if token == BUDGET_ASK && mine.id != 0:
+        mine.rd = value - 1
+        changed = true
+    else if token == OWN_PAYOUT_ASK && mine.id != 0:
+        mine.payout = market.board.payouts[value - 1]
+        changed = true
+    else if token == OFFER_ASK && mine.id != 0:
+        float got = market.capital.player_offer(game, market, mine, float(value) / 100.0, market.day)
+        changed = got > 0.0
+        note = (mine.name + " raises " + fmt.credits(got) + " credits.") if changed else "It can't sell new shares now (one offering every " + string(market.capital.PLAYER_GAP) + " days, and only in good standing)."
+    else if token == BUYBACK_ASK && mine.id != 0:
+        int n = market.capital.player_buyback(game, market, mine, float(value) / 100.0, market.day)
+        changed = n > 0
+        note = (mine.name + " buys back " + fmt.credits(float(n)) + " shares.") if changed else "It has no spare cash for that now (or bought back lately)."
     else if token == CAPACITY_ASK && mine.id != 0:
-        changed = market.charter.buy_capacity(game, market, mine, value)
-        note = ("Bought " + string(value) + " units of capacity.") if changed else "You lack the credits."
+        changed = false
     else if token == POLICY_ASK && mine.id != 0:
         market.charter.set_policy(market, mine, value - 2)
         changed = true
-    else if token == HIRE_ASK && mine.id != 0:
-        changed = market.charter.hire(game, market, mine, value - 1, market.day)
-        note = ("You hire " + market.execs.label(mine) + ".") if changed else "You lack the credits."
     show(game, market)
     return changed
 
@@ -1034,6 +1288,8 @@ bool confirmed_m3(es.Game game, Market market, int token, Galaxy galaxy):
     Company c = market.by_id.get(selected, Company())
     Company mine = market.charter.mine(market)
     int d = market.day
+    if token >= CHIEF_HIRE_OK && token <= CHIEF_MATCH_OK:
+        return confirmed_chief(game, market, token, mine, d)
     if token == BLOCK_OK && c.id != 0:
         market.board.block(game, market, c, d)
         note = "Your votes block the bid."
@@ -1052,24 +1308,31 @@ bool confirmed_m3(es.Game game, Market market, int token, Galaxy galaxy):
         float got = market.board.sell(game, market, c, d)
         note = "Sold your stake for " + fmt.credits(got) + " credits."
         return got > 0.0
-    if token == CHARTER_OK:
-        Company made = market.charter.found(game, market, galaxy, pending_level, d)
-        note = ("You charter " + made.name + ".") if made.id != 0 else "You can't charter a company now."
+    if token == TAKEOVER_OK && c.id != 0:
+        bool ok = market.player_bid(game, mine, c, d)
+        note = (mine.name + " bids for " + c.name + " at " + fmt.price(c.offer) + " a share; the deal completes on " + fmt.date(c.offer_day) + ".") if ok else "The bid can't be made now."
+        return ok
+    if token == FOUND_OK || token == CHARTER_OK:
+        int sector = pending_level / 10
+        int t = pending_level % 10
+        Company made = market.charter.found_tier(game, market, galaxy, sector, t, d)
+        note = ("You found " + made.name + ".") if made.id != 0 else "You can't found a company now."
         if made.id != 0:
             selected = made.id
+            ship_choice = "t:finance"
         return made.id != 0
     if mine.id == 0:
         return false
     if token == ASSIGN_OK:
-        bool ok = market.charter.assign(game, market, mine, ship_choice)
-        note = "Assigned." if ok else "That ship can't be assigned (your flagship, or not here)."
-        return ok
-    if token == UNASSIGN_OK:
-        return market.charter.unassign(game, market, mine, ship_choice)
-    if token == SELLSHIP_OK:
-        bool ok = market.charter.sell_ship(game, market, mine, ship_choice)
+        string name = game.fleet_ship_name(ship_choice)
+        bool ok = market.charter.contribute(game, market, mine, ship_choice, d)
+        note = ("The " + name + " now works for " + mine.name + ".") if ok else "That ship can't be handed over (your flagship, or not here)."
         ship_choice = ""
         return ok
+    if token == FOCUS_OK:
+        market.research.set_focus(market, mine, pending_level)
+        note = mine.name + "'s research turns to " + market.research.focus_words[mine.focus] + "."
+        return true
     if token == IPO_OK:
         float raised = market.charter.ipo(game, market, mine, d)
         note = "Listed: the company raises " + fmt.credits(raised) + " credits."
@@ -1077,5 +1340,189 @@ bool confirmed_m3(es.Game game, Market market, int token, Galaxy galaxy):
     if token == DISSOLVE_OK:
         float paid = market.charter.dissolve(game, market, mine, d)
         note = "Dissolved: " + fmt.credits(paid) + " credits are yours."
+        ship_choice = ""
         return true
     return false
+
+// ---- (0.4) The chiefs' pool ----
+
+// Every chief in the galaxy: free ones first, then by record. Each row: the
+// chief, where it works, years in office, its record (points a year against
+// its companies' sectors), times voted out, and what it asks a year.
+void chiefs_table(es.Game game, Market market):
+    chief_items = []
+    Executives x = market.execs
+    []Chief list = market.chiefs.filter(bool(Chief ch): return true)
+    list.sort(bool(Chief a, Chief b): return chief_before(x, a, b))
+    game.panel_columns("Chief executive\tNow\tIn office\tRecord\tVoted out\tAsks a year")
+    for ch in list:
+        string now = "free"
+        if ch.company != 0 && market.by_id.has(ch.company):
+            Company c = market.by_id[ch.company]
+            now = ("yours: " if c.owner == 1 else "") + c.name
+        string ousted = "-" if ch.ousters == 0 else ("VOTED OUT" if ch.ousters == 1 else "VOTED OUT x" + string(ch.ousters))
+        game.panel_row(ch.name + "\t" + now + "\t" + fmt.one_decimal(ch.years()) + " yrs\t" + record_cell(ch) + "\t" + ousted + "\t" + fmt.short_credits(x.price(ch)))
+        row_ids.append(0)
+        chief_items.append(ch.id)
+
+bool chief_before(Executives x, Chief a, Chief b):
+    if (a.company == 0) != (b.company == 0):
+        return a.company == 0
+    float ra = x.rating(a)
+    float rb = x.rating(b)
+    if ra == rb:
+        return a.id < b.id
+    return ra > rb
+
+// "+2.1 pts (40 mo)", or "none" for a chief with no report yet.
+string record_cell(Chief ch):
+    if ch.n == 0:
+        return "none"
+    return pts(ch.sum / float(ch.n)) + " pts (" + string(ch.n) + " mo)"
+
+// A score as signed points a year: 0.021 is "+2.1".
+string pts(float x):
+    int tenths = globalThis.Math.round(x * 1000.0)
+    bool negative = tenths < 0
+    int t = -tenths if negative else tenths
+    return ("-" if negative else "+") + string(t / 10) + "." + string(t % 10)
+
+// ", record +2.1 points over 40 months, voted out once before", or "".
+string chief_brief(Market market, Company c):
+    Chief ch = market.execs.chief_of(market, c)
+    if ch.id == 0:
+        return ""
+    string t = ", record " + (pts(ch.sum / float(ch.n)) + " points over " + string(ch.n) + " months" if ch.n > 0 else "none yet")
+    if ch.ousters > 0:
+        t = t + ", voted out " + ("once" if ch.ousters == 1 else string(ch.ousters) + " times") + " before"
+    return t
+
+// One stint of a chief's career, for its history.
+string stint_line(string s):
+    []string f = s.split("~")
+    if f.len() < 6:
+        return ""
+    int n = f[3].to_int()
+    float sum = f[4].to_float()
+    int end = f[5].to_int()
+    Executives x = Executives()
+    string how = x.end_names[end] if end >= 0 && end < x.end_names.len() else "left"
+    if end == x.END_OUSTED || end == x.END_SCANDAL:
+        how = how.to_upper()
+    return "  " + f[0] + ", " + fmt.date(f[1].to_int()) + " to " + fmt.date(f[2].to_int()) + ": " + (pts(sum / float(n)) + " points over " + string(n) + " months" if n > 0 else "no reports") + "; " + how + ".\n"
+
+string chief_text(es.Game game, Market market):
+    Executives x = market.execs
+    Company mine = market.charter.mine(market)
+    Chief ch = market.chief_by_id.get(chief_choice, Chief())
+    string t = ""
+    if ch.id == 0:
+        t = "Every company's chief executive comes from this pool of " + string(market.chiefs.len()) + ", yours included. Click one for their record: what the companies they ran earned while they ran them, against their sectors, in points a year. Boards hire on experience and record, and rarely take one ever voted out. A proven chief asks a high salary; an unknown is cheap, and a gamble. Careers last about ten years.\n\n"
+        if mine.id != 0:
+            t = t + "Your company " + mine.name + ": chief executive " + (mine.ceo + chief_brief(market, mine) if mine.ceo != "you" else "you") + ".\n\n"
+        else:
+            t = t + "You need a company of your own to hire a chief (the Company tab).\n\n"
+    else:
+        t = ch.name + "\n"
+        Company at = market.by_id.get(ch.company, Company())
+        if at.id != 0:
+            t = t + "Chief executive of " + (("your company " + at.name) if at.owner == 1 else at.name) + " since " + fmt.date(ch.since) + ", paid " + fmt.short_credits(ch.salary) + " a year.\n"
+        else:
+            t = t + "Free, looking for a post.\n"
+        t = t + "In office " + fmt.one_decimal(ch.years()) + " years in a career that began " + fmt.date(ch.joined) + "; retires about " + fmt.date(ch.retires) + ".\n"
+        if ch.n > 0:
+            t = t + "Record: " + pts(ch.sum / float(ch.n)) + " points a year against the sectors of the companies they ran, over " + string(ch.n) + " months.\n"
+        else:
+            t = t + "No record yet: an unknown.\n"
+        if ch.ousters > 0:
+            t = t + "VOTED OUT by a board " + ("once" if ch.ousters == 1 else string(ch.ousters) + " times") + ".\n"
+        t = t + "Asks " + fmt.short_credits(x.price(ch)) + " a year, and " + fmt.short_credits(x.sign_fee(ch)) + " to sign.\n"
+        if ch.stints.len() > 0 || at.id != 0:
+            t = t + "\nCareer:\n"
+            for s in ch.stints:
+                t = t + stint_line(s)
+            if at.id != 0:
+                t = t + "  " + at.name + ", since " + fmt.date(ch.since) + ": " + (pts(ch.cur_mean()) + " points over " + string(ch.cur_n) + " months" if ch.cur_n > 0 else "no reports yet") + ".\n"
+        if market.offer_chief == ch.id:
+            Company by = market.by_id.get(market.offer_from, Company())
+            t = t + "\n" + by.name + " offers them " + fmt.short_credits(market.offer_salary) + " a year to leave, until " + fmt.date(market.offer_until) + ". Matching it costs a retention bonus of " + fmt.short_credits(x.retention(market)) + ".\n"
+        if mine.id == 0:
+            t = t + "\nYou need a company of your own to hire a chief (the Company tab).\n"
+        else if ch.company == 0:
+            t = t + "\nHiring them for " + mine.name + ": you pay " + fmt.short_credits(x.sign_fee(ch)) + " to sign; the company pays the salary.\n"
+        else if x.may_poach(market, mine, ch):
+            t = t + "\nHiring them away for " + mine.name + ": you pay " + at.name + " " + fmt.short_credits(x.buyout(ch)) + " to let them go and " + fmt.short_credits(x.lure(ch) * x.SIGN) + " to sign them; the company pays " + fmt.short_credits(x.lure(ch)) + " a year.\n"
+    return t + "\nYou have " + fmt.credits(float(game.condition("credits"))) + " credits."
+
+void chief_buttons(es.Game game, Market market):
+    Company mine = market.charter.mine(market)
+    Chief ch = market.chief_by_id.get(chief_choice, Chief())
+    if mine.id == 0 || ch.id == 0:
+        return
+    if ch.company == 0:
+        button(game, "Hire", "chief hire")
+    else if ch.company == mine.id:
+        if market.offer_chief == ch.id:
+            button(game, "Match offer", "chief match")
+        button(game, "Let go", "chief fire")
+    else if market.execs.may_poach(market, mine, ch):
+        button(game, "Poach", "chief poach")
+
+bool press_chief(es.Game game, Market market, string action, Company mine):
+    Executives x = market.execs
+    if mine.id == 0:
+        note = "You need a company of your own to hire a chief."
+        return false
+    if action == "chief fire":
+        Chief own = x.chief_of(market, mine)
+        if own.id == 0:
+            return false
+        pending_chief = own.id
+        game.confirm("Let " + own.name + " go? You run " + mine.name + " yourself until you hire another.", CHIEF_FIRE_OK)
+        return true
+    Chief ch = market.chief_by_id.get(chief_choice, Chief())
+    if ch.id == 0:
+        return false
+    pending_chief = ch.id
+    if action == "chief hire" && ch.company == 0:
+        if float(game.condition("credits")) < x.sign_fee(ch):
+            note = "You need " + fmt.credits(x.sign_fee(ch)) + " credits to sign " + ch.name + "."
+            return false
+        game.confirm("Hire " + ch.name + " as chief executive of " + mine.name + "? You pay " + fmt.credits(x.sign_fee(ch)) + " credits to sign them; the company pays them " + fmt.credits(x.price(ch)) + " a year." + (" " + mine.ceo + " goes back to the pool." if mine.chief != 0 else ""), CHIEF_HIRE_OK)
+        return true
+    if action == "chief poach" && x.may_poach(market, mine, ch):
+        Company from = market.by_id.get(ch.company, Company())
+        if float(game.condition("credits")) < x.poach_cost(ch):
+            note = "You need " + fmt.credits(x.poach_cost(ch)) + " credits to hire " + ch.name + " away."
+            return false
+        game.confirm("Hire " + ch.name + " away from " + from.name + "? You pay " + from.name + " " + fmt.credits(x.buyout(ch)) + " credits to let them go and " + fmt.credits(x.lure(ch) * x.SIGN) + " to sign them; " + mine.name + " pays them " + fmt.credits(x.lure(ch)) + " a year.", CHIEF_POACH_OK)
+        return true
+    if action == "chief match" && market.offer_chief == ch.id:
+        game.confirm("Match the offer for " + ch.name + "? Their salary rises to " + fmt.credits(market.offer_salary) + " a year, and you pay a retention bonus of " + fmt.credits(x.retention(market)) + " credits.", CHIEF_MATCH_OK)
+        return true
+    return false
+
+bool confirmed_chief(es.Game game, Market market, int token, Company mine, int d):
+    Executives x = market.execs
+    Chief ch = market.chief_by_id.get(pending_chief, Chief())
+    pending_chief = 0
+    if mine.id == 0 || ch.id == 0:
+        return false
+    bool ok = false
+    if token == CHIEF_HIRE_OK:
+        ok = market.charter.hire(game, market, mine, ch.id, d)
+        note = ("You hire " + ch.name + ".") if ok else "That hire didn't go through."
+    else if token == CHIEF_POACH_OK:
+        ok = x.player_poach(game, market, mine, ch, d)
+        note = ("You hire " + ch.name + " away.") if ok else "That didn't go through."
+    else if token == CHIEF_FIRE_OK:
+        if mine.chief == ch.id:
+            x.player_fire(market, mine, d)
+            ok = true
+            note = "You let " + ch.name + " go."
+    else if token == CHIEF_MATCH_OK:
+        ok = x.match_offer(game, market, d)
+        note = ("You match the offer: " + ch.name + " stays.") if ok else "You lack the credits."
+    if ok:
+        market.must_save = true
+    return ok

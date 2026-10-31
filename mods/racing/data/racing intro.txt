@@ -1,0 +1,319 @@
+# The Racing League: the intro mission line. A short, light-hearted way into
+# the leagues: the Honourable Peregrine Wexley-Thorne, who has spent his
+# inheritance, talks the player into sponsoring the revival of his family's
+# old racing team, scouts four people across human space with them, wins a
+# place in the B League, and then leaves for his childless great-uncle's
+# estate on Hestia, signing the team over to the player.
+#
+# The mod (src/Intro.dados, src/racing.dados) sets "racing: owns team" (1 when
+# the player owns a team) and "racing: slot free" (1 while the B League's
+# reserved place is free) every day; the line is offered only to a player
+# with a million credits, no team and a free place. Each leg fails, and the
+# sponsorship is paid back, if the player buys a team (or the place is
+# taken) on the way. The finale sets "racing: intro done" to 1; the mod then
+# revives Wexley-Thorne Racing in the reserved place with the four signed on
+# five-season contracts and sets it to 2 (or to 3, the sponsorship refunded,
+# if it could not after all).
+#
+# The legs: anywhere in human space (the bar) -> Valhalla (the engineer) ->
+# Bourne (the young pilot) -> Martini (the second pilot) -> Foundry (the pit
+# crew chief) -> Luna (the league's registry) -> Hestia (the great-uncle).
+
+
+mission "Racing Intro 1: The Pitch"
+	name "The Wexley-Thorne revival"
+	description `Take the Honourable Peregrine Wexley-Thorne to <destination>, where the engineer of his family's old racing team has retired, to sign him for the team's revival. You are its sponsor.`
+	repeat
+	passengers 1
+	source
+		government "Republic" "Free Worlds" "Syndicate" "Neutral" "Independent"
+		attributes "spaceport"
+	destination "Valhalla"
+	to offer
+		"credits" >= 1000000
+		"racing: owns team" == 0
+		"racing: slot free" == 1
+		not "racing: intro begun"
+		random < 35
+	to fail
+		or
+			"racing: owns team" == 1
+			"racing: slot free" == 0
+	on offer
+		conversation
+			`The man at the end of the bar is wearing a dinner jacket that was made for him, beautifully, about fifteen years and several fortunes ago. He is drinking the cheapest thing on the menu out of the most expensive glass he could talk the bartender into, and he has been watching you since you sat down. When you finally meet his eye he lights up like a man who has seen a lifeboat.`
+			`	"Captain <last>! Forgive me. One hears things in bars, and what one hears about you is mostly your bank balance." He slides onto the stool beside you and offers a hand. "Peregrine Wexley-Thorne. The Honourable. Perry, to friends and creditors. The 'Honourable' is hereditary. So, until quite recently, was the money."`
+			choice
+				`	"What happened to the money?"`
+				`	"I'm not lending you anything."`
+					goto lend
+			`	"A series of bold investments." He counts on his fingers. "A racehorse that turned out to be two smaller horses in a costume. A floating casino. A floating casino on Deep, which in hindsight was redundant. And a perfectly sound scheme to sell sand on Skillet, which the Skilleters did not appreciate at all." He sighs. "Grandfather left me everything. I have been very thorough with it."`
+				goto pitch
+			label lend
+			`	"Lend! Captain, please. I am a Wexley-Thorne. We do not borrow." He pauses. "We are lent to, occasionally, by people who later regret it. But I am not here to borrow. I am here to offer you an opportunity."`
+			label pitch
+			`	He takes a holo from his breast pocket and sets it on the bar: a sleek green-and-silver racing ship crossing a finish line in front of a grandstand on fire with flags. "Wexley-Thorne Racing. My great-grandfather founded it. Three S League titles, Captain. Three. Seventy wins. The finest cars, the finest people, and the finest parties in the paddock, which is where the money went the first time." The picture flickers. "It folded when my father bet the team on the outcome of its own race. He was very confident. He was also very wrong."`
+			`	"The league keeps a place on the B League grid for a team like ours to come back. I have the name, the history, the colours, and a list of the best people in human space who do not yet know they work for me. What I lack, technically, is money. That is where you come in." He beams. "I need a sponsor. Four hundred thousand credits gets us the people and the place, and your name on the side of a racing ship, in large letters. Medium letters. We can discuss the letters."`
+			choice
+				`	"Four hundred thousand? For a team that doesn't exist yet?"`
+				`	"Why me?"`
+			`	"Because you have a million credits and an honest face, Captain, and I have neither." He leans in. "Come with me. A few stops: an engineer, two pilots and a crew chief. The best in human space, each of them, and each of them, I happen to know, in a position to be persuaded. Then the league, then glory. You will be back in your own life in a month, with a share of something magnificent."`
+			choice
+				`	(Pay him the 400,000 credits.)`
+					goto yes
+				`	"I'll think about it."`
+			`	"Do," he says, not at all discouraged. "I shall be here. I am, in a sense, always here. I can no longer afford to be anywhere else."`
+				decline
+			label yes
+			`	He counts the transfer twice, in a way that suggests he has not seen this many credits in one place for a while, and shakes your hand with both of his. "Splendid. Splendid! First stop: Valhalla. Ambrose Kettle, the man who engineered our title cars. He retired there to build clockwork birds, and he hates everyone. He'll love you." He retrieves a single battered suitcase from under the bar. "Is there a cabin? I don't need much. A bed, a window, some sort of drink."`
+				accept
+	on accept
+		"racing: intro begun" = 1
+		payment -400000
+		log "People" "Peregrine Wexley-Thorne" `The Honourable Peregrine Wexley-Thorne ("Perry") is the last of a family that once owned one of the great teams of the racing leagues, and has spent the family fortune. He means to revive Wexley-Thorne Racing in the B League, on your sponsorship.`
+		log `Met the Honourable Peregrine Wexley-Thorne in a spaceport bar and agreed to sponsor the revival of his family's old racing team, Wexley-Thorne Racing, for 400,000 credits. First stop: Valhalla, to sign the team's old engineer.`
+	on fail
+		payment 400000
+		"racing: intro over" = 1
+		dialog `Perry reads the news on his slate twice, then reads it to you. "You've... bought a racing team. Without me." He looks wounded, then thoughtful, then sly. "Well. No hard feelings, Captain. A gentleman doesn't compete with his own sponsor." At the next port a terse message from his family's solicitors returns your 400,000 credits in full. He kept the suitcase.`
+	on abort
+		"racing: intro over" = 1
+		dialog `Perry takes the news with great dignity, his suitcase and two bottles from your galley. "The Wexley-Thornes have been abandoned before, Captain. Usually by investors." The sponsorship, he explains on his way down the ramp, has already been spent.`
+	on complete
+		conversation
+			`Ambrose Kettle lives at the top of a narrow tower above the old university quarter of Valhalla, surrounded by brass birds that tick and turn their heads to watch you. He is very old and very thin and has the eyes of a man doing arithmetic on you. He looks at Perry for a long time.`
+			`	"You're Rupert's boy," he says. "The one who lost the casino."`
+			`	"Two casinos," says Perry. "Mr. Kettle, we're bringing the team back."`
+			`	"No." Kettle turns back to his workbench. A bird with a half-finished wing hops onto it and pecks at a screwdriver. "I've seen the B League on the holovids. Children. They take their ships apart to see how fast they go and put them back together in the wrong order. They run their engines too hot and their pit stops too slow, and they talk about 'data' as if they'd invented it."`
+			choice
+				`	"Then come and show them how it's done."`
+				`	"Perry said you'd love me."`
+					goto love
+			`	Kettle's screwdriver stops. "Show them," he says, not to you. "Hm."`
+				goto signs
+			label love
+			`	"Did he." Kettle looks you up and down. "Your ship came in on the third approach vector with a four-percent overburn on the port thruster. You fly like a person who has never once read a manual." Something that might be a smile crosses his face. "I can work with that."`
+			label signs
+			`	"I'll want my old workshop," he says. "And my birds come with me. And no one under the age of sixty is to tell me about 'data.'" He signs Perry's contract with a fountain pen older than the B League. "Besides, the physics faculty has banned me from their laboratories. It will do them good to see me win something."`
+			`	On the way back to the ship, Perry is radiant. "One down! And at a salary that is, frankly, an insult to a genius. Next: Bourne. There is a young woman there who is either the finest pilot of her generation or wanted in three jurisdictions. Possibly both. We had better hurry."`
+		log `Signed Ambrose Kettle, Wexley-Thorne Racing's old race engineer, on Valhalla. He agreed to come back to show the young how it is done, and because the physics faculty had banned him from their laboratories.`
+
+
+mission "Racing Intro 2: The Prodigy"
+	name "The Wexley-Thorne revival: the pilot"
+	description `Take Perry to <destination> to sign the young pilot he has heard about there.`
+	landing
+	passengers 1
+	source "Valhalla"
+	destination "Bourne"
+	to offer
+		has "Racing Intro 1: The Pitch: done"
+		not "racing: intro over"
+	to fail
+		or
+			"racing: owns team" == 1
+			"racing: slot free" == 0
+	on offer
+		conversation
+			`Perry has spread a dozen holovid clips across your galley table: small, fast courier skiffs, very close to very large freighters, in very poor light. "Wren Achterberg," he says. "Nineteen. Races borrowed skiffs through the Bourne freight lanes after dark. Never raced a day in the league, never lost a race she finished, and she has never once finished one in the ship she started it in. To <planet> next, Captain?"`
+				accept
+	on fail
+		payment 400000
+		"racing: intro over" = 1
+		dialog `Perry reads the news on his slate twice, then reads it to you. "You've... bought a racing team. Without me." He looks wounded, then thoughtful, then sly. "Well. No hard feelings, Captain. A gentleman doesn't compete with his own sponsor." At the next port a terse message from his family's solicitors returns your 400,000 credits in full. He kept the suitcase.`
+	on abort
+		"racing: intro over" = 1
+		dialog `Perry takes the news with great dignity, his suitcase and two bottles from your galley. "The Wexley-Thornes have been abandoned before, Captain. Usually by investors." The sponsorship, he explains on his way down the ramp, has already been spent.`
+	on complete
+		payment -5000
+		conversation
+			`You find Wren Achterberg at the <planet> port authority, sitting on a bench outside a magistrate's office with her boots on the bench opposite and a citation in each hand. She is small, freckled and furious, and she has a bruise on her chin the shape of a control yoke.`
+			`	"If you're from the courier company," she says, "the skiff's fine. Mostly. The bit that came off was decorative."`
+			`	Perry bows. Actually bows. "Miss Achterberg, I am Peregrine Wexley-Thorne, and I should like to offer you a seat in the B League."`
+			`	She looks at him, then at you. "Is he real?"`
+			choice
+				`	"Unfortunately."`
+				`	"He's real, and the offer is real."`
+			`	"Nobody's ever offered me anything," she says slowly, "except a summons." She turns the citations over in her hands. "Five seasons? In a real racing ship? With a crew who fix it after?"`
+			`	"With a crew who fix it before," says Perry. "Also after. Mostly after, I imagine."`
+			`	She signs on the back of the larger citation. The magistrate, who has been listening at the door, agrees to drop the charges in exchange for a fine of 5,000 credits, which Perry gestures toward you with enormous grace. As you pay it, Wren is already asking him what the B League's fastest ship can do, and he is already making things up.`
+			`	"Next," he says, once the three of you are back aboard, "<planet> is all very well, but a team needs two pilots, and one of them should be someone who has been in a racing ship before. Martini, Captain. We are going to Martini to sign a holovid star."`
+		log `Signed Wren Achterberg, nineteen, a street racer from Bourne, as Wexley-Thorne Racing's first pilot. Paid her 5,000 credit fine.`
+
+
+mission "Racing Intro 3: The Star"
+	name "The Wexley-Thorne revival: the star"
+	description `Take Perry to <destination> to sign a second pilot, one with some experience.`
+	landing
+	passengers 1
+	source "Bourne"
+	destination "Martini"
+	to offer
+		has "Racing Intro 2: The Prodigy: done"
+		not "racing: intro over"
+	to fail
+		or
+			"racing: owns team" == 1
+			"racing: slot free" == 0
+	on offer
+		conversation
+			`Wren has taken over your copilot's chair and is asking it questions it was never designed to answer. Perry is in the galley with a holovid of a square-jawed man in a silver racing suit and a cape. "Lucius Varga," he says. "Twelve seasons in the B and A Leagues. Fourteen wins. Then five years starring in 'Redline Hearts,' in which he wins everything and kisses everyone. He's bored, Captain. I can tell. Nobody wears a cape like that unless they're bored." To <planet>.`
+				accept
+	on fail
+		payment 400000
+		"racing: intro over" = 1
+		dialog `Perry reads the news on his slate twice, then reads it to you. "You've... bought a racing team. Without me." He looks wounded, then thoughtful, then sly. "Well. No hard feelings, Captain. A gentleman doesn't compete with his own sponsor." At the next port a terse message from his family's solicitors returns your 400,000 credits in full. He kept the suitcase.`
+	on abort
+		"racing: intro over" = 1
+		dialog `Perry takes the news with great dignity, his suitcase and two bottles from your galley. "The Wexley-Thornes have been abandoned before, Captain. Usually by investors." The sponsorship, he explains on his way down the ramp, has already been spent.`
+	on complete
+		conversation
+			`The 'Redline Hearts' set on <planet> is a full-size mock-up of a racing pit lane, with the front half of a racing ship in it and nothing behind it at all. Lucius Varga is sitting in the half-ship in full costume, cape included, reading a script with the expression of a man reading a tax return.`
+			`	"Let me guess," he says as you approach. "Another sponsor who wants me to open a restaurant."`
+			`	"A Wexley-Thorne," says Perry, "who wants you to race."`
+			`	Varga lowers the script. "I drove against a Wexley-Thorne car once, in my first season. It lapped me. Twice. I still have dreams about it." He looks at the hollow half-ship around him. "Do you know what they make me do here? I win the Sol Grand Prix every week. On a soundstage. With a stunt double. The stunt double is twenty-two, and I have taught him everything I know."`
+			choice
+				`	"Then come and win one for real."`
+				`	"Is the cape negotiable?"`
+					goto cape
+			`	He is quiet for a moment. "For real," he says. "Hm. All right. But I do my own flying."`
+				goto signed
+			label cape
+			`	"The cape," says Varga, standing, "was the director's idea." He considers it. "I'll keep it for the press."`
+			label signed
+			`	He signs Perry's contract on the back of the script, with a flourish that has clearly been rehearsed. The salary makes him laugh out loud. "Five seasons at that? I'm doing it for the art, apparently." On the way out he steps out of the half-ship and, for a moment, looks back at it as if he is saying goodbye to someone.`
+			`	"Two pilots," says Perry, ticking them off. "One engineer. Now, a team is only as fast as its pit crew, and the fastest pit crew in human space does not work in racing at all. Foundry, Captain. The Syndicate's yards."`
+		log `Signed Lucius Varga, a former B and A League pilot and the star of the holovid drama 'Redline Hearts', on Martini, as Wexley-Thorne Racing's second pilot.`
+
+
+mission "Racing Intro 4: The Crew Chief"
+	name "The Wexley-Thorne revival: the crew"
+	description `Take Perry to <destination> to sign a pit crew chief from the Syndicate's yards.`
+	landing
+	passengers 1
+	source "Martini"
+	destination "Foundry"
+	to offer
+		has "Racing Intro 3: The Star: done"
+		not "racing: intro over"
+	to fail
+		or
+			"racing: owns team" == 1
+			"racing: slot free" == 0
+	on offer
+		conversation
+			`"Dolores Mbeki," says Perry, as Martini falls away behind you. "Runs a refuelling crew in the Syndicate yards on <planet>. They turn a freighter around faster than anyone in human space. I saw it once at a trade fair. I have never seen anyone so efficient. It was frightening. I had to have a drink." He looks hopeful. "Speaking of which."`
+				accept
+	on fail
+		payment 400000
+		"racing: intro over" = 1
+		dialog `Perry reads the news on his slate twice, then reads it to you. "You've... bought a racing team. Without me." He looks wounded, then thoughtful, then sly. "Well. No hard feelings, Captain. A gentleman doesn't compete with his own sponsor." At the next port a terse message from his family's solicitors returns your 400,000 credits in full. He kept the suitcase.`
+	on abort
+		"racing: intro over" = 1
+		dialog `Perry takes the news with great dignity, his suitcase and two bottles from your galley. "The Wexley-Thornes have been abandoned before, Captain. Usually by investors." The sponsorship, he explains on his way down the ramp, has already been spent.`
+	on complete
+		conversation
+			`Dolores Mbeki meets you on the floor of Refuelling Bay Nine with a stopwatch in her hand, which she starts the moment Perry opens his mouth. Behind her, eight people in orange coveralls swarm over a bulk freighter like ants over a dropped sandwich. It lifts off before Perry has finished introducing himself.`
+			`	"...and so, in short, Miss Mbeki, the Wexley-Thorne family would be honoured if you would consider..."`
+			`	"Forty seconds," she says, glancing at the watch. "You've used forty seconds. My crew refuelled a freighter in thirty-one."`
+			`	"Ah," says Perry. "Well, then I shall be brief. The B League. Your own crew. Five seasons. The money is" (he names it) "and the work is the fastest pit lane in human space."`
+			choice
+				`	"She's going to say no."`
+				`	"Say yes, and he'll stop talking."`
+					goto stop
+			`	"I'm going to say," says Dolores, "that a racing pit stop is four seconds, and the best in the B League is six, and I've watched them do it, and it hurts me." She stops the watch.`
+				goto deal
+			label stop
+			`	For the first time, Dolores Mbeki looks at you with something like respect.`
+			label deal
+			`	She takes Perry's contract, reads it, signs it and hands it back. "Two point nine seconds," she says, showing him the stopwatch. "Don't make me regret it. And don't make me attend any parties."`
+			`	"Perry," you say as you leave, "she's never worked a pit lane."`
+			`	"Neither had Kettle, once," he says airily. "Neither had anyone. Now, Captain. We have an engineer, two pilots and a crew chief. All we need is a place on the grid, and for that we must go to Luna and charm a committee. Fortunately, charming committees is the one thing I have ever been good at."`
+		log `Signed Dolores Mbeki, the chief of the fastest refuelling crew in the Syndicate's yards on Foundry, as Wexley-Thorne Racing's pit crew chief. She signed in 2.9 seconds.`
+
+
+mission "Racing Intro 5: The Seat"
+	name "The Wexley-Thorne revival: the grid"
+	description `Take Perry to the racing leagues' registry on <destination> to win Wexley-Thorne Racing its place in the B League.`
+	landing
+	passengers 1
+	source "Foundry"
+	destination "Luna"
+	to offer
+		has "Racing Intro 4: The Crew Chief: done"
+		not "racing: intro over"
+	to fail
+		or
+			"racing: owns team" == 1
+			"racing: slot free" == 0
+	on offer
+		conversation
+			`Perry spends the trip to <planet> rehearsing a speech in front of your galley mirror. You hear "illustrious," "heritage" and "frankly, gentlemen, the gravitas" through the bulkhead several times an hour. Once, you hear him practising a tear.`
+				accept
+	on fail
+		payment 400000
+		"racing: intro over" = 1
+		dialog `Perry reads the news on his slate twice, then reads it to you. "You've... bought a racing team. Without me." He looks wounded, then thoughtful, then sly. "Well. No hard feelings, Captain. A gentleman doesn't compete with his own sponsor." At the next port a terse message from his family's solicitors returns your 400,000 credits in full. He kept the suitcase.`
+	on abort
+		"racing: intro over" = 1
+		dialog `Perry takes the news with great dignity, his suitcase and two bottles from your galley. "The Wexley-Thornes have been abandoned before, Captain. Usually by investors." The sponsorship, he explains on his way down the ramp, has already been spent.`
+	on complete
+		conversation
+			`The racing leagues' registry occupies three floors of an old Lunar customs building, and its Admissions Committee occupies one long table in a room with no windows. There are five of them. They have the look of people who have heard every speech there is.`
+			`	Perry gives them his. It is magnificent. He invokes his great-grandfather, the three S League titles, the green-and-silver cars, the night the grandstand at the Centauri Classic sang the team's name. He produces a contract signed by Ambrose Kettle, and the committee's oldest member sits up. He mentions Lucius Varga, and the youngest member says "from 'Redline Hearts'?" in a small voice. He does, in fact, produce the tear.`
+			`	The chair of the committee taps her slate. "The reserved place in the B League is free," she says. "The Wexley-Thorne name is in the archive, and the team's history is, I'll grant you, considerable. The committee will admit it." Perry starts to rise. "Under the usual rules. You'll start in the B League and race three full seasons there before you're eligible for promotion."`
+			`	Perry sits down again. "Three seasons?"`
+			`	"Three seasons in a row in a league, before a team may go up. Unless it was relegated into it." She looks at him over her glasses. "Is that a problem, Mr. Wexley-Thorne?"`
+			`	"Not at all," says Perry faintly. "It's only that I have never done anything for three seasons in a row. I was engaged for two, once, and everyone said it was heroic."`
+			`	Outside, on the steps, he recovers quickly. "We're in, Captain! Wexley-Thorne Racing is back on the grid!" A message chimes on his slate. He reads it, and the colour leaves his face, and then comes back rather more strongly than before.`
+		log `The racing leagues' registry on Luna admitted Wexley-Thorne Racing to the B League, in the place the league keeps for a revived team. It must race three full seasons there before it can be promoted.`
+
+
+mission "Racing Intro 6: The Inheritance"
+	name "The Wexley-Thorne revival: the uncle"
+	description `Take Perry to his great-uncle's estate on <destination>.`
+	landing
+	passengers 1
+	source "Luna"
+	destination "Hestia"
+	to offer
+		has "Racing Intro 5: The Seat: done"
+		not "racing: intro over"
+	to fail
+		or
+			"racing: owns team" == 1
+			"racing: slot free" == 0
+	on offer
+		conversation
+			`"It's Great-Uncle Barnaby," says Perry, holding out the slate as if it might bite. "On Hestia. Ninety-seven, Captain, and childless, and he has outlived three heirs and two physicians, and his solicitor writes that he is 'asking for family.'" He lowers the slate. "I am family. I am, in fact, nearly all of the family there is."`
+			`	"But the team," you say. "The season starts in days."`
+			`	"Yes. The team." He paces the length of your galley, which takes him three steps, and back again. "Captain, a racing team is three seasons in the B League at the very least, with Kettle shouting at the engineers and Varga signing autographs and that girl crashing into things. An inheritance is one old man, one bedside and, if one is attentive, one pen. It isn't even a contest. It's barely a decision." He stops. "Take me to <planet>. I'll explain on the way. Well. I'll explain when we land. I need to think of a way of explaining."`
+				accept
+	on fail
+		payment 400000
+		"racing: intro over" = 1
+		dialog `Perry reads the news on his slate twice, then reads it to you. "You've... bought a racing team. Without me." He looks wounded, then thoughtful, then sly. "Well. No hard feelings, Captain. A gentleman doesn't compete with his own sponsor." At the next port a terse message from his family's solicitors returns your 400,000 credits in full. He kept the suitcase.`
+	on abort
+		"racing: intro over" = 1
+		dialog `Perry takes the news with great dignity, his suitcase and two bottles from your galley. "The Wexley-Thornes have been abandoned before, Captain. Usually by investors." The sponsorship, he explains on his way down the ramp, has already been spent.`
+	on complete
+		"racing: intro done" = 1
+		"racing: intro over" = 1
+		conversation
+			`Great-Uncle Barnaby's estate on <planet> has a gate, a drive, a second gate, a longer drive and a house at the end of it with more windows than you can count. Perry stops at the first gate, straightens his dinner jacket and turns to you with a folder.`
+			`	"Captain, I've been thinking. A man can't be a devoted nephew and run a racing team. It's one or the other. Uncle Barnaby needs someone at his side, reading to him, agreeing with him, reminding him gently which of his relatives are still alive. Which is me." He presses the folder into your hands. "And the team needs an owner who has, for example, money."`
+			`	Inside the folder is the transfer of Wexley-Thorne Racing, signed, witnessed and stamped by the registry on Luna. Your name is on it. It has been on it, by the look of the ink, since before you left Foundry.`
+			choice
+				`	"You planned this."`
+				`	"You're giving me the team?"`
+					goto giving
+			`	"Planned is a strong word. I prepared for a contingency. Wexley-Thornes are very good at contingencies; we've had so many of them."`
+				goto rest
+			label giving
+			`	"Giving! Captain, you paid for it. I'm merely... completing the paperwork in your favour."`
+			label rest
+			`	"You have Kettle, who is a genius, and Varga, who is a professional, and Wren, who is a force of nature, and Mbeki, who frightens me. All on five-season contracts, at salaries that would embarrass a junior clerk. I negotiated them myself. It is the only thing I have ever negotiated well." He smiles, a little wistfully. "And the name. Look after the name. It's the only thing of Grandfather's I didn't sell."`
+			`	"What will you do?"`
+			`	"Oh, the usual. Sit with Uncle Barnaby. Admire his paintings. Count them, discreetly." He sets off up the drive with his battered suitcase, and turns back once, at the second gate. "If you win the B League, Captain, send me a holo. If you win the S League, send me a cheque." Then he is gone, whistling, into the long shadow of the house.`
+		log `On Hestia, Perry Wexley-Thorne left to devote himself to his childless great-uncle (and his great-uncle's estate), and signed Wexley-Thorne Racing over to you, with Ambrose Kettle, Wren Achterberg, Lucius Varga and Dolores Mbeki on five-season contracts. The team races in the B League from its next round; the racing office is at any spaceport with a bank.`
+		log "People" "Peregrine Wexley-Thorne" `Perry has retired to his great-uncle Barnaby's estate on Hestia, to be at the old man's side, and in his will.`

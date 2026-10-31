@@ -1,0 +1,677 @@
+class Staff
+
+// The staff pool (Person): POOL people per role, shared by every team of
+// every league, the player's included. Seats: pilot, race engineer, research
+// officer, pit crew chief, commercial director (Person.role), and the second
+// pilot's (Team.SECOND): every team runs two cars, so the pool has twice as
+// many pilots (pool_size). A pilot hired goes to an empty pilot's seat, else
+// (an AI team) the weaker-rated pilot's; the player chooses #1 or #2.
+//
+// The record is what anyone hiring sees, never the hidden stats: races
+// worked, wins, podiums, points, titles, retirements (all the team's while
+// they worked there, for staff off the car), the role's own measure (metric:
+// places a pilot gains on the car's pace rank, an engineer's setup, the pit
+// stop's seconds, the research yield, the deals' yield) and the crises they
+// handled. The market prices on `rating`: the role's scores summed over
+// (observations + PRIOR), plus the crises' balance; the asking salary a week
+// is ROLE_BASE x e^(RATING_K x rating) x the highest league worked in
+// (TIER), x TITLE_K per title, x experience.
+//
+// AI teams hire, on a vacancy, the free person with the best mix of
+// experience (EXP_W) and rating (REC_W) whose ask is within their means
+// (AFFORD of a week's income), else the cheapest. Poaching: each week an AI
+// team may (POACH, more in the off-season) go after a person with a long
+// record rated POACH_EDGE better than its own in that seat, at POACH_RAISE
+// of the ask, paying their team the contract's buyout (below). For the
+// player's staff it is an offer: they have OFFER_DAYS to match it (a
+// retention bonus of RETAIN weeks), else the person leaves and the buyout is
+// the player's. Careers last CAREER seasons (+- SPREAD); a retiree is
+// replaced by a rookie with no record (and a peak of their own: Bio).
+//
+// Contracts are exclusive and run to the end of a season, 1 to MAX_YEARS
+// seasons (the player chooses; AI teams sign for 1 to 3), at a salary locked
+// when signed: a rookie signed cheap for five seasons stays cheap as they
+// grow. A longer deal costs LENGTH_K more a week a season over CONTRACT (less
+// for one season). Leaving early costs: a team releasing someone pays the
+// release clause (RELEASE_K of the salary still owed, at least SEVERANCE
+// weeks); a rival buying someone out pays their team the buyout (BUYOUT_K of
+// the weeks left x the larger of salary and ask, at least BUYOUT_MIN weeks), so
+// long contracts of people now worth more are dear to break, and an AI team
+// buys one out only when it can afford it (BUYOUT weeks of the salary, or
+// POACH_CASH of its cash). At expiry AI teams renew most; the player renews
+// on the Team tab in a contract's last season (any length, at the demand:
+// the ask, which fame raises, x the scouts' potential (POT_K) x loyalty
+// (LOYAL_K a season at the team, at most LOYAL_MAX)); a contract left to run
+// out renews itself for one season at the demand.
+
+int POOL = 42
+float PRIOR = 10.0
+float RATING_K = 2.5
+[]float ROLE_BASE = [3500.0, 2000.0, 2000.0, 1500.0, 1800.0]
+[]float TIER = [1.0, 2.5, 6.0]
+float TITLE_K = 0.08
+float EXP_W = 0.5
+float REC_W = 2.0
+float AFFORD = 0.08
+float POACH = 3.0
+float POACH_OFF = 12.0
+float POACH_EDGE = 0.15
+float POACH_RAISE = 1.3
+int POACH_MIN = 20
+float BUYOUT = 8.0
+int OFFER_DAYS = 7
+float RETAIN = 4.0
+float SIGN = 2.0
+float SEVERANCE = 6.0
+int CAREER = 12
+int SPREAD = 4
+int CONTRACT = 2
+int MAX_YEARS = 5
+float LENGTH_K = 0.03
+float RELEASE_K = 0.35
+float BUYOUT_K = 0.5
+float BUYOUT_MIN = 4.0
+float POACH_CASH = 0.5
+float FAME_ASK = 0.35
+float POT_K = 0.25
+float LOYAL_K = 0.02
+int LOYAL_MAX = 5
+float RENEW_FLOOR = 0.85
+// A renewal at a prestigious team (World.prestige) asks up to this much less.
+float PRESTIGE_STAY = 0.05
+
+Names names = Names()
+Fmt fmt = Fmt()
+
+// ---- The pool ----
+
+// The pool's size of a role: pilots twice POOL (two seats a team).
+int pool_size(int role):
+    return POOL * 2 if role == 0 else POOL
+
+void seed(World w):
+    for role in 0..<5:
+        for k in 0..<pool_size(role):
+            Person p = rookie(w, role)
+            history(w, p)
+            add(w, p)
+
+// A save from before two cars: each role's pool grows to its size (careers
+// already under way, as at the start).
+void top_up(World w):
+    for role in 0..<5:
+        int have = 0
+        for p in w.people:
+            if p.role == role:
+                have += 1
+        for k in have..<pool_size(role):
+            Person p = rookie(w, role)
+            history(w, p)
+            add(w, p)
+
+Person rookie(World w, int role):
+    Person p = Person()
+    p.id = w.next_person
+    w.next_person += 1
+    p.name = names.person(w.rng)
+    p.role = role
+    p.skill = clamp(w.rng.gauss() * 0.45, -1.0, 1.0)
+    p.trait = clamp(w.rng.gauss() * 0.45, -1.0, 1.0)
+    p.joined = w.day
+    int seasons = CAREER + w.rng.range(-SPREAD, SPREAD)
+    p.retires = w.day + seasons * w.WEEKS * 7 + w.rng.range(0, 60)
+    p.salary = 0.0
+    return p
+
+void add(World w, Person p):
+    w.bio.ensure(w, p)
+    w.people.append(p)
+    w.person_by_id[p.id] = p
+
+// A career already under way at the start: seasons of record drawn from the
+// hidden stats, so the pool has track records from day one.
+void history(World w, Person p):
+    int seasons = w.rng.range(0, 8)
+    if seasons == 0:
+        return
+    Rng r = w.rng
+    int n = seasons * w.ROUNDS
+    p.joined = w.day - seasons * w.WEEKS * 7
+    p.retires = p.retires - seasons * w.WEEKS * 7
+    if p.retires <= w.day + 30:
+        p.retires = w.day + 30 + r.range(0, 400)
+    p.races = n
+    float good = p.skill + 0.25 * r.gauss()
+    p.best_league = 2 if good > 0.45 && r.chance(70.0) else (1 if good > 0.0 && r.chance(70.0) else 0)
+    float win_rate = clamp(0.06 + 0.12 * good, 0.0, 0.4)
+    p.wins = int(float(n) * win_rate * r.between(0.5, 1.5))
+    p.podiums = p.wins + int(float(n) * win_rate * 1.8 * r.between(0.5, 1.5))
+    p.points = int(float(n) * clamp(7.0 + 7.0 * good, 0.5, 20.0))
+    p.dnfs = int(float(n) * r.between(0.05, 0.15))
+    p.stints = 1 + seasons / 3
+    if p.role == 0:
+        p.crashes = int(float(n) * clamp(0.04 + 0.04 * p.trait - 0.03 * p.skill, 0.0, 0.2))
+    if r.chance(clamp(10.0 + 30.0 * good, 1.0, 50.0)) && seasons > 2:
+        p.titles = 1
+    for k in 0..<n:
+        float m = metric_of(p, r)
+        p.m_n += 1
+        p.m_sum += m
+        p.s_n += 1
+        p.s_sum += score_of(p, m)
+    p.ev_n = r.range(0, seasons)
+    for k in 0..<p.ev_n:
+        float u = r.unit()
+        if u < 0.5 + 0.3 * p.skill:
+            p.ev_good += 1
+        else if u > 0.8 - 0.15 * p.skill:
+            p.ev_bad += 1
+
+// A made-up observation of the role's measure, for a career's past.
+float metric_of(Person p, Rng r):
+    if p.role == 0:
+        return 4.0 * p.skill + 3.0 * r.gauss()
+    if p.role == 1:
+        return 100.0 * (0.006 * p.skill + 0.004 * r.gauss())
+    if p.role == 3:
+        return 2.8 - 0.5 * p.skill + float(globalThis.Math.abs(r.gauss())) * 0.3
+    return 100.0 * (1.0 + 0.35 * p.skill + 0.1 * r.gauss())
+
+// The rating score of an observation of the role's measure.
+float score_of(Person p, float m):
+    if p.role == 0:
+        return m / 6.0
+    if p.role == 1:
+        return m / 0.6
+    if p.role == 3:
+        return clamp((2.9 - m) / 0.5, -3.0, 3.0)
+    return (m - 100.0) / 35.0
+
+float clamp(float x, float lo, float hi):
+    return lo if x < lo else (hi if x > hi else x)
+
+// ---- Records ----
+
+void observe(Person p, float metric, float score):
+    if p.id == 0:
+        return
+    forget()
+    p.m_n += 1
+    p.m_sum += metric
+    p.s_n += 1
+    p.s_sum += score
+
+// A race's result on the records of team t's staff: its cars are at the
+// places ks of the classification (best first). Each pilot gets their own
+// car's; the crew, who work for both, the team's (both cars' points; a win,
+// a podium or a retirement once, by the best car), and one observation of
+// their measure, the cars' mean.
+void race_record(World w, Team t, Result r, []int ks):
+    for k in ks:
+        Person p = w.person(r.pilot_at(k))
+        if p.id == 0:
+            continue
+        bool fin = r.status[k] == 0
+        p.races += 1
+        p.points += r.points[k]
+        if fin && k == 0:
+            p.wins += 1
+        if fin && k < 3:
+            p.podiums += 1
+        if !fin:
+            p.dnfs += 1
+        if t.league > p.best_league:
+            p.best_league = t.league
+        if r.status[k] == 2:
+            p.crashes += 1
+        observe(p, r.pilot_obs[k], r.pilot_obs[k] / 6.0)
+    int best = ks[0]
+    bool finished = r.status[best] == 0
+    int pts = 0
+    float setup = 0.0
+    float stop = 0.0
+    for k in ks:
+        pts += r.points[k]
+        setup += r.setup_obs[k] / float(ks.len())
+        stop += r.stop_obs[k] / float(ks.len())
+    for role in 1..<5:
+        Person p = w.seat(t, role)
+        if p.id == 0:
+            continue
+        p.races += 1
+        p.points += pts
+        if finished && best == 0:
+            p.wins += 1
+        if finished && best < 3:
+            p.podiums += 1
+        if !finished:
+            p.dnfs += 1
+        if t.league > p.best_league:
+            p.best_league = t.league
+        if role == 1:
+            observe(p, 100.0 * setup, setup / 0.006)
+        else if role == 3:
+            observe(p, stop, clamp((2.9 - stop) / 0.5, -3.0, 3.0))
+
+// A crisis the person handled (Events): `tier` from -2 (a disaster) to 2.
+void crisis(Person p, int tier):
+    if p.id == 0:
+        return
+    forget()
+    p.ev_n += 1
+    if tier > 0:
+        p.ev_good += 1
+    else if tier < 0:
+        p.ev_bad += 1
+
+// What the market makes of the record, about -1 .. 1.
+float rating(Person p):
+    float r = p.s_sum / (float(p.s_n) + PRIOR)
+    r += 0.06 * float(p.ev_good - p.ev_bad)
+    return clamp(r, -1.0, 1.0)
+
+// The weekly salary the person asks (worked out once a day: Staff.asks).
+float ask(Person p):
+    if ask_day != p_day(p):
+        ask_day = p_day(p)
+        asks = {}
+    if asks.has(p.id):
+        return asks[p.id]
+    float v = ask_now(p)
+    asks[p.id] = v
+    return v
+
+// The memo's day: the day of the world the person is in (set by World.one_day).
+int p_day(Person p):
+    return memo_day
+
+int memo_day = 0
+int ask_day = -1
+{int: float} asks = {}
+
+// A record changed: the asks are worked out again.
+void forget():
+    ask_day = -1
+
+float ask_now(Person p):
+    float exp = 0.75 + 0.25 * clamp(float(p.races) / 40.0, 0.0, 1.0)
+    float e = globalThis.Math.exp(RATING_K * rating(p))
+    float v = ROLE_BASE[p.role] * e * TIER[p.best_league] * (1.0 + TITLE_K * float(p.titles)) * exp * (1.0 + FAME_ASK * p.fame / 100.0)
+    int k = globalThis.Math.round(v / 100.0)
+    return float(k) * 100.0
+
+// The role's measure, as the player reads it.
+string metric_text(Person p):
+    if p.m_n == 0:
+        return "-"
+    float m = p.mean_metric()
+    if p.role == 0:
+        return ("+" if m >= 0.0 else "") + fmt.one_decimal(m) + " places"
+    if p.role == 1:
+        return ("+" if m >= 0.0 else "") + fmt.one_decimal(m * 10.0) + " setup"
+    if p.role == 3:
+        return fmt.one_decimal(m) + " s stops"
+    if p.role == 2:
+        return fmt.whole_percent(m / 100.0) + " R&D yield"
+    return fmt.whole_percent(m / 100.0) + " deal yield"
+
+string crisis_text(Person p):
+    if p.ev_n == 0:
+        return "-"
+    return string(p.ev_good) + " good, " + string(p.ev_bad) + " bad of " + string(p.ev_n)
+
+// ---- Hiring ----
+
+// The seat for someone hired to a role: an empty one of the role, else (a
+// pilot) the weaker-rated pilot's, else the role's.
+int seat_for(World w, Team t, int role):
+    int s = t.free_seat(role)
+    if t.seats[s] == 0 || role != 0:
+        return s
+    Person a = w.seat(t, 0)
+    Person b = w.seat(t, t.SECOND)
+    return t.SECOND if rating(b) < rating(a) else 0
+
+void hire(World w, Team t, Person p, float salary, int seasons):
+    hire_at(w, t, p, salary, seasons, seat_for(w, t, p.role))
+
+void hire_at(World w, Team t, Person p, float salary, int seasons, int slot):
+    if p.team != 0:
+        release(w, p, false)
+    int old = t.seats[slot]
+    if old != 0 && old != p.id:
+        release(w, w.person(old), false)
+    if p.team != t.id:
+        p.loyal = 0
+    p.team = t.id
+    p.salary = salary
+    p.contract_end = w.season + seasons - 1
+    p.signed = w.season
+    p.stints += 1
+    p.offer_team = 0
+    p.offer_until = 0
+    t.seats[slot] = p.id
+    if t.league > p.best_league && p.races > 0:
+        p.best_league = p.best_league
+
+void release(World w, Person p, bool notify):
+    if p.team != 0 && w.team_by_id.has(p.team):
+        Team t = w.team_by_id[p.team]
+        int s = t.seat_of(p.id)
+        if s >= 0:
+            t.seats[s] = 0
+    p.team = 0
+    p.salary = 0.0
+    p.offer_team = 0
+    p.offer_until = 0
+
+[]Person free_people(World w, int role):
+    return w.people.filter(bool(Person p): return p.role == role && p.team == 0)
+
+float weekly_income(World w, Team t):
+    return t.backing + w.sponsoring.weekly(w, t) + w.RACE_POOL * w.scale[t.league] * 0.1
+
+// An AI team's choice for a seat, or the stand-in when the pool has none.
+Person pick(World w, Team t, int role):
+    return pick_from(w, t, free_people(w, role))
+
+Person pick_from(World w, Team t, []Person free):
+    if free.len() == 0:
+        return w.stand_in
+    float means = weekly_income(w, t) * AFFORD
+    Person best = w.stand_in
+    float best_score = -1000.0
+    Person cheapest = free[0]
+    float cheap = 1000000000000.0
+    for p in free:
+        float a = ask(p)
+        if a < cheap:
+            cheap = a
+            cheapest = p
+        if a > means:
+            continue
+        float s = EXP_W * clamp(float(p.races) / 40.0, 0.0, 1.0) + REC_W * rating(p) + 0.1 * w.rng.gauss()
+        if s > best_score:
+            best_score = s
+            best = p
+    return best if best.id != 0 else cheapest
+
+// Every AI team's empty seats, from the free people listed once.
+void fill_all(World w):
+    [][]Person free = [[], [], [], [], []]
+    for p in w.people:
+        if p.team == 0:
+            free[p.role].append(p)
+    for t in w.teams:
+        if t.player:
+            continue
+        for s in 0..<w.SEATS:
+            int role = t.seat_role(s)
+            if t.seats[s] == 0 && free[role].len() > 0:
+                Person p = pick_from(w, t, free[role])
+                if p.id != 0:
+                    hire_at(w, t, p, ask(p), w.rng.range(1, 3), s)
+                    free[role] = free[role].filter(bool(Person x): return x.id != p.id)
+
+void fill_seats(World w, Team t):
+    if t.player:
+        return
+    for s in 0..<w.SEATS:
+        if t.seats[s] == 0:
+            Person p = pick(w, t, t.seat_role(s))
+            if p.id != 0:
+                hire_at(w, t, p, ask(p), w.rng.range(1, 3), s)
+
+// ---- The week (weekday 5) ----
+
+void week(World w):
+    careers(w)
+    offers(w)
+    fill_all(w)
+    float chance = POACH_OFF if w.off_season() else POACH
+    for t in w.teams.copy():
+        if !t.player && w.rng.chance(chance):
+            poach(w, t)
+
+void careers(World w):
+    for p in w.people.copy():
+        if w.day < p.retires:
+            continue
+        int team = p.team
+        if team != 0 && w.team_by_id.has(team):
+            Team t = w.team_by_id[team]
+            if t.player:
+                w.player_events.append("Racing: " + p.name + ", your " + names.role_names[p.role].to_lower() + ", retires. The seat is empty until you hire again.")
+        if p.titles > 0 || p.races >= 80:
+            w.note(-1, names.role_names[p.role] + " " + p.name + " retires after " + string(p.races) + " races" + (" and " + string(p.titles) + (" title" if p.titles == 1 else " titles") if p.titles > 0 else "") + ".")
+        release(w, p, false)
+        w.people = w.people.filter(bool(Person x): return x.id != p.id)
+        w.person_by_id.delete(p.id)
+        add(w, rookie(w, p.role))
+        if team != 0 && w.team_by_id.has(team):
+            fill_seats(w, w.team_by_id[team])
+
+// Rivals' offers for the player's staff that ran out unmatched: they go.
+void offers(World w):
+    for p in w.people:
+        if p.offer_until == 0 || w.day < p.offer_until:
+            continue
+        int to = p.offer_team
+        float pay = p.offer_salary
+        p.offer_team = 0
+        p.offer_until = 0
+        Team mine = w.team(p.team)
+        if !mine.player || !w.team_by_id.has(to):
+            continue
+        Team rival = w.team_by_id[to]
+        float fee = buyout(w, p)
+        w.earn(mine, fee)
+        w.spend(rival, fee)
+        hire(w, rival, p, pay, CONTRACT)
+        w.player_events.append("Racing: " + p.name + " leaves your team for " + rival.name + ". They pay " + fmt.credits(fee) + " credits to buy out the contract.")
+        w.note(rival.league, rival.name + " signs " + names.role_names[p.role].to_lower() + " " + p.name + ".")
+
+void poach(World w, Team t):
+    int role = w.rng.range(0, 4)
+    // A pilot is measured against the team's weaker one, whose seat it takes.
+    int slot = seat_for(w, t, role)
+    Person own = w.seat(t, slot)
+    float own_r = rating(own) if own.id != 0 else -0.6
+    float means = weekly_income(w, t) * AFFORD * 1.5
+    Person target = w.stand_in
+    float best = own_r + POACH_EDGE
+    for p in w.people:
+        if p.role != role || p.team == 0 || p.team == t.id || p.s_n < POACH_MIN || p.offer_until != 0:
+            continue
+        float r = rating(p)
+        if r > best && ask(p) * POACH_RAISE <= means && affords(w, t, p):
+            Team other = w.team(p.team)
+            if other.league <= t.league:
+                best = r
+                target = p
+    if target.id == 0:
+        return
+    Team from = w.team(target.team)
+    float pay = ask(target) * POACH_RAISE
+    if from.player:
+        target.offer_team = t.id
+        target.offer_salary = pay
+        target.offer_until = w.day + OFFER_DAYS
+        w.player_events.append("Racing: " + t.name + " offers " + target.name + ", your " + names.role_names[role].to_lower() + ", " + fmt.credits(pay) + " credits a week, and to buy out the contract (" + fmt.credits(buyout(w, target)) + " credits now). Match it within " + string(OFFER_DAYS) + " days (on the Team tab) or lose them.")
+        return
+    float fee = buyout(w, target)
+    w.spend(t, fee)
+    w.earn(from, fee)
+    hire_at(w, t, target, pay, CONTRACT, slot)
+    w.note(t.league, t.name + " poaches " + names.role_names[role].to_lower() + " " + target.name + " from " + from.name + ".")
+    fill_seats(w, from)
+
+// ---- A new season ----
+
+void new_season(World w):
+    // Fame fades a little (Lore).
+    w.lore.new_season(w)
+    forget()
+    for p in w.people:
+        // Skills drift; the young grow toward their peak (Bio).
+        float grow = w.bio.growth(w, p)
+        p.skill = clamp(p.skill + grow + 0.04 * w.rng.gauss(), -1.0, 1.0)
+        if p.team != 0:
+            p.loyal += 1
+        if p.team == 0 || p.contract_end >= w.season:
+            continue
+        Team t = w.team(p.team)
+        if t.player:
+            // Left to run out: a season more at their demand.
+            float pay = renewal(w, p, 1)
+            float was = p.salary
+            p.salary = pay
+            p.contract_end = w.season
+            p.signed = w.season
+            w.player_events.append("Racing: " + p.name + "'s contract ran out; they stay one more season at " + fmt.credits(pay) + " credits a week (was " + fmt.credits(was) + "). Renew on the Team tab to sign them for longer.")
+        else if rating(p) > -0.2 && w.rng.chance(75.0):
+            p.salary = ask(p)
+            p.contract_end = w.season + w.rng.range(1, 3) - 1
+        else:
+            release(w, p, false)
+
+// ---- The player's moves (Office) ----
+
+// What hiring costs the player: the ask (more for someone under contract),
+// a signing fee, a buyout to their team, and severance for whoever they replace.
+float player_salary(Person p):
+    return player_salary_for(p, CONTRACT)
+
+// The weekly salary for a contract of `years` seasons, locked until it ends.
+float player_salary_for(Person p, int years):
+    return ask(p) * (POACH_RAISE if p.team != 0 else 1.0) * length_k(years)
+
+float length_k(int years):
+    int y = 1 if years < 1 else (MAX_YEARS if years > MAX_YEARS else years)
+    return 1.0 + LENGTH_K * float(y - CONTRACT)
+
+float player_cost(World w, Team mine, Person p):
+    return player_cost_for(w, mine, p, CONTRACT)
+
+// The player's seat for someone of a role: an empty one, else the role's
+// first (the #1's); the office passes the seat chosen.
+int player_seat(Team mine, int role):
+    return mine.free_seat(role)
+
+// A seat of the role (the office's choice), else player_seat.
+int seat_or(Team mine, int role, int slot):
+    return slot if slot >= 0 && slot < mine.seats.len() && mine.seat_role(slot) == role else player_seat(mine, role)
+
+float player_cost_for(World w, Team mine, Person p, int years):
+    return player_cost_at(w, mine, p, years, -1)
+
+float player_cost_at(World w, Team mine, Person p, int years, int slot):
+    float cost = SIGN * player_salary_for(p, years)
+    if p.team != 0:
+        cost += buyout(w, p)
+    int old = mine.seats[seat_or(mine, p.role, slot)]
+    if old != 0:
+        cost += release_cost(w, w.person(old))
+    return cost
+
+void player_hire(World w, Person p):
+    player_hire_for(w, p, CONTRACT)
+
+void player_hire_for(World w, Person p, int years):
+    player_hire_at(w, p, years, -1)
+
+void player_hire_at(World w, Person p, int years, int seat):
+    int y = 1 if years < 1 else (MAX_YEARS if years > MAX_YEARS else years)
+    Team mine = w.mine()
+    int slot = seat_or(mine, p.role, seat)
+    float cost = player_cost_at(w, mine, p, y, slot)
+    float pay = player_salary_for(p, y)
+    int old = mine.seats[slot]
+    if old != 0:
+        Person o = w.person(old)
+        release(w, o, false)
+    Team from = w.team(p.team)
+    if p.team != 0:
+        w.earn(from, buyout(w, p))
+        w.note(from.league, mine.name + " signs " + names.role_names[p.role].to_lower() + " " + p.name + " away from " + from.name + ".")
+    w.spend(mine, cost)
+    hire_at(w, mine, p, pay, y, slot)
+    if from.id != 0:
+        fill_seats(w, from)
+
+void player_fire(World w, Person p):
+    Team mine = w.mine()
+    w.spend(mine, release_cost(w, p))
+    release(w, p, false)
+
+// ---- Contracts ----
+
+// Weeks of the contract still to run (the turn's week counts as the next
+// season's start: the season's number has moved on by then).
+int weeks_left(World w, Person p):
+    if p.team == 0 || p.contract_end < w.season:
+        return 0
+    int sw = w.season_week()
+    int now = w.WEEKS - sw if sw >= 0 && sw < w.WEEKS - 1 else w.WEEKS
+    return (p.contract_end - w.season) * w.WEEKS + now
+
+int seasons_left(World w, Person p):
+    return p.contract_end - w.season + 1 if p.team != 0 && p.contract_end >= w.season else 0
+
+// What a rival pays the team to buy the contract out.
+float buyout(World w, Person p):
+    float a = ask(p)
+    float base = a if a > p.salary else p.salary
+    float v = BUYOUT_K * base * float(weeks_left(w, p))
+    float least = BUYOUT_MIN * p.salary
+    return v if v > least else least
+
+// What releasing someone costs their team.
+float release_cost(World w, Person p):
+    float v = RELEASE_K * p.salary * float(weeks_left(w, p))
+    float least = SEVERANCE * p.salary
+    return v if v > least else least
+
+// Can an AI team buy this person's contract out?
+bool affords(World w, Team t, Person p):
+    float fee = buyout(w, p)
+    return fee <= BUYOUT * p.salary || fee <= POACH_CASH * t.cash
+
+// What a person asks to renew for `years` seasons: their ask (fame raises
+// it), more for what the scouts see in them, a little less for the seasons
+// they have served the team; never much below what they are paid.
+float renewal(World w, Person p, int years):
+    float pot = float(w.bio.potential(w, p))
+    float up = (pot - 60.0) / 40.0
+    up = up if up > 0.0 else 0.0
+    int served = p.loyal if p.loyal < LOYAL_MAX else LOYAL_MAX
+    float v = ask(p) * (1.0 + POT_K * up) * (1.0 - LOYAL_K * float(served)) * length_k(years)
+    // People stay at a storied team for a little less (World.prestige).
+    v = v * (1.0 - PRESTIGE_STAY * w.prestige(w.team(p.team)) / 100.0)
+    float least = RENEW_FLOOR * p.salary
+    v = v if v > least else least
+    int k = globalThis.Math.round(v / 100.0)
+    return float(k) * 100.0
+
+// The player can renew in a contract's last season.
+bool can_renew(World w, Person p):
+    return p.team != 0 && p.team == w.player_team && p.contract_end <= w.season
+
+void player_renew(World w, Person p, int years):
+    if !can_renew(w, p):
+        return
+    int y = 1 if years < 1 else (MAX_YEARS if years > MAX_YEARS else years)
+    p.salary = renewal(w, p, y)
+    p.contract_end = w.season + y
+    p.signed = w.season
+
+void player_match(World w, Person p):
+    Team mine = w.mine()
+    w.spend(mine, RETAIN * p.offer_salary)
+    p.salary = p.offer_salary
+    p.contract_end = p.contract_end if p.contract_end > w.season + CONTRACT - 1 else w.season + CONTRACT - 1
+    p.signed = w.season
+    Team rival = w.team(p.offer_team)
+    p.offer_team = 0
+    p.offer_until = 0
+    w.note(mine.league, p.name + " turns down " + rival.name + " to stay with " + mine.name + ".")

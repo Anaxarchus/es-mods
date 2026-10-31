@@ -1,0 +1,5 @@
+name "The Racing League e2e test"
+version "1"
+authors
+	"Anaxarchus"
+about "The Racing League's end-to-end test: the integration test \"Racing League E2E\", run with The Racing League and the Dado loader by mods/racing/test/ingame/run.sh."

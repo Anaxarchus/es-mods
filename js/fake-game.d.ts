@@ -19,6 +19,12 @@ export interface FakeShip {
 	government: string;
 	strength: number;
 	tag?: string;
+	/** Its position in the system, for ship_x, ship_y and ship_distance (mod API 11; default 0). */
+	x?: number;
+	y?: number;
+	/** Set by ship_reactivate (mod API 11): its new personality's tokens, and no longer a derelict. */
+	personality?: string[];
+	derelict?: boolean;
 }
 
 export interface FakeSystem {
@@ -43,6 +49,11 @@ export interface FakeFleetShip {
 	spaceSaved?: Record<string, number>;
 	/** Parked (mod API 10). */
 	parked?: boolean;
+	/** Mod API 12: where it is when it is not with the player (parked, or left elsewhere):
+	 * a system, and the planet it is landed on there ("" in space). Without `system` the
+	 * ship is with the player. ship_park sets both to where the player is. */
+	planet?: string;
+	system?: string;
 }
 
 /** An outfit the fake game knows (mod API 5). */
@@ -53,6 +64,13 @@ export interface FakeOutfit {
 	cost: number;
 	weapon: boolean;
 	attributes?: Record<string, number>;
+	/** Mod API 11: a description, and the lines of the `weapon` blocks a definition gave. */
+	description?: string;
+	weaponChanges?: string[][];
+	/** Mod API 12: its weapon's stats by their keys in data ("shield damage", "reload",
+	 * "velocity", "lifetime", ...; a flag such as "homing" is 1), for outfit_weapon_attribute.
+	 * A definition's `weapon` block sets them over the base's. */
+	weaponStats?: Record<string, number>;
 }
 
 /** A planet the fake game knows (mod API 6). */
@@ -73,6 +91,19 @@ export interface FakeModel {
 	category: string;
 	/** License names, as in the data ("Navy"); held as the condition "license: <name>". */
 	licenses?: string[];
+	/** Mod API 11: what a definition gave of its attributes and outfits. */
+	attributes?: Record<string, number>;
+	outfits?: Record<string, number>;
+}
+/** An outfit or ship model a mod defined at runtime (mod API 11): from text, or a variant of a base. */
+export interface FakeDefinition {
+	kind: "outfit" | "ship";
+	name: string;
+	/** The mod that defined it; FakeGame's own is `modName`. */
+	mod: string;
+	text?: string;
+	base?: string;
+	changes?: string;
 }
 
 /** A ship destroyed in the step, for losses() (mod API 9). */
@@ -113,6 +144,14 @@ export interface FakeGameOptions {
 	prices?: Record<string, Record<string, [number, number]>>;
 	cargo?: Record<string, number>;
 	features?: string[];
+	/** Mod API 11: this mod's name (default "mod"), definitions already made (another mod's,
+	 * to test refusals), the outfits the player carries as cargo, and in storage by planet,
+	 * and the governments ship_reactivate knows. */
+	mod?: string;
+	definitions?: FakeDefinition[];
+	outfitCargo?: Record<string, number>;
+	outfitStorage?: Record<string, Record<string, number>>;
+	governments?: string[];
 }
 
 export interface FakeGame extends Game {}
@@ -194,6 +233,14 @@ export declare class FakeGame {
 	sections: string[];
 	bus: FakeBus | null;
 	busName: string;
+	/** Mod API 11: this mod's name, and the runtime definitions by "<kind>\u0000<name>". */
+	modName: string;
+	definitions: Map<string, FakeDefinition>;
+	/** Outfits the player carries as cargo, by outfit, and in planetary storage, by planet then outfit. */
+	outfitCargo: Map<string, number>;
+	outfitStorage: Map<string, Map<string, number>>;
+	/** The governments ship_reactivate takes. */
+	governments: Set<string>;
 	/** Queue a notification for this game's mod, from `sender`. */
 	receive(name: string, payload: string, sender: string): void;
 	/** Deliver the queued notifications the mod listens for to its on_notification. */

@@ -1,0 +1,9 @@
+name "Corsair Charts"
+version "0.1.0"
+authors
+	"Anaxarchus"
+tags
+	"gameplay"
+	"scripting"
+about "Pirates carry charts to what they have hidden. Now and then a pirate you destroy or disable transmits one with its last breath: follow it through ciphers, riddles, locks, informants and couriers to a derelict cache, and whatever its last owner could not bear to spend."
+about "It needs the Dado mod loader (mod API 11 or newer) in the game's modloaders folder. Without it only its data loads: the outfits and ships exist, but no chart is ever transmitted."

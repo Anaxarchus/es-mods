@@ -1,0 +1,494 @@
+class Gen
+
+import "imports:sdk/es"
+
+// Building a trail from a seed (DESIGN.md, "Generation"). Everything comes from
+// one Rng seeded with the trail's seed, and the map is read in sorted order,
+// so a seed, a starting system, a map and the collection log always give the
+// same trail: the tests rely on it, and so does rerouting a step.
+
+Galaxy galaxy = Galaxy()
+Cipher cipher = Cipher()
+Tables tables = Tables()
+
+int CIPHER = 1
+int RIDDLE = 2
+int SCAN = 3
+int QUESTION = 4
+int LOCK = 5
+int COURIER = 6
+int FINALE = 7
+
+// Steps per trail (the finale included), and jumps between steps, by tier.
+[]int steps_lo = [3, 4, 5, 6]
+[]int steps_hi = [4, 5, 7, 8]
+[]int jumps_lo = [1, 1, 2, 2]
+[]int jumps_hi = [3, 4, 5, 6]
+// Which kinds of step each tier draws from, and their weights (CIPHER .. COURIER).
+[][]int kind_weights = [[3, 3, 3, 3, 0, 0], [3, 3, 2, 2, 2, 2], [3, 3, 2, 2, 3, 3], [3, 3, 2, 3, 3, 3]]
+// The scanner's search radius, by tier (world units from the system's centre).
+[]int scan_far = [2000, 2600, 3200, 4000]
+// How long the jump questions get, by tier.
+[]int question_far = [3, 4, 6, 8]
+// Lock dials, by tier.
+[]int lock_dials = [3, 3, 4, 5]
+// Systems the trail has already been to (or will go to): avoided while others are near.
+[]string avoid = []
+
+// ---- A whole trail ----
+
+Trail make(es.Game game, int tier, int seed, string from, []string found):
+    Rng rng = Rng()
+    rng.seed(seed)
+    Trail t = Trail()
+    t.active = true
+    t.tier = tier
+    t.seed = seed
+    t.origin = from
+    t.started = game.day()
+    int n = rng.between(steps_lo[tier], steps_hi[tier])
+    string prev = from
+    avoid = [from]
+    int last = 0
+    for k in 0..<n:
+        Step s = Step()
+        if k == n - 1:
+            s = finale(game, rng, tier, prev)
+        else:
+            int kind = pick_kind(rng, tier, last)
+            s = any_step(game, rng, tier, kind, prev)
+        t.steps.append(s)
+        last = s.kind
+        prev = s.system
+        avoid.append(s.system)
+    if tier == 3 || (tier == 2 && rng.below(2) == 0):
+        if n >= 3:
+            t.ambush_at = rng.between(1, n - 2)
+    roll_rewards(rng, t, found)
+    return t
+
+int pick_kind(Rng rng, int tier, int last):
+    []int w = kind_weights[tier].copy()
+    if last >= 1 && last <= w.len():
+        w[last - 1] = 0
+    int i = rng.weighted(w)
+    if i < 0:
+        return SCAN
+    return i + 1
+
+// A step of this kind, or of another when the map gives this one nothing to
+// work with; at worst a scan in `prev` itself, which always works.
+Step any_step(es.Game game, Rng rng, int tier, int kind, string prev):
+    Step s = make_step(game, rng, tier, kind, prev)
+    if s.kind != 0:
+        return s
+    for other in [SCAN, CIPHER, COURIER, RIDDLE, QUESTION, LOCK]:
+        if other == kind:
+            continue
+        s = make_step(game, rng, tier, other, prev)
+        if s.kind != 0:
+            return s
+    return scan_at(game, rng, tier, prev)
+
+Step make_step(es.Game game, Rng rng, int tier, int kind, string prev):
+    if kind == CIPHER:
+        return cipher_step(game, rng, tier, prev)
+    if kind == RIDDLE:
+        return riddle(game, rng, tier, prev)
+    if kind == SCAN:
+        return scan(game, rng, tier, prev)
+    if kind == QUESTION:
+        return question(game, rng, tier, prev)
+    if kind == LOCK:
+        return lock(game, rng, tier, prev)
+    if kind == COURIER:
+        return courier(game, rng, tier, prev)
+    if kind == FINALE:
+        return finale(game, rng, tier, prev)
+    return Step()
+
+// A new step in place of the current one, from where the player is: the same
+// kind if the map allows (the finale stays the finale), else another.
+void reroute(es.Game game, Trail t, string from):
+    if !t.active:
+        return
+    t.reroutes += 1
+    Rng rng = Rng()
+    rng.seed(t.seed + 7919 * t.reroutes + 104729 * t.index)
+    Step old = t.current()
+    avoid = [from, old.system]
+    for st in t.steps:
+        avoid.append(st.system)
+    Step s = Step()
+    if t.at_finale():
+        s = finale(game, rng, t.tier, from)
+    else:
+        int kind = old.kind
+        if kind < CIPHER || kind > COURIER:
+            kind = SCAN
+        s = any_step(game, rng, t.tier, kind, from)
+    t.steps[t.index] = s
+
+string pick(Rng rng, []string xs):
+    if xs.len() == 0:
+        return ""
+    return xs[rng.below(xs.len())]
+
+// Systems for the next step, preferring the tier's distance and widening when the map is sparse.
+[]string candidates(es.Game game, int tier, string prev, bool world):
+    []string c = galaxy.ring(game, prev, jumps_lo[tier], jumps_hi[tier], world)
+    if c.len() == 0:
+        c = galaxy.ring(game, prev, 1, jumps_hi[tier] + 3, world)
+    []string fresh = c.filter(bool(string x): return !avoid.contains(x))
+    if fresh.len() > 0:
+        return fresh
+    return c
+
+// ---- The kinds ----
+
+Step cipher_step(es.Game game, Rng rng, int tier, string prev):
+    Step s = Step()
+    bool world = rng.below(2) == 0
+    []string c = candidates(game, tier, prev, world)
+    string sys = pick(rng, c)
+    if sys == "":
+        return s
+    string name = sys
+    string what = "system"
+    if world:
+        string p = pick(rng, galaxy.landable(game, sys))
+        if p == "":
+            return s
+        s.planet = p
+        name = game.planet_name(p)
+        what = "world"
+    if name == "":
+        return s
+    s.kind = CIPHER
+    s.system = sys
+    s.region = prev
+    s.radius = jumps_hi[tier]
+    string code = ""
+    int k = rng.between(1, 25)
+    if tier == 0:
+        code = cipher.shift(name, k)
+        s.hint = "Each letter has been moved " + string(k) + " places along the alphabet."
+    else if tier == 1:
+        code = cipher.anagram(name, rng)
+        s.hint = "The letters of each word have been shuffled."
+    else if tier == 2:
+        code = cipher.shift(cipher.anagram(name, rng), k)
+        s.hint = "The letters of each word were shuffled, then each moved " + string(k) + " places along the alphabet."
+    else:
+        string key = key_system(game, rng, prev)
+        if key == "":
+            code = cipher.shift(cipher.anagram(name, rng), k)
+            s.hint = "The letters of each word were shuffled, then each moved " + string(k) + " places along the alphabet."
+        else:
+            k = game.link_count(key)
+            code = cipher.shift(cipher.anagram(name, rng), k)
+            s.hint = "The letters of each word were shuffled, then each moved along the alphabet by as many places as there are hyperlanes at " + key + "."
+    s.text = "The chart names a " + what + " within " + string(s.radius) + " jumps of " + prev + ", in cipher: " + code
+    return s
+
+// A system near `prev` whose hyperlane count (1..25) can key a cipher.
+string key_system(es.Game game, Rng rng, string prev):
+    []string c = galaxy.ring(game, prev, 0, 2, false)
+    []string ok = c.filter(bool(string x): return game.link_count(x) >= 1 && game.link_count(x) <= 25)
+    return pick(rng, ok)
+
+// ---- Riddles: facts about a system, added until only it fits ----
+
+int FACT_GOV = 0
+int FACT_LINKS = 1
+int FACT_NEXT = 2
+int FACT_PEOPLE = 3
+int FACT_LETTER = 4
+int FACT_WORLDS = 5
+int FACT_YARD = 6
+int FACT_LENGTH = 7
+
+bool has_yard(es.Game game, string sys):
+    int n = game.planet_count(sys)
+    for k in 0..<n:
+        if game.planet_service(game.planet_at(sys, k), "shipyard"):
+            return true
+    return false
+
+// The value of a fact about a system, as text (so facts compare as strings).
+string fact_value(es.Game game, int fact, string sys):
+    if fact == FACT_GOV:
+        return game.system_government(sys)
+    if fact == FACT_LINKS:
+        return string(game.link_count(sys))
+    if fact == FACT_PEOPLE:
+        return "yes" if game.inhabited(sys) else "no"
+    if fact == FACT_LETTER:
+        return sys[0..<1].to_upper()
+    if fact == FACT_WORLDS:
+        return string(galaxy.landable(game, sys).len())
+    if fact == FACT_YARD:
+        return "yes" if has_yard(game, sys) else "no"
+    if fact == FACT_LENGTH:
+        return string(sys.replace_all(" ", "").len())
+    return ""
+
+bool fact_holds(es.Game game, int fact, string value, string sys):
+    if fact == FACT_NEXT:
+        return galaxy.neighbours(game, sys).contains(value)
+    return fact_value(game, fact, sys) == value
+
+string fact_text(int fact, string value):
+    if fact == FACT_GOV:
+        return "No one governs it." if value == "Uninhabited" else "It answers to the " + value + "."
+    if fact == FACT_LINKS:
+        return ("A single hyperlane reaches it." if value == "1" else value + " hyperlanes meet there.")
+    if fact == FACT_NEXT:
+        return "It lies one jump from " + value + "."
+    if fact == FACT_PEOPLE:
+        return "People live there." if value == "yes" else "Nobody lives there."
+    if fact == FACT_LETTER:
+        return "Its name begins with " + value + "."
+    if fact == FACT_WORLDS:
+        return "There is nowhere to land there." if value == "0" else ("You could land on one of its worlds." if value == "1" else "You could land on " + value + " of its worlds.")
+    if fact == FACT_YARD:
+        return "A shipyard there sells hulls." if value == "yes" else "No shipyard there sells hulls."
+    if fact == FACT_LENGTH:
+        return "Its name has " + value + " letters."
+    return ""
+
+Step riddle(es.Game game, Rng rng, int tier, string prev):
+    Step s = Step()
+    []string c = candidates(game, tier, prev, false)
+    string sys = pick(rng, c)
+    if sys == "":
+        return s
+    int radius = jumps_hi[tier]
+    {string: int} d = galaxy.around(game, prev, radius)
+    int far = 0
+    if d.has(sys):
+        far = d[sys]
+    if far > radius:
+        radius = far
+    // Everything within the radius is a suspect.
+    []string suspects = galaxy.ring(game, prev, 0, radius, false)
+    if !suspects.contains(sys):
+        suspects.append(sys)
+    []int order = [FACT_GOV, FACT_LINKS, FACT_NEXT, FACT_PEOPLE, FACT_WORLDS, FACT_YARD]
+    for i in 0..<order.len():
+        int j = i + rng.below(order.len() - i)
+        int tmp = order[i]
+        order[i] = order[j]
+        order[j] = tmp
+    order.append(FACT_LETTER)
+    order.append(FACT_LENGTH)
+    []string lines = []
+    []string left = suspects.filter(bool(string x): return x != sys)
+    for fact in order:
+        string value = ""
+        if fact == FACT_NEXT:
+            value = pick(rng, galaxy.neighbours(game, sys))
+            if value == "":
+                continue
+        else:
+            value = fact_value(game, fact, sys)
+        []string kept = left.filter(bool(string x): return fact_holds(game, fact, value, x))
+        // A fact that rules nobody out is only worth saying as one of the first two.
+        if kept.len() == left.len() && lines.len() >= 2:
+            continue
+        lines.append(fact_text(fact, value))
+        s.facts.append(string(fact) + "=" + value)
+        left = kept
+        if left.len() == 0 && lines.len() >= 2:
+            break
+    if left.len() > 0:
+        return s
+    s.kind = RIDDLE
+    s.system = sys
+    s.region = prev
+    s.radius = radius
+    s.text = "Somewhere within " + string(radius) + " jumps of " + prev + " lies the next mark. " + lines.join(" ")
+    s.hint = "Go there."
+    return s
+
+// ---- The scanner ----
+
+Step scan(es.Game game, Rng rng, int tier, string prev):
+    string sys = pick(rng, candidates(game, tier, prev, false))
+    if sys == "":
+        return Step()
+    return scan_at(game, rng, tier, sys)
+
+Step scan_at(es.Game game, Rng rng, int tier, string sys):
+    Step s = Step()
+    s.kind = SCAN
+    s.system = sys
+    int r = rng.between(600, scan_far[tier])
+    int deg = rng.below(360)
+    float a = float(deg) * 3.141592653589793 / 180.0
+    float cx = globalThis.Math.cos(a)
+    float cy = globalThis.Math.sin(a)
+    s.x = int(float(r) * cx)
+    s.y = int(float(r) * cy)
+    s.text = "The chart gives coordinates in " + sys + ": something small adrift there. Fly in, and your scanner will tell you if you are getting warmer."
+    s.hint = "Follow the scanner."
+    return s
+
+// ---- An informant's question ----
+
+Step question(es.Game game, Rng rng, int tier, string prev):
+    Step s = Step()
+    string sys = pick(rng, candidates(game, tier, prev, true))
+    if sys == "":
+        return s
+    string p = pick(rng, galaxy.landable(game, sys))
+    if p == "":
+        return s
+    if !ask(game, rng, tier, s, sys):
+        return s
+    s.kind = QUESTION
+    s.system = sys
+    s.planet = p
+    s.hint = "Land on " + game.planet_name(p) + " and answer."
+    return s
+
+// Give a question step its question and answer (true when the map allows one).
+bool ask(es.Game game, Rng rng, int tier, Step s, string near):
+    []string from = galaxy.ring(game, near, 0, 3, false)
+    string a = pick(rng, from)
+    if a == "":
+        return false
+    if tier > 0 || rng.below(2) == 0:
+        []string to = galaxy.ring(game, a, 2, question_far[tier], false)
+        string b = pick(rng, to)
+        if b != "":
+            int j = galaxy.jumps(game, a, b, question_far[tier] + 2)
+            if j > 0:
+                s.answer = j
+                s.text = "The informant wants proof that you can read a map before saying more: how many jumps is the shortest route from " + a + " to " + b + "?"
+                return true
+    int n = game.link_count(a)
+    if n <= 0:
+        return false
+    s.answer = n
+    s.text = "The informant wants proof that you can read a map before saying more: how many hyperlanes lead out of " + a + "?"
+    return true
+
+// ---- A rotary lock ----
+
+Step lock(es.Game game, Rng rng, int tier, string prev):
+    Step s = Step()
+    string sys = pick(rng, candidates(game, tier, prev, true))
+    if sys == "":
+        return s
+    string p = pick(rng, galaxy.landable(game, sys))
+    if p == "":
+        return s
+    s.kind = LOCK
+    s.system = sys
+    s.planet = p
+    int n = lock_dials[tier]
+    []int eff = []
+    for i in 0..<n * n:
+        eff.append(0)
+    for i in 0..<n:
+        eff[i * n + i] = 1
+        if tier == 1:
+            eff[i * n + (i + 1) % n] = 1
+        else if tier == 2:
+            eff[i * n + (i + 1) % n] = rng.between(1, 3)
+        else if tier == 3:
+            eff[i * n + (i + 1) % n] = rng.between(1, 4)
+            eff[i * n + (i + 2) % n] = rng.between(1, 4)
+    s.effect = eff
+    []int target = []
+    for i in 0..<n:
+        target.append(rng.below(10))
+    s.target = target
+    // Scramble from the combination by turning dials backwards: it is always reachable.
+    []int start = target.copy()
+    int presses = rng.between(8, 20)
+    int k = 0
+    for k < presses || string(start) == string(target):
+        int i = rng.below(n)
+        for j in 0..<n:
+            start[j] = (start[j] - eff[i * n + j] + 10) % 10
+        k += 1
+        if k > 200:
+            break
+    s.start = start
+    s.dials = start.copy()
+    s.text = "A strongroom on " + game.planet_name(p) + " in " + sys + " holds the next part of the chart. Its rotary lock has " + string(n) + " dials, and the chart gives the combination: " + s.digits(target) + "."
+    s.hint = "The dials turn one way only." if tier == 0 else "The dials are linked: turning one moves others."
+    return s
+
+// ---- A courier to disable and board ----
+
+Step courier(es.Game game, Rng rng, int tier, string prev):
+    Step s = Step()
+    string sys = pick(rng, candidates(game, tier, prev, false))
+    if sys == "":
+        return s
+    s.kind = COURIER
+    s.system = sys
+    s.text = "A pirate courier waits in " + sys + " with the next part of the chart. Disable it, board it, and take the " + tables.fragment + " from its hold."
+    s.hint = "Disable and board the courier."
+    return s
+
+// ---- The finale ----
+
+Step finale(es.Game game, Rng rng, int tier, string prev):
+    Step s = Step()
+    string sys = pick(rng, candidates(game, tier, prev, false))
+    if sys == "":
+        sys = prev
+    s.kind = FINALE
+    s.system = sys
+    s.text = "The chart ends in " + sys + ". Whatever its owner hid lies there, adrift. Board it and take the " + tables.manifest + ": it opens the strongbox."
+    s.hint = "Find the cache, board it, take the manifest."
+    return s
+
+// ---- Rewards ----
+
+void roll_rewards(Rng rng, Trail t, []string found):
+    int tier = t.tier
+    int f = rng.weighted(tables.finale_weights[tier])
+    if f < 0:
+        f = 0
+    t.finale_fleet = tables.finale_fleets[tier][f]
+    t.proto = tables.finale_protos[tier][f]
+    for r in 0..<tables.strongbox_rolls[tier]:
+        int e = rng.weighted(tables.box_weight[tier])
+        if e < 0:
+            continue
+        int kind = tables.box_kind[tier][e]
+        int count = tables.box_count[tier][e]
+        string item = ""
+        if kind == 0:
+            item = exotic(rng, tables.box_tier[tier][e], found, t.box_items)
+        else if kind == 1:
+            item = tables.box_item[tier][e]
+        else:
+            item = tables.bond
+        if item == "":
+            continue
+        add_item(t, item, count)
+
+// An exotic of the tier, one the player has not found (nor already in this box) if there is one.
+string exotic(Rng rng, int tier, []string found, []string taken):
+    []string all = []
+    for name, i in tables.exotics:
+        if tables.exotic_tier[i] == tier:
+            all.append(name)
+    []string fresh = all.filter(bool(string x): return !found.contains(x) && !taken.contains(x))
+    if fresh.len() > 0:
+        return pick(rng, fresh)
+    return pick(rng, all)
+
+void add_item(Trail t, string item, int count):
+    for name, i in t.box_items:
+        if name == item:
+            t.box_counts[i] += count
+            return
+    t.box_items.append(item)
+    t.box_counts.append(count)

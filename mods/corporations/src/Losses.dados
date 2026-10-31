@@ -141,6 +141,17 @@ void convoy_loss(string system, float ships):
 // takes them); counted as raids.
 {string: float} sunk = {}
 
+// (M4) A security company routed the pirates around `system`: the regions
+// that hold it lose `share` of their pirate and raid heat.
+void suppress(Galaxy galaxy, string system, float share):
+    if !galaxy.index.has(system) || !member_of.has(galaxy.index[system]):
+        return
+    for r in member_of[galaxy.index[system]]:
+        float cut = (heat_pirate[r] + heat_raid[r]) * share
+        heat_pirate[r] = heat_pirate[r] * (1.0 - share)
+        heat_raid[r] = heat_raid[r] * (1.0 - share)
+        heat[r] = heat[r] - cut if heat[r] - cut > quiet[r] else quiet[r]
+
 // (M2) The loss index a ship meets in a system: the highest of the regions
 // that hold it (1 outside every region), clamped as for NPC sales.
 float system_index(Galaxy galaxy, string system):

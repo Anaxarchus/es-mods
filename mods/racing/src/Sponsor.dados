@@ -1,0 +1,31 @@
+class Sponsor
+
+// A company that sponsors teams: from Corporations' exchange when it is
+// installed (its real companies, their value and their 30-day price change),
+// otherwise one of the built-in names. `budget` is what it spends on racing a
+// week across all its deals; `fortune` (-1 .. 1) follows its share price and
+// moves its offers and its patience. Saved as one "s|" line.
+
+string name = ""
+string sector = ""
+float budget = 0.0
+float fortune = 0.0
+// "corp" (Corporations) or "own" (built in).
+string source = "own"
+// Still offering deals (a company gone from the exchange stops).
+bool active = true
+// The day it was last heard of in a Corporations roster.
+int seen = 0
+
+string encode():
+    return [name, sector, string(budget), string(fortune), source, "1" if active else "0", string(seen)].join("|")
+
+void decode(string line):
+    []string f = line.split("|")
+    name = f[0]
+    sector = f[1]
+    budget = f[2].to_float()
+    fortune = f[3].to_float()
+    source = f[4]
+    active = f[5] == "1"
+    seen = f[6].to_int()

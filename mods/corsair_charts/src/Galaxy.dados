@@ -1,0 +1,108 @@
+class Galaxy
+
+import "imports:sdk/es"
+
+// The map, as the game answers it, for building trails: hyperlane neighbours
+// (cached for the session: the map changes only through events, and a stale
+// cache only makes a trail a little longer), jump distances by breadth-first
+// search, which systems a trail may use, and the worlds a player can land on.
+
+{string: []string} links = {}
+
+// The governments whose systems a trail may lead to (human space). An
+// uninhabited system counts only next to one of these that is inhabited, so
+// trails do not wander into alien space through its empty borders.
+[]string human = ["Republic", "Free Worlds", "Syndicate", "Pirate", "Independent", "Militia", "Neutral", "Merchant"]
+
+void forget():
+    links = {}
+
+[]string neighbours(es.Game game, string system):
+    if links.has(system):
+        return links[system]
+    []string out = []
+    int n = game.link_count(system)
+    for k in 0..<n:
+        string s = game.link(system, k)
+        if s != "" && !out.contains(s):
+            out.append(s)
+    links[system] = out
+    return out
+
+// Jumps from `from` to every system within `most` jumps (itself at 0).
+{string: int} around(es.Game game, string from, int most):
+    {string: int} dist = {}
+    if from == "":
+        return dist
+    dist[from] = 0
+    []string queue = [from]
+    int head = 0
+    for head < queue.len():
+        string s = queue[head]
+        head += 1
+        int d = dist[s]
+        if d >= most:
+            continue
+        for t in neighbours(game, s):
+            if !dist.has(t):
+                dist[t] = d + 1
+                queue.append(t)
+    return dist
+
+// The shortest number of jumps from a to b, or -1 beyond `most`.
+int jumps(es.Game game, string a, string b, int most):
+    if a == b:
+        return 0
+    {string: int} d = around(game, a, most)
+    return d.get(b, -1)
+
+bool is_human(es.Game game, string system):
+    string g = game.system_government(system)
+    return human.contains(g)
+
+// Whether a trail may lead to this system.
+bool usable(es.Game game, string system):
+    if system == "" || system.starts_with("~"):
+        return false
+    if is_human(game, system):
+        return true
+    if game.system_government(system) != "Uninhabited":
+        return false
+    for t in neighbours(game, system):
+        if is_human(game, t) && game.inhabited(t):
+            return true
+    return false
+
+// The worlds in a system the player can land on and do business at now.
+[]string landable(es.Game game, string system):
+    []string out = []
+    int n = game.planet_count(system)
+    for k in 0..<n:
+        string p = game.planet_at(system, k)
+        if p == "" || p.starts_with("~"):
+            continue
+        if game.planet_service(p, "trading") || game.planet_service(p, "bank") || game.planet_service(p, "job board"):
+            out.append(p)
+    return out
+
+bool can_land(es.Game game, string planet):
+    if planet == "":
+        return false
+    return game.planet_service(planet, "trading") || game.planet_service(planet, "bank") || game.planet_service(planet, "job board")
+
+// The systems from lo to hi jumps from `from` that a trail may use, sorted by
+// name (so a trail depends on the seed and the map, not on the order of the
+// game's answers); with `world`, only those with a world to land on.
+[]string ring(es.Game game, string from, int lo, int hi, bool world):
+    {string: int} d = around(game, from, hi)
+    []string out = []
+    for s, j in d:
+        if j < lo || j > hi:
+            continue
+        if !usable(game, s):
+            continue
+        if world && landable(game, s).len() == 0:
+            continue
+        out.append(s)
+    out.sort()
+    return out

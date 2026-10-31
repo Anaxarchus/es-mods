@@ -1,0 +1,52 @@
+class Deal
+
+// A sponsorship: a sponsor pays a team `pay` a week, a bonus for each podium
+// (and twice it for a win), until the end of season `until`. Its clause: the
+// team must finish the season at `target` or better in its league; missing it
+// costs `penalty` (paid back to the sponsor), and a team whose last four
+// finishes average worse than `walk` loses the deal there and then. An offer
+// (`offer` true) waits for the team until day `expires`. Saved as one "d|" line.
+// For an outside sponsor (Sponsors: one known over the bus) the deal also keeps
+// what it is worth (the weekly pay the team's standing would fetch when it was
+// signed) and, this season, what was paid and how much of that its worth
+// covers: the season's result goes out with them (racing.sponsor_result).
+
+int id = 0
+string sponsor = ""
+int team = 0
+float pay = 0.0
+float bonus = 0.0
+int until = 0
+int target = 10
+float penalty = 0.0
+float walk = 11.0
+bool offer = false
+int expires = 0
+// Paid so far (for the sponsors tab).
+float paid = 0.0
+// What the deal is worth a week (at signing), and this season's payments and
+// the part of them within its worth. Saves from before have none: worth = pay.
+float worth = 0.0
+float season_paid = 0.0
+float season_worth = 0.0
+
+string encode():
+    return [string(id), sponsor, string(team), string(pay), string(bonus), string(until), string(target), string(penalty), string(walk), "1" if offer else "0", string(expires), string(paid), string(worth), string(season_paid), string(season_worth)].join("|")
+
+void decode(string line):
+    []string f = line.split("|")
+    id = f[0].to_int()
+    sponsor = f[1]
+    team = f[2].to_int()
+    pay = f[3].to_float()
+    bonus = f[4].to_float()
+    until = f[5].to_int()
+    target = f[6].to_int()
+    penalty = f[7].to_float()
+    walk = f[8].to_float()
+    offer = f[9] == "1"
+    expires = f[10].to_int()
+    paid = f[11].to_float()
+    worth = f[12].to_float() if f.len() > 14 else pay
+    season_paid = f[13].to_float() if f.len() > 14 else 0.0
+    season_worth = f[14].to_float() if f.len() > 14 else 0.0

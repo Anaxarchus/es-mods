@@ -1,0 +1,103 @@
+# Copyright (c) 2026 by Anaxarchus
+#
+# Endless Sky is free software: you can redistribute it and/or modify it under the
+# terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later version.
+#
+# Endless Sky is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+# PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+# The way in.
+#
+# "Shoal: Whispers" is offered on landing at a human spaceport once the player
+# is a seasoned fighter (combat rating 1097 > e^7, rank 7). Declining it is not final:
+# it repeats until accepted. Accepting it fires "shoal: charted" (the link from
+# Arneb) at once, and landing at Breaker's Rest completes it.
+#
+# The salvage leads that used to be here are, since 0.5.0, one job per target
+# system in the Deep: "shoal deep jobs.txt" (tools/deep/gen.py; DESIGN.md
+# section 22). Their wrecks are the fleets "Shoal Lead ... Wreck".
+
+
+mission "Shoal: Whispers"
+	name "The Shoal"
+	description "An old salvager sold you the coordinates of the Shoal, a belt beyond Arneb where a drowned fleet lies. Find <destination>, the salvagers' station there."
+	landing
+	repeat
+	source
+		government "Republic" "Free Worlds" "Syndicate" "Independent" "Neutral" "Pirate"
+		attributes "spaceport"
+		not planet "Breaker's Rest"
+	destination "Breaker's Rest"
+	to offer
+		"combat rating" >= 1097
+		not "shoal: charted"
+		random < 40
+	on offer
+		conversation
+			`The spaceport bar is nearly empty at this hour. You have barely sat down when an old man in a salvager's coat takes the stool beside you without asking. One of his eyes is glass, and not the ordinary kind: it is pale and faintly luminous, and it does not quite follow the other one.`
+			`	"Captain <last>," he says. "I've heard of you. They say you've sunk more warships than some navies own." He waits for you to deny it. When you don't, he nods, as if you have passed a test, and taps the glass eye with a fingernail. "Ever seen one of these?"`
+			choice
+				`	"What is it?"`
+				`	"I'm not buying anything."`
+					goto no
+			`	"Shoal glass. It grows in a belt past Arneb, in a system that isn't on any chart you've ever bought. There's a fleet drowned in that belt. Hundreds of hulls. Some of them human." He shrugs. "Some of them older. All of them full of this." He taps the eye again. "There's a station out there. The people on it call themselves Breakers. They'll buy what you bring out, and they can build things from it you won't find in any outfitter this side of the Core."`
+			choice
+				`	"Then why isn't everyone out there?"`
+				`	"What's the catch?"`
+			`	He laughs, without much humor in it. "The fleet isn't alone. There are machines in that belt that keep it. Leave them be and they mostly leave you be. Start cutting, and they wake up. Stay too long, carry too much, and the big one comes up from underneath."`
+			`	He finishes his drink and sets the glass down very carefully. "I worked the Shoal for eleven years. I'm too old for it now. But I've still got the coordinates, and I'll sell them to someone who might live long enough to use them. Fifty thousand credits."`
+			choice
+				`	(Pay him.)`
+					goto yes
+				`	"Maybe some other time."`
+			label no
+			`	He shrugs and slides off the stool. "The belt will still be there," he says. "It's been there a long time."`
+				decline
+			label yes
+			`	He writes a string of numbers on a napkin and pushes it across the bar: a hyperspace route out of Arneb, along a link that no chart of yours has ever shown. "Breaker's Rest," he says. "Tell them Corwin sent you. Then don't tell them anything else."`
+			`	By the time you look up from the napkin, his stool is empty.`
+				accept
+	on accept
+		payment -50000
+		event "shoal: charted" 0
+		mark "~The Shoal"
+		"shoal: charted" = 1
+		log `Bought a hyperspace route from an old salvager named Corwin: a link out of Arneb to the Shoal, a hidden belt where a drowned fleet lies, guarded by old machines. There is a salvagers' station there called Breaker's Rest.`
+	on complete
+		"shoal: welcomed" = 1
+		"shoal: maw told" = 1
+		conversation
+			`The docking clamps of Breaker's Rest are older than your ship and twice as loud. The airlock opens on cold air, the smell of cutting fluid, and a woman with welding goggles pushed up into iron-grey hair, who looks your ship over before she looks at you.`
+			`	"New face," she says. "Corwin's coordinates?" You nod. "He sells them about once a year. I'm Hesper. I run the cutters." She does not offer to shake hands. Hers are scarred to the wrist.`
+			`	She walks you along the docking ring, past crates of pale glass chalked with names and prices. "Here's how it works. Glass comes out of the geodes and out of the wrecks. Cores come out of the wardens, if you can put one down. Lattice comes from deeper than that. You bring it here." She stops at a hatch with a hand-painted sign: BREAKERS' YARD. "Whatever you have bolted into that hull, our cutters can make it better. Bring it in, with refined stock and credits, and the yard reworks it a mark at a time. Some of us keep yards at Haven, over in Arneb, and out at Farpoint too. The cutters only work refined stock, mind: ten measures of raw glass make one of refined, three cores make one. We do the refining here, free." She jerks a thumb at the next hatch. "The workshop builds stewards to order. That's on the job board."`
+			`	"The board carries salvage leads, too. Somebody spots a wreck worth having and hasn't got the ship to go and get it. You board it, they get a finder's fee, you keep what you carry out."`
+			`	At the end of the ring there is a long window, and beyond it the belt: rock and ice and, here and there among them, the long dark shapes of hulls that will never fly again. Something pale glints between them and is gone.`
+			`	In the middle of it all, where a star should be, light bends in a slow, pale spiral around nothing at all. Hesper follows your eyes. "The Maw," she says. "This belt is picked over. The real wrecks are down there, in the Shoal proper. Go through and you come out in the Sounding, and past that the water gets deeper, and the deeper it gets, the richer the wrecks and the worse everything else. We keep a shed in the Sounding: Breakers' Haven. Fuel and a lock on the door, nothing more. And the only way back up is the way you went down."`
+			`	"One more thing," Hesper says. "The belt doesn't like being disturbed. You'll find out what that means. When you do, leave."`
+			choice
+				`	"Thanks for the warning."`
+				`	"I can handle a few machines."`
+			`	"Don't thank me," she says, already walking away. "Bring back glass."`
+		log "Factions" "Breakers" `The Breakers are the salvagers of Breaker's Rest, an outpost in the Shoal. They cut glass from the belt and strip the drowned fleet, and their yard reworks a ship's outfits with refined Shoal materials, at Breaker's Rest and at smaller yards on Haven and Farpoint. Their job board carries workshop jobs for wardens' stewards and salvage leads on marked wrecks.`
+		log `Reached Breaker's Rest, at the edge of the Shoal. Met Hesper, who runs the Breakers' cutters. The black hole at the centre of the system, the Maw, leads down into the Shoal proper, where the richest wrecks are; the Breakers keep a refuelling shed, Breakers' Haven, in the first system down, and the Maw's far end is the only way back. The Breakers' Yard upgrades the outfits installed on a ship with refined glass, refined warden cores and lattice, here and at Haven and Farpoint (the station refines raw glass and cores for free, ten glass or three cores to one); the job board lists the workshop's stewards and salvage leads. Was told to leave the belt before it gets too disturbed.`
+
+
+# Captains welcomed before 0.5.0 (DESIGN.md section 22) hear about the Maw on
+# their next landing at Breaker's Rest; the welcome tells new ones.
+mission "Shoal: Down The Maw"
+	landing
+	invisible
+	source "Breaker's Rest"
+	to offer
+		"shoal: welcomed" == 1
+		not "shoal: maw told"
+	on offer
+		"shoal: maw told" = 1
+		log `The Breakers have found a way down into the Shoal proper: the black hole at the centre of Breakers' Rest, the Maw. The richest wrecks are down there, and the deeper the water, the richer they are and the worse everything else gets. They keep a refuelling shed, Breakers' Haven, in the first system down, and the Maw's far end is the only way back up.`
+		conversation
+			`Hesper is waiting for you at the airlock, which she has never done before. She has a slate under her arm and a look you have not seen on her: something between excitement and dread.`
+			`	"You'll want to hear this," she says, and walks you to the long window at the end of the docking ring. Out where the Shoal's dim star used to hang there is now a slow, pale spiral of bent light around nothing at all. "The Maw. It opened while you were away. Or it was always there, and the belt finally gave it up." She taps the slate. "It goes down. Into the Shoal proper. The wrecks we've been cutting up here are the scraps that drifted up out of it."`
+			`	"We've sent three boats through. Two came back. Past the far end there's a quiet patch, the Sounding, and we've already put a shed there, Breakers' Haven: fuel and a lock on the door, nothing more. Past the Sounding the water gets deeper, and the deeper it gets, the richer the wrecks and the worse everything else. The stars go dim down there, so watch your fuel." She looks at you. "And the only way back up is the way you went down. The board will carry jobs down there now. The belt up here will be quieter. Mostly."`
+				decline

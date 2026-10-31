@@ -301,6 +301,10 @@ int raid_chance = 12
 // staying 1..raid_max_dwell days at each, then goes home.
 int raid_range = 4
 int raid_max_dwell = 3
+// Days every flotilla (war, relief, raid, a squadron, one going home) stays in
+// a system it has just jumped to before it moves on: time for the player to
+// hear of it and get there.
+int linger = 1
 // Strength of a small, medium and large raid, and the odds of each (small, medium; else large).
 int raid_small = 60
 int raid_medium = 110

@@ -1394,3 +1394,325 @@ These cost time before:
 - Pilot state lives in storage (`data`/`set_data`) or conditions, never in globals
   that outlive a load.
 - Spawn only in `on_enter`; open panels only from player hooks.
+
+### M4 (2026-10-28): growth and innovation — the plan
+
+The user asked for a major release that makes Corporations "a super deep, super
+engaging corporation sim": companies that research and grow instead of
+stagnating, valuations in the billions (canonical companies near 1B at the
+start, smaller ones at 1M, 10M or 100M), a player company that can start at
+1M, 10M or 100M and be kept alive with injections of cash, and everything else
+left to the designer. They want to play it fresh, so player-facing text does
+not explain the numbers below; this section does.
+
+**1. Scale.** Money per unit of work ×25 (`UNIT` 250k, `VARIABLE` 175k,
+`CAPITAL` 37.5M a unit of capacity; `UPKEEP` 11k, a little under ×25, with
+`BASE_MARGIN` 0.13 for 0.06: margins were thin at the new scale). Capacity units keep their
+meaning (canonical companies 10–20), so contract counts and loads for the
+large companies stay as they were; small companies have fractions of a unit
+(a 1M company about 0.02). Hull income scales with it (`RESTOCK_MARGIN`,
+`ROYALTY`). Shares: canonical companies ~20–40M shares at 25–60 credits;
+small ones priced 5–40. News thresholds scale.
+
+**2. Demand anchored to an economy.** Each sector's base demand
+(`demand_base[s]`, running load units) is set at setup from the sector's
+capacity, then grows `ECON_GROWTH` a year and moves with the cycle, wars and
+crises. Contracts are sized against an anchor company (drawn by capacity^0.6):
+load = its effective capacity × 8–40%, near it; the number issued a day is
+the demand over the expected load-days, so a sector of small companies gets
+many small contracts and the economy, not the companies' size, sets how much
+work there is. A company does not bid on work under 2% of its capacity.
+Contracts that lapse are unmet demand; new listings follow it.
+
+**3. Bidding against the industry.** A bid blends the bidder's cost with
+the sector's reference cost (capacity-weighted mean cost factor):
+`bid = (½ own + ½ reference) × (1 + margin)`, so a cheaper company both wins
+more work and earns more on it (before M4 a lower cost lowered the profit on
+each contract).
+
+**4. Technology** (`Research.dados`). Three permanent levels per company:
+process (cost factor `1 − 0.35(1 − e^(−P/8))`), scale (effective capacity
+`× 1 + 0.5(1 − e^(−S/8))`: more work from the same yards, upkeep on the
+yards) and quality (the level reliability recovers toward at each report,
+`0.70 + 0.28(1 − e^(−Q/6))`). Efficiency stays as the company's condition
+(noise and shocks around 1.0, no longer pulled systematically). A company
+spends `rd_rates[rd]` (0, 2, 5, 9, 14%) of its potential revenue a day on
+one focus; a breakthrough comes when the spending passes the level's cost
+(`R0 × capacity^0.6 × 1.32^level`, half under the sector's frontier − 2:
+laggards catch up) times a hidden draw (0.6–1.5). Breakthroughs are news and
+move the price. Chiefs choose by trait (visionary high, crooked low), by need
+(busy → scale, unreliable → quality, else process) and by how far behind the
+sector frontier they are; R&D stops in distress. Canonical companies start at
+levels 5–10, invented ones 0–4. The market values R&D: 60% of it is added
+back to the earnings fair value rests on.
+
+**5. Corporate finance** (`Capital.dados`). Expansion when busy is funded
+from raised money, then spare cash, then debt (aggressive chiefs borrow
+more), and when that falls short and the shares are dear, a secondary
+offering (≤15% new shares at 4% under the market, 180 days apart). Raised
+money not yet spent (`Company.raised`) counts in fair value. Cash-rich
+companies trading under fair value buy back up to 3% a report. Shares split
+10-for-1 over 800 credits. Fair value's multiple rises with growth (smoothed
+capacity growth) and is a little higher for canonical blue chips; small
+companies are more volatile.
+
+**6. The player's company.** Any sector; founded at 1M, 10M or 100M (75%
+yards, 25% cash; a 1% registration fee). Topics on the Company tab: research
+(focus, budget), growth (build capacity, growth policy), finance (inject cash
+any time: private, it is cash; listed, new shares to the player at the price;
+IPO; offerings; buybacks; payout), strategy (margins, chief), ships (freight
+and security, API 10). From the market tab it can bid to take over a rival
+(the AI buyout machinery with the player's company as suitor). Reports and
+milestones are messages.
+
+**7. Board seat** (10%): direct a company's research (focus and budget) as
+well as its payout and bidding; allow or forbid offerings.
+
+**8. Migration.** A pilot from before M4 ("corporations 1") gets a new
+exchange: holdings are bought out at the last price, shorts closed there, the
+player's company is dissolved and paid out (ships back), running restocks and
+tenders are dropped (shelves reorder), crises end (prices restored); hull
+orders, shelves, losses, news, standing and fines owed carry over.
+
+#### M4 as built (2026-10-28)
+
+Where the build differs from the plan above, and why:
+- R&D budgets are 0 / 1 / 2.5 / 4.5 / 7% (`rd_rates`) of potential revenue
+  (0–14% planned: at net margins near 15% the top levels ate the profit),
+  `R0` 0.86M. Growth plans 0 / 3 / 6% of the yards a report (6 / 12% let a
+  busy company double in a year and fed the growth premium). `GROWTH_PE`
+  0.6, the multiple clamped 0.9–1.3.
+- Anchors are drawn evenly among a sector's companies (not by capacity:
+  that starved small companies 50-fold); a company over 95% busy is passed
+  over once. Derived demand (mining, parts, freight, patrols) keeps its old
+  rates in load, as anchored contracts (`DERIVED_LOAD` 1.7).
+- Hull income: `RESTOCK_MARGIN` 0.02, `ROYALTY` 0.008 (2× and 2× the old
+  rates against 25× the work's money): at 0.08 / 0.03 shipbuilders earned
+  four times other sectors per unit of capacity.
+- A pre-M4 bug, fixed: a shipyard's cost fell by a subcontract's budget when
+  the subcontract was put out, so one that lapsed left the shipyard paying
+  for nothing (with many lapsing, shipbuilders made ~47% margins). Now its
+  cost falls only when a supplier takes the work (`award`).
+- Antitrust: only a company that bought rivals answers for its share of its
+  sector's capacity. With companies from 1M to billions in one sector, a
+  canonical company among newcomers holds 90%+ by growing, and was broken up
+  every 90 days (13 breakups in 14 years); its growth was blocked too. The
+  value line (15% of the exchange, not canonical) and merger reviews stand.
+- The player's company starts `LAG` 2 levels under its sector's average, at
+  efficiency 0.96; its first cash counts as raised (a new company is worth
+  what was paid). Established companies cannot be taken over (hull designs,
+  orders and refits are tied to them by name).
+- Tips: a breakthrough due in 4–25 days at today's budget (kind 3).
+
+Numbers (this machine; the old release measured here too):
+- QuickJS `on_day` 5000 days: 7.94 ms (M3 build here: 7.03); buying player
+  8.04, at war 9.07; slowest 43–47 ms (M3 31.6). State 76 KB (largest 83),
+  buying 91, at war 97 KB.
+- `growth.mjs` (3 worlds): the exchange opens at 20–21B (canonical companies
+  0.7–1.8B, newcomers 0.5M–270M) and runs 15–41B over ten years with the cycle
+  (a depression takes it down by half); top companies 2–5B; 2–9 companies
+  under 5M; 0–2 bankruptcies and 10–20 buyouts a decade; 20–70 breakthroughs a
+  year; 5–20 offerings and 8–28 buybacks a year. Profit per unit of effective
+  capacity a day (2 years in): 10–15k in most sectors, ships 13.7k, mining and
+  security 25–28k (busier).
+- `probe.mjs` (2 worlds, 10 years): buyout arbitrage −4…−7%; 60-day lows /
+  highs / random within about a point (+1.0…1.6% / +1.1…1.6% / +0.4% a month);
+  mean |30-day move| 11%; shorts −3…−6%; perfect tips net −0.3…−0.5%
+  (earnings), −5…−8% (crises), −10% (tenders).
+- `npm test`: 107 Corporations tests (m4.test.mjs 14). The migration test
+  loads `test/v1-market.json`, a market the M3 release saved (holdings, a
+  short, a company of the player's).
+- Player companies left alone for three years (`steady`, default research):
+  100M ones roughly double; 10M ones hold their value; 1M ones struggle
+  against other micro-caps (the hard start); research, sector choice, ships
+  (freight, security) and money put in are the levers.
+
+#### M4 review fixes (2026-10-28, after an independent review)
+
+Exploits closed (the reviewer's scripts reproduced each):
+1. **IPO, then buy the market out and dissolve** (+55M on a 100M company):
+   the listing's money was not `raised`, so fair value fell well below the
+   cash behind each share, and money put in bought shares at that price. Now
+   the IPO's money is raised (and sets `last_offer`: no offering straight
+   after), and money put in buys shares at the price, fair value or what
+   dissolving would pay a share, whichever is most.
+2. **Money in during a rival's bid** (+8.7% a week): refused while a suitor bids.
+3. **Selling a stake to one's own company** (+47%): no votes, demands or
+   sale on a bid by the player's company; `Board.sell` checks the suitor can pay.
+4. **Offerings of the player's company on its own**: only at the player's word.
+5. **A board's ban on new shares outlived the seat**: lapses at the next
+   report without a seat. Board research directions: once a report.
+6. **Front-running one's own bid** (buy the target, bid, sell into the jump,
+   dissolve to kill the bid): no dissolving while the company bids. A bid for
+   a company the player holds draws scrutiny.
+
+Also: the takeover's financing check and its cost count the same shares;
+the steady plan no longer borrows for the player's company, and borrowing
+keeps the cash reserve; old news after a migration loses its company links;
+the research frontier is cached by the day simulated; two capacity checks
+missed `eff`.
+
+Balance, found with the review's longer runs: canonical companies never
+gave back idle yards while profitable (a ratchet: up in booms, never down),
+so one could pass a quarter of the exchange in a depression. They now shrink
+to their floor like anyone, and stop growing and buying at
+`CANON_VALUE_CAP` (15%) of the exchange. Shipbuilders' base demand is
+`demand_shares[0]` 0.72 of the others' (their restocks and tenders come on
+top), consumer goods 1.12. Five worlds, 14 years: largest single company at
+any time 16–20%, shipbuilders 39–54% at the end (one world over 45%). 109
+Corporations tests (m4.test.mjs 16).
+
+#### Ships handed over for good (2026-10-28)
+
+The user did not want ships moving back and forth: a ship assigned to the
+player's company (freight or security, API 10 `call:ship_remove`) now leaves
+the fleet for good (`Charter.contribute`), adding `ship_capacity × CONTRIBUTE`
+(0.75) to the company's capacity as firm, "sold" capacity. It counts as money
+put in (basis; once listed, new shares at `Capital.inject_price`) and is worth
+nothing on dissolving. Parking, taking back and selling a ship to the company
+are gone; ships parked before this are handed back on the first day.
+
+#### Security fleets and sweeps (2026-10-28)
+
+The user: security companies keep real fleets of real ships; besides their
+ordinary contracts, occasional contracts send a flotilla against a pirate
+force; losses are real and must be replaced; better ships lose less.
+Built in `src/Fleets.dados` (its header has the rules and numbers):
+- `Company.fleet` ("model:n;...", field 67): warships (the hull table's
+  warship and interceptor categories, not military). Capacity stays what the
+  company paid for; the fleet follows it a hull a day (`reconcile`): short,
+  it takes a hull off a human shelf with two or more (`Market.npc_sell`, the
+  owner's royalty); over, it retires its cheapest. Prudent and visionary
+  chiefs buy the best hulls the shortfall allows, others half as dear. New
+  companies (and spin-offs) are seeded from the table directly.
+- Sweeps: contract kind 6 (`OPERATION`), `units` the threat in 100k, `model`
+  the flotilla, `origin`/`depart` where and when it left. Issued at 1.2% a day
+  per region near pirates with a loss index of 1.8+, and at 4.8% a day per
+  Diplomacy pirate raid (strength × 200k); pay 45% of the threat. Bidders
+  need 1.2× the threat in quality-weighted strength at home; the winner sends
+  its best ships up to its chief's force (1.2–2×), a day a jump. Win chance
+  r²/(r²+1); each ship lost with 0.25/r × (1.4 − 0.9 q) (×2 in a defeat),
+  q = how well built (log of price, 300k → 0, 10M → 1). Lost ships take their
+  capacity with them. A win quiets the region's pirate and raid heat by 40%.
+- The player's job (boards within 4 jumps while the flotilla is on its way):
+  `npc kill` pirates (Small/Large Core Pirates by the threat) and up to 6 of
+  the company's ships as separate `npc` blocks (government Merchant), each
+  with `on destroy` → "corporations: op <id> lost <k>". Taken, the sweep waits
+  for "won" or "failed". Not yet run through the real game's parser
+  (`tools/validate-jobs.mjs` needs the game): check the job in game.
+- A warship handed to the player's security company joins its fleet.
+- `DEBT_LIMIT` 0.6 → 0.45: at the new scale companies almost never failed
+  (0 distress in some 14-year worlds); now 0–15 distress and 0–2 bankruptcies.
+Numbers (4 worlds, 14 years): ~300 sweeps offered, 70–130 won, 30–60 lost,
+115–335 ships lost; QuickJS `on_day` 8.15 ms (7.35 before the fleets).
+
+### 0.4 (2026-10-29): the chiefs' pool
+
+The user asked to deepen the chief executives: a fixed pool shared by every
+company (the player's too), hidden stats that run the company, career
+records, prices that follow them, hiring on experience and budget, careers of
+about ten years, a UI to browse, hire, poach and fire; then (same day)
+poaching both ways with a counter-offer, and board ousters kept on the
+record. The player plays spoiler-free: nothing player-facing names a stat.
+Built in `src/Chief.dados` (one chief, `i|` line) and `src/Executives.dados`
+(rewritten; its header has every rule and number); `plugin.txt` 0.3 → 0.4.
+
+**The pool.** `POOL_SIZE` 64 (`MAX_LISTED` 48 plus the player's company plus
+spares), `Market.chiefs` / `chief_by_id`, its own dice (`chief_rng`, saved in
+`I|`, so the pool does not move the market's dice). `Company.chief` (field 68)
+is the chief's id; `c.ceo` keeps the name for every news line and job text.
+A new world seeds 64 chiefs part-way through careers (`CAREER` 3650 ± 365
+days). A chief past `retires` leaves for good (news), a new one with no record
+takes the place, and its company hires again. The daily sweep also frees the
+chief of a company gone (`END_GONE`) and gives a listed company without one a
+chief. The size is constant every day (tested, and checked by `chiefs.mjs`).
+
+**Stats → levers** (each ~ normal × 0.45, in −1…1, saved to the thousandth):
+drive: bid margins −0.02 × drive (`margin_of`, in `award`, `favourite`,
+`Fleets`); thrift: efficiency drift −0.006 × thrift a report (with the 0.08
+pull back to 1.0, about −7% cost at +1); vision: research progress
+× (1 + 0.3 × vision); nerve: good-turn chance +0.08 × nerve, crisis costs and
+the recall's reliability hit × (1 − 0.35 × nerve), reliability recovery
+× (1 + 0.4 × nerve); integrity: under −0.5 the chief is crooked. The M3
+traits are now a *style* derived from the stats (`style()`: crooked, else
+visionary when vision > 0.35 and > |drive|, else aggressive / prudent by
+drive's sign) and keep every M3/M4 lever (payout, buyouts, plans, debt,
+research budget, fleet force, scandals, window dressing). No label is shown.
+
+**Record.** At each report after a stint's first, the score is the change in
+the company's *standing* since that first report: 12 × (norm / eff − sector
+rate) / CAPITAL (norm: smoothed earnings with R&D added back). Raw monthly
+earnings against the sector were tried first: sd 0.15–0.23 a report, a −0.15
+bias for companies under 10M, and no link to the stats; the change in the
+smoothed standing removes what the chief inherited and the size bias. Kept:
+reports and score sums for the stint and the career, ousters, and the last 8
+stints (`company~from~to~reports~sum~end`). Rating = sum / (n + 6).
+
+**Price.** 40k × e^(35 × rating, capped ±0.1) × 0.55 per ouster, 6k…2M a
+year; signing 25% of a year; the salary is a daily cost (`finances`). Budget:
+3% of a year's upkeep + 2% of cash. A chief no board could afford goes to a
+company that can pay less at what it can pay (small companies).
+
+**Hiring** (`pick`): free chiefs within budget, by 1.0 × years in office / 10
+(capped) + 8 × rating − 0.8 per ouster (± 0.1 noise), not the one who just
+left (`leaving`) nor one retiring within 60 days; none affordable, the
+cheapest. **Poaching:** at a report, 3% of the time a listed AI company looks
+for a sitting chief with 18+ reports, no ouster, a rating 0.02 over its own
+chief's and over 0.02, a year left, affordable at 1.3× the asking price, and
+pays the old company a year of that salary; the old company hires again (news).
+The player's chief is not taken at once: an offer (`offer_*` in `I|`), a
+message, 10 days to match from the Chiefs tab (salary to the offer, a
+retention bonus of 25% of it), else the chief goes and the player runs the
+company. **Ousters:** at a report, with 6+ stint reports and a mean score under
+−(0.045 + 0.3 / reports), the board votes (50%) the chief out: an ouster on
+the record, `END_OUSTED` in the history, news, a new chief. A scandal now
+counts as an ouster (`END_SCANDAL`). The old "three losing reports" firing is
+gone. The player's company: no ouster while the player controls its board
+(private, or 50%+ held); listed and held under 50%, its board can oust the
+player's chief and appoints a successor (the player is told).
+
+**UI.** A "Chiefs" button on every exchange tab opens the pool: chief, where
+(yours marked), years in office, record (points a year, months), VOTED OUT
+(×n), asking salary; free chiefs first, then by record. The sidebar: post and
+salary, career dates, record, ousters, asking price and signing fee, the career
+stint by stint (an ouster in capitals), any offer for the player's chief, and
+what hiring or poaching costs. Buttons: Hire (free), Poach (at an AI company),
+Let go and Match offer (the player's chief). The Company tab's Strategy topic
+has Chiefs and "Let chief go" (the old trait-choosing "Hire chief" is gone);
+the company sidebar's chief line gives the record and past ousters.
+
+**Saves.** Still "corporations 2". A state with no `i|` line (0.3 and
+earlier) is read into a pool (`Executives.migrate`, the market's dice so a
+save loads the same twice): each listed company's chief keeps name, post and
+`ceo_since`, with stats drawn to give back its old trait; each `a|` executive
+joins free with its last company as a stint; new chiefs fill to 64;
+`must_save`. `a|` is no longer written.
+
+**Numbers** (`tools/chiefs.mjs`, 5000 days, 4 worlds): ousted 26–38,
+poached 59–97, retired 77–86, scandals 10–22; distress 0–40 and bankruptcies
+0–3 (baseline on the same worlds 8–16 and 1–2); asking salaries median
+30–40k, top 0.2–1.3M; records correlate with thrift +0.15…+0.31 in most
+worlds (noisy; drive and integrity often negative: low margins earn less,
+crooks dress their books until a scandal). V8 `on_day` 1.1–2.2 ms (baseline
+1.5–2.1); `Executives.daily` 0.04 ms. QuickJS `on_day` 5000 days 13.1 ms
+(baseline built here 12.5, run side by side). State 78 → 92 KB.
+
+**Tests.** `test/chiefs.test.mjs` (13): pool size through retirements,
+poachings and saves; retirement and replacement; performance tracking and the
+history; stats reach the levers and thrift lowers costs; price follows the
+record; hiring on experience within budget; AI poaching and the seat refilled;
+the player hires, poaches and lets go through the tab; an AI offer for the
+player's chief matched or lost; ousters (leniency, the record kept, shown);
+an ouster lowers preference and price; the player's board; migration from a
+0.3 save. M3 tests adapted (sidebar without traits, the scandal's chief back
+in the pool, the hire through the tab, the ouster replacing the
+three-losing-reports test); two seed-dependent tests made robust (the margin
+test's contract load, the takeover test's target and regulator line).
+`npm test` 270/270; typecheck clean; `npm run check` 600 steps;
+`validate.py` 0 errors; `validate-jobs.mjs` 203 job texts, 0 warnings.
+
+**Risks / for playtesting.** The record is noisy (a chief's effect builds
+over a year or two); ousters and poachings at ~2 and ~5 a year may want
+tuning. The Chiefs tab has not been seen in the real game (button count on
+the market tab grows by one). QuickJS `on_day` was already far over the
+loader's 2 ms warning before this release; the pool adds little.

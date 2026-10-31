@@ -1,0 +1,141 @@
+class Intro
+
+// The intro mission line (data/intro.txt). The Honourable Peregrine
+// Wexley-Thorne, who has spent his inheritance, means to revive his family's
+// old team with the player's sponsorship: he scouts four people across human
+// space, talks the league into a place in the B League, and on the eve of
+// the season leaves for his childless great-uncle's estate, signing the team
+// over to the player. The finale sets the condition "racing: intro done" to
+// 1; the mod's next flush calls handover, which revives the family team in
+// the player's reserved place with the four on cheap five-season contracts
+// and answers GIVEN (or REFUNDED, the sponsorship paid back, when the player
+// owns a team or the place is taken by then). The mod sets the condition to
+// the answer, so it happens once; handover itself does nothing a second time.
+
+int GIVEN = 2
+int REFUNDED = 3
+// What the player paid Peregrine when the line began (data/intro.txt).
+float SPONSORSHIP = 400000.0
+string NAME = "Wexley-Thorne Racing"
+// Where the team is run from when the handover happens in flight.
+string HOME = "Hestia"
+// The family team's past, in seasons before the handover: founded, defunct.
+int FOUNDED_AGO = 50
+int DIED_AGO = 12
+// Its record (Team.life): races, wins, podiums (by car); teams' titles B, A,
+// S; drivers' titles; promotions; seasons in B, A, S.
+[]int RECORD = [760, 70, 210, 1, 2, 3, 4, 3, 4, 12, 22]
+// The contracts: seasons (this one included).
+int YEARS = 5
+
+// The four Peregrine signs (the missions' vignettes): the seat, the role,
+// the hidden skill, the peak they grow toward and the trait; their record
+// (races, wins, podiums, points, titles, the highest league, the market's
+// rating of it); seasons of career behind and ahead; the weekly salary.
+[]string names = ["Wren Achterberg", "Lucius Varga", "Ambrose Kettle", "Dolores Mbeki"]
+[]int seats = [0, 5, 1, 3]
+[]int roles = [0, 0, 1, 3]
+[]float skill = [0.25, 0.3, 0.55, 0.4]
+[]float peak = [0.75, 0.32, 0.55, 0.55]
+[]float trait = [0.35, -0.25, 0.4, 0.5]
+[]int races = [0, 120, 380, 0]
+[]int wins = [0, 14, 41, 0]
+[]int podiums = [0, 38, 120, 0]
+[]int points = [0, 1150, 3400, 0]
+[]int titles = [0, 0, 3, 0]
+[]int best = [0, 1, 2, 0]
+[]float rating = [0.0, 0.3, 0.5, 0.0]
+[]int behind = [0, 12, 38, 0]
+[]int ahead = [16, 7, 6, 12]
+[]float salary = [900.0, 1500.0, 2000.0, 600.0]
+[]string bios = [
+    "Wren Achterberg grew up on Bourne racing borrowed courier skiffs through the freight lanes after dark, and has the citations to prove it. She has never driven a racing ship, never sat a league licensing test and never lost a race she finished. Scouts who have seen her fly use the word 'unreasonable', admiringly. She is nineteen, and gets faster every time anyone looks.",
+    "Lucius Varga drove twelve seasons in the B and A Leagues, won fourteen races, and then spent five years playing a racing pilot on a Martini holovid drama, 'Redline Hearts', in which he won everything. He is smooth, careful with a car and impossible to rattle, and insists that the cape was the director's idea. He signed with the Wexley-Thorne revival on condition that he does his own stunts.",
+    "Ambrose Kettle engineered the Wexley-Thorne cars of the S League title years and has not been wrong about a setup since before most of the paddock was born. He retired to Valhalla to build clockwork birds and correct the physics faculty, who banned him from their laboratories. He is old, slow on the stairs and quick everywhere else, and he came back, he says, because the young are doing it all wrong.",
+    "Dolores Mbeki ran the fastest refuelling crew in the Syndicate yards on Foundry, where she timed the shift whistle and found it slow. She has never worked a pit lane, and the B League's crews are already nervous. She signed Peregrine's contract in two point nine seconds, mostly to end the meeting."
+]
+
+Fmt fmt = Fmt()
+
+// The team the line hands over: the archive's, or put there now.
+Team legacy(World w):
+    for a in w.archive:
+        if a.name == NAME:
+            return a
+    return w.add_legacy(NAME, w.season - FOUNDED_AGO, w.season - DIED_AGO, RECORD)
+
+// One of the four, made as the missions tell them, and signed.
+Person sign(World w, Team t, int k):
+    Person p = Person()
+    p.id = w.next_person
+    w.next_person += 1
+    p.name = names[k]
+    p.role = roles[k]
+    p.skill = skill[k]
+    p.skill0 = skill[k]
+    p.peak = peak[k]
+    p.trait = trait[k]
+    p.joined = w.day - behind[k] * w.WEEKS * 7
+    p.retires = w.day + ahead[k] * w.WEEKS * 7
+    int n = races[k]
+    p.races = n
+    p.wins = wins[k]
+    p.podiums = podiums[k]
+    p.points = points[k]
+    p.titles = titles[k]
+    p.best_league = best[k]
+    p.stints = 1 + behind[k] / 4
+    if n > 0:
+        p.dnfs = n / 12
+        p.crashes = n / 25 if p.role == 0 else 0
+        p.m_n = n
+        float m = 4.0 * p.skill if p.role == 0 else (0.6 * p.skill if p.role == 1 else 2.95 - 0.5 * p.skill)
+        p.m_sum = m * float(n)
+        p.s_n = n
+        p.s_sum = rating[k] * (float(n) + w.staff.PRIOR)
+        // A few crises handled, most of them well.
+        p.ev_n = behind[k] / 4
+        p.ev_good = p.ev_n / 3
+        p.ev_bad = p.ev_n / 6
+    w.staff.add(w, p)
+    w.written[p.id] = bios[k]
+    w.staff.hire_at(w, t, p, salary[k], YEARS, seats[k])
+    return p
+
+// The finale: the family team revived in the player's reserved place in the
+// B League (World.revive: its name, history and part of its prestige, a new
+// team's car, its first cash), the four signed on YEARS-season contracts at
+// their salaries, and the player its owner. Once: answers what it did
+// before. When it cannot (the player owns a team, the reserved place is
+// taken, the name is someone else's), the sponsorship is paid back.
+int handover(World w, string planet):
+    if w.intro != 0:
+        return w.intro
+    string why = ""
+    if w.has_team():
+        why = "you own a team already"
+    else if !w.reserved_free():
+        why = "your reserved place in the B League is taken until the season's end"
+    Team a = Team()
+    if why == "":
+        a = legacy(w)
+        if a.id == 0:
+            why = "another team races under the name"
+    Team t = Team()
+    if why == "":
+        t = w.revive(a.id, planet if planet != "" else HOME)
+        if t.id == 0:
+            why = w.not_revivable(a).to_lower()
+    if why != "":
+        w.intro = REFUNDED
+        w.pending_payout += SPONSORSHIP
+        w.player_events.append("Racing: a letter from the Wexley-Thorne family's solicitors. As " + why + ", the league cannot transfer " + NAME + " to you. Your sponsorship of " + fmt.credits(SPONSORSHIP) + " credits is returned in full, with Peregrine's apologies and a pressed flower.")
+        return REFUNDED
+    []string signed = []
+    for k in 0..<names.len():
+        Person p = sign(w, t, k)
+        signed.append(p.name + " (" + w.names.role_names[p.role].to_lower() + ", " + fmt.credits(p.salary) + " a week)")
+    w.intro = GIVEN
+    w.note(0, "The Honourable Peregrine Wexley-Thorne hands " + NAME + " to a new owner on the eve of its return, and leaves for the country.")
+    w.player_events.append("Racing: " + NAME + " is yours. Peregrine has signed it over and gone to his great-uncle's estate on Hestia. The team races in the " + w.names.league_names[0] + " from its next round, with " + signed.join(", ") + " on contracts to the end of season " + string(w.season + YEARS - 1) + ". The research and commercial seats are yours to fill (Team tab).")
+    return GIVEN

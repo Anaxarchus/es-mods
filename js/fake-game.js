@@ -30,8 +30,11 @@ const DEFAULT_FLEET = [
 	{ uuid: "00000000-0000-4000-8000-000000000002", name: "Escort", model: "Shuttle", outfits: { "Cargo Expansion": 1 } },
 ];
 const DEFAULT_OUTFITS = {
-	"Energy Blaster": { category: "Guns", mass: 10, cost: 14000, weapon: true, attributes: { "outfit space": -10, "weapon capacity": -10, "gun ports": -1 } },
-	"Heavy Rocket Launcher": { category: "Secondary Weapons", mass: 18, cost: 62000, weapon: true, attributes: { "outfit space": -18, "weapon capacity": -18, "gun ports": -1 } },
+	"Energy Blaster": { category: "Guns", mass: 10, cost: 14000, weapon: true, attributes: { "outfit space": -10, "weapon capacity": -10, "gun ports": -1 },
+		weaponStats: { "inaccuracy": 3, "velocity": 10.625, "lifetime": 48, "reload": 12, "firing energy": 5.8, "firing heat": 18, "shield damage": 10.6, "hull damage": 6.6 } },
+	"Heavy Rocket Launcher": { category: "Secondary Weapons", mass: 18, cost: 62000, weapon: true, attributes: { "outfit space": -18, "weapon capacity": -18, "gun ports": -1 },
+		weaponStats: { "inaccuracy": 1, "velocity": 8, "lifetime": 125, "reload": 240, "firing energy": 1, "firing heat": 250, "acceleration": 0.8, "drag": 0.1,
+			"trigger radius": 20, "blast radius": 150, "shield damage": 790, "hull damage": 670, "hit force": 900, "missile strength": 24 } },
 	"Heavy Rocket": { category: "Ammunition", mass: 1, cost: 3000, weapon: false, attributes: { "outfit space": -1 } },
 	"Hyperdrive": { category: "Systems", mass: 20, cost: 50000, weapon: false, attributes: { "outfit space": -20, "hyperdrive": 1 } },
 	"Cargo Expansion": { category: "Systems", mass: 5, cost: 20000, weapon: false, attributes: { "outfit space": -15, "cargo space": 15 } },
@@ -56,12 +59,15 @@ const DEFAULT_MODELS = {
 };
 
 // Energy and fuel are absolute amounts, as the game answers them; maxEnergy and
-// maxFuel give the fractions (mod API 10).
+// maxFuel give the fractions (mod API 10). x and y place them in the system
+// (mod API 11).
 const DEFAULT_SHIPS = [
-	{ name: "Flagship", model: "Sparrow", player: true, hull: 300, maxHull: 400, shields: 200, maxShields: 300, energy: 1200, maxEnergy: 1200, fuel: 400, maxFuel: 400, government: "Escort", strength: 300000 },
-	{ name: "Escort", model: "Shuttle", player: true, hull: 100, maxHull: 100, shields: 0, maxShields: 50, energy: 300, maxEnergy: 600, fuel: 300, maxFuel: 300, government: "Escort", strength: 180000 },
-	{ name: "Bandit", model: "Clipper", player: false, hull: 500, maxHull: 600, shields: 300, maxShields: 400, energy: 1600, maxEnergy: 2000, fuel: 300, maxFuel: 500, government: "Pirate", strength: 900000 },
+	{ name: "Flagship", model: "Sparrow", player: true, hull: 300, maxHull: 400, shields: 200, maxShields: 300, energy: 1200, maxEnergy: 1200, fuel: 400, maxFuel: 400, government: "Escort", strength: 300000, x: 0, y: 0 },
+	{ name: "Escort", model: "Shuttle", player: true, hull: 100, maxHull: 100, shields: 0, maxShields: 50, energy: 300, maxEnergy: 600, fuel: 300, maxFuel: 300, government: "Escort", strength: 180000, x: -120, y: 50 },
+	{ name: "Bandit", model: "Clipper", player: false, hull: 500, maxHull: 600, shields: 300, maxShields: 400, energy: 1600, maxEnergy: 2000, fuel: 300, maxFuel: 500, government: "Pirate", strength: 900000, x: 1800, y: 2400 },
 ];
+// Mod API 11: the governments ship_reactivate knows.
+const DEFAULT_GOVERNMENTS = ["Escort", "Free Worlds", "Independent", "Merchant", "Pirate", "Republic", "Syndicate"];
 
 // Mod API 10: the standard commodities, and each system's prices: [now, as the data sets it].
 const DEFAULT_COMMODITIES = ["Food", "Clothing", "Metal", "Plastic", "Equipment", "Medical", "Industrial", "Electronics", "Heavy Metals", "Luxury Goods"];
@@ -79,6 +85,11 @@ const DEFAULT_FEATURES = [
 	"call:notify", "call:outfit_stock", "call:outfit_stock_on", "call:set_outfit_stock", "call:ship_energy_fraction",
 	"call:ship_fuel_fraction", "call:ship_park", "call:ship_parked", "call:ship_remove", "call:timing_section",
 	"call:trade_base_price", "call:trade_price", "call:unlisten",
+	"runtime_definitions", "outfit_transfer", "ship_reactivate",
+	"call:define", "call:define_outfit_variant", "call:define_ship_variant", "call:defined", "call:ship_replace_outfit",
+	"call:outfit_take", "call:outfit_give", "call:ship_distance", "call:ship_x", "call:ship_y", "call:ship_reactivate",
+	"ship_outfits", "call:ship_outfit_kinds", "call:ship_outfit_at", "call:outfit_weapon_attribute",
+	"call:fleet_ship_planet", "call:fleet_ship_system",
 ];
 
 // What the game answers for a ship index out of range.
@@ -166,6 +177,90 @@ export class FakeBus {
 		this.lastDeliveries = deliveries;
 		return deliveries;
 	}
+}
+
+// Mod API 11: data-file text as the game reads it, into nodes: { tokens,
+// children }. Tokens are bare words, "quoted" or `backquoted`; children are
+// the lines indented under a node.
+function parseData(text) {
+	const root = { tokens: [], children: [] };
+	const stack = [{ depth: -1, node: root }];
+	for (const raw of text.split("\n")) {
+		const line = raw.replace(/\r$/, "");
+		const depth = line.match(/^[\t ]*/)[0].length;
+		const tokens = [];
+		const re = /"([^"]*)"?|`([^`]*)`?|([^\s"`]+)/g;
+		let m;
+		const body = line.slice(depth);
+		if (body.startsWith("#")) continue;
+		while ((m = re.exec(body))) {
+			if (m[3] !== undefined && m[3].startsWith("#")) break;
+			tokens.push(m[1] ?? m[2] ?? m[3]);
+		}
+		if (!tokens.length) continue;
+		while (stack[stack.length - 1].depth >= depth) stack.pop();
+		const node = { tokens, children: [] };
+		stack[stack.length - 1].node.children.push(node);
+		stack.push({ depth, node });
+	}
+	return root.children;
+}
+// An outfit node's children applied to an outfit, as far as FakeOutfit models it.
+function applyOutfit(outfit, children) {
+	outfit.attributes ??= {};
+	for (const { tokens, children: sub } of children) {
+		const [key, value] = tokens;
+		if (key === "weapon") {
+			outfit.weapon = true;
+			outfit.weaponChanges = [...(outfit.weaponChanges ?? []), ...sub.map((c) => c.tokens)];
+			// Mod API 12: its numeric keys override the base weapon's; a key alone is a flag.
+			outfit.weaponStats ??= {};
+			for (const { tokens: [k, v] } of sub) {
+				if (v === undefined) outfit.weaponStats[k] = 1;
+				else if (Number.isFinite(Number(v))) outfit.weaponStats[k] = Number(v);
+			}
+		}
+		else if (value === undefined) continue;
+		else if (key === "category") outfit.category = value;
+		else if (key === "display name") outfit.display = value;
+		else if (key === "description") outfit.description = value;
+		else if (key === "mass") outfit.mass = Number(value);
+		else if (key === "cost") outfit.cost = Number(value);
+		else if (Number.isFinite(Number(value))) outfit.attributes[key] = Number(value);
+	}
+	return outfit;
+}
+// A ship node's children applied to a model: its display name, its attributes'
+// category and cost, and its outfits (all of which must be defined). Answers
+// false for an outfit the game does not know.
+function applyShip(model, children, knows) {
+	for (const { tokens, children: sub } of children) {
+		const [key, value] = tokens;
+		if (key === "display name" && value !== undefined) model.display = value;
+		else if (key === "attributes" || key === "add attributes") {
+			model.attributes ??= {};
+			for (const { tokens: [k, v] } of sub) {
+				if (v === undefined) continue;
+				if (k === "category") model.category = v;
+				else if (key === "add attributes") model.attributes[k] = (model.attributes[k] ?? 0) + Number(v);
+				else model.attributes[k] = Number(v);
+			}
+			if (key === "attributes" && model.attributes.cost !== undefined) model.cost = model.attributes.cost;
+		} else if (key === "outfits") {
+			const outfits = {};
+			for (const { tokens: [name, n] } of sub) {
+				if (!knows(name)) return false;
+				outfits[name] = (outfits[name] ?? 0) + (n === undefined ? 1 : Number(n));
+			}
+			model.outfits = outfits;
+		}
+	}
+	return true;
+}
+// A node written back as text, for comparing definitions.
+function nodeText(node, depth = 0) {
+	const line = "\t".repeat(depth) + node.tokens.map((t) => (/[\s"]/.test(t) || t === "" ? (t.includes('"') ? "`" + t + "`" : '"' + t + '"') : t)).join(" ");
+	return [line, ...node.children.map((c) => nodeText(c, depth + 1))].join("\n");
 }
 
 // The game refuses an argument of the wrong type the way these do, with the
@@ -257,6 +352,17 @@ export class FakeGame {
 		this.sections = [];
 		this.bus = null;
 		this.busName = "";
+		// Mod API 11: what mods defined at runtime for this pilot, by
+		// "<kind>\u0000<name>": { kind, name, mod, text } or, for a variant,
+		// { kind, name, mod, base, changes }. This mod is `modName`; a test may
+		// add another mod's definitions (`definitions` option) to see refusals.
+		// Outfits the player carries as cargo (by outfit) and keeps in storage
+		// (by planet, then outfit); the governments ship_reactivate knows.
+		this.modName = options.mod ?? "mod";
+		this.definitions = new Map((options.definitions ?? []).map((d) => [d.kind + "\u0000" + d.name, { ...d }]));
+		this.outfitCargo = new Map(Object.entries(options.outfitCargo ?? {}));
+		this.outfitStorage = new Map(Object.entries(options.outfitStorage ?? {}).map(([p, o]) => [p, new Map(Object.entries(o))]));
+		this.governments = new Set(options.governments ?? DEFAULT_GOVERNMENTS);
 	}
 
 	fleetShip(uuid) {
@@ -404,10 +510,12 @@ export class FakeGame {
 		if ((s.outfits[outfit] ?? 0) <= (s.integrated[outfit] ?? 0)) return false;
 		s.integrated[outfit] = (s.integrated[outfit] ?? 0) + 1;
 		// It gets lighter, and gives back a share of the outfit space it takes up,
-		// in whole tons and units as the game does. Capacities stay as they are.
+		// in whole tons and units as the game does: outfit, weapon and engine space.
 		s.massSaved += Math.max(0, Math.round(o.mass * (1 - scale)));
-		const used = o.attributes?.["outfit space"] ?? 0;
-		if (used < 0) s.spaceSaved["outfit space"] = (s.spaceSaved["outfit space"] ?? 0) + Math.round(-used * (1 - scale));
+		for (const kind of ["outfit space", "weapon capacity", "engine capacity"]) {
+			const used = o.attributes?.[kind] ?? 0;
+			if (used < 0) s.spaceSaved[kind] = (s.spaceSaved[kind] ?? 0) + Math.round(-used * (1 - scale));
+		}
 		return true;
 	}
 	outfit_name(outfit) { const o = this.outfit(outfit); return o ? (o.display ?? outfit) : ""; }
@@ -547,6 +655,9 @@ export class FakeGame {
 		if (!s || !this.landed) return false;
 		if (on && s === this.fleet[0]) return false;
 		s.parked = on;
+		// Mod API 12: a ship parked here stays here; unparked here, it goes with the player.
+		if (on && s.system === undefined) { s.planet = this.planet_; s.system = this.here_; }
+		else if (!on && s.planet === this.planet_ && s.system === this.here_) { delete s.planet; delete s.system; }
 		return true;
 	}
 	ship_remove(ship) {
@@ -598,4 +709,203 @@ export class FakeGame {
 	timing_section(name) { str("name", name); this.sections.push(name); }
 	energy_fraction(i) { const s = this.ship(i); return s.maxEnergy ? s.energy / s.maxEnergy : 0; }
 	fuel_fraction(i) { const s = this.ship(i); return s.maxFuel ? s.fuel / s.maxFuel : 0; }
+
+	// Mod API 11: runtime definitions, replacing and moving outfits, and ships
+	// waking up. FakeGame models outfits and models as far as its own records
+	// go (see applyOutfit and applyShip), and the game's refusal rules exactly.
+	defKey(kind, name) { return kind + "\u0000" + name; }
+	// Whether a name may be (re)defined by this mod as `record`: true to define
+	// it, "same" when this mod already defined it so, false when refused.
+	mayDefine(kind, name, record) {
+		const old = this.definitions.get(this.defKey(kind, name));
+		if (old) {
+			const same = old.mod === this.modName && (old.text ?? "") === (record.text ?? "") && old.base === record.base && old.changes === record.changes;
+			return same ? "same" : false;
+		}
+		const table = kind === "outfit" ? this.outfits : this.models;
+		return !Object.hasOwn(table, name);
+	}
+	defineNode(node) {
+		const [kind, a, b] = node.tokens;
+		const record = { text: nodeText(node) };
+		if (kind === "outfit" && node.tokens.length === 2) {
+			const may = this.mayDefine("outfit", a, record);
+			if (may === "same") return true;
+			if (!may) return false;
+			this.outfits[a] = applyOutfit({ display: a, category: "", mass: 0, cost: 0, weapon: false, attributes: {} }, node.children);
+			this.definitions.set(this.defKey("outfit", a), { kind: "outfit", name: a, mod: this.modName, ...record });
+			return true;
+		}
+		if (kind === "ship" && (node.tokens.length === 2 || node.tokens.length === 3)) {
+			const name = b ?? a;
+			const may = this.mayDefine("ship", name, record);
+			if (may === "same") return true;
+			if (!may) return false;
+			const base = b === undefined ? undefined : this.models[a];
+			if (b !== undefined && !base) return false;
+			const model = base ? { ...JSON.parse(JSON.stringify(base)), display: name } : { display: name, cost: 0, category: "", licenses: [] };
+			if (!applyShip(model, node.children, (o) => Object.hasOwn(this.outfits, o))) return false;
+			this.models[name] = model;
+			this.definitions.set(this.defKey("ship", name), { kind: "ship", name, mod: this.modName, ...record });
+			return true;
+		}
+		return false;
+	}
+	define(text) {
+		str("text", text);
+		const nodes = parseData(text);
+		// Outfits first, so a ship may install an outfit the same text defines.
+		const ordered = [...nodes.filter((n) => n.tokens[0] === "outfit"), ...nodes.filter((n) => n.tokens[0] !== "outfit")];
+		let defined = 0;
+		for (const node of ordered) if (this.defineNode(node)) defined++;
+		return defined;
+	}
+	define_outfit_variant(name, base, changes) {
+		str("name", name); str("base", base); str("changes", changes);
+		const from = this.outfit(base);
+		const record = { base, changes };
+		if (!from || name === "") return false;
+		const may = this.mayDefine("outfit", name, record);
+		if (may === "same") return true;
+		if (!may) return false;
+		this.outfits[name] = applyOutfit(JSON.parse(JSON.stringify(from)), parseData(changes));
+		this.definitions.set(this.defKey("outfit", name), { kind: "outfit", name, mod: this.modName, ...record });
+		return true;
+	}
+	define_ship_variant(name, base, changes) {
+		str("name", name); str("changes", changes);
+		const from = this.model(base);
+		const record = { base, changes };
+		if (!from || name === "") return false;
+		const may = this.mayDefine("ship", name, record);
+		if (may === "same") return true;
+		if (!may) return false;
+		const model = { ...JSON.parse(JSON.stringify(from)), display: name };
+		if (!applyShip(model, parseData(changes), (o) => Object.hasOwn(this.outfits, o))) return false;
+		this.models[name] = model;
+		this.definitions.set(this.defKey("ship", name), { kind: "ship", name, mod: this.modName, ...record });
+		return true;
+	}
+	defined(kind, name) {
+		str("kind", kind); str("name", name);
+		if (kind !== "outfit" && kind !== "ship") return 0;
+		if (this.definitions.has(this.defKey(kind, name))) return 2;
+		return Object.hasOwn(kind === "outfit" ? this.outfits : this.models, name) ? 1 : 0;
+	}
+	// Maps and licenses are knowledge, not goods.
+	movable(outfit) {
+		const o = this.outfit(outfit);
+		return o && !o.attributes?.map && !outfit.endsWith(" License") ? o : undefined;
+	}
+	// The game allows this only in a hook the player started while landed, not
+	// in the outfitter's hooks; FakeGame checks the landing and that no
+	// outfitter ships are selected. A weapon needs the gun port or turret
+	// mount of the weapon it replaces; integrated outfits stay. Space and the
+	// other limits the outfitter checks are not modelled. Nothing is paid.
+	ship_replace_outfit(ship, from, to, count) {
+		str("from", from); int("count", count);
+		const s = this.fleetShip(ship);
+		const out = this.outfit(from);
+		const into = this.movable(to);
+		if (!s || !out || !into || from === to || count <= 0 || !this.landed || this.outfitterShips.length) return 0;
+		if (into.weapon && !out.weapon) return 0;
+		const n = Math.min(count, (s.outfits[from] ?? 0) - (s.integrated[from] ?? 0));
+		if (n <= 0) return 0;
+		s.outfits[from] -= n;
+		if (!s.outfits[from]) delete s.outfits[from];
+		s.outfits[to] = (s.outfits[to] ?? 0) + n;
+		return n;
+	}
+	storageHere() {
+		const where = this.planet();
+		if (!where) return undefined;
+		if (!this.outfitStorage.has(where)) this.outfitStorage.set(where, new Map());
+		return this.outfitStorage.get(where);
+	}
+	outfit_take(outfit, count, from) {
+		int("count", count); str("from", from);
+		if (!this.outfit(outfit) || count <= 0) return 0;
+		let taken = 0;
+		const takeFrom = (place) => {
+			if (!place) return;
+			const n = Math.min(count - taken, place.get(outfit) ?? 0);
+			if (n <= 0) return;
+			if (place.get(outfit) === n) place.delete(outfit);
+			else place.set(outfit, place.get(outfit) - n);
+			taken += n;
+		};
+		if (from === "cargo" || from === "any") takeFrom(this.outfitCargo);
+		if (from === "storage" || from === "any") takeFrom(this.storageHere());
+		return taken;
+	}
+	outfit_give(outfit, count, to) {
+		int("count", count); str("to", to);
+		if (!this.movable(outfit) || count <= 0) return 0;
+		const place = to === "cargo" ? this.outfitCargo : to === "storage" ? this.storageHere() : undefined;
+		if (!place) return 0;
+		place.set(outfit, (place.get(outfit) ?? 0) + count);
+		return count;
+	}
+	ship_distance(i) {
+		const s = this.ship(i);
+		const f = this.ships[this.flagship()];
+		if (this.landed || s === NO_SHIP || !f) return -1;
+		return Math.hypot((s.x ?? 0) - (f.x ?? 0), (s.y ?? 0) - (f.y ?? 0));
+	}
+	ship_x(i) { const s = this.ship(i); return this.landed ? 0 : (s.x ?? 0); }
+	ship_y(i) { const s = this.ship(i); return this.landed ? 0 : (s.y ?? 0); }
+	// Wakes a disabled ship that is not the player's: hull to a quarter of its
+	// maximum at least, no longer disabled nor a derelict, under `government`
+	// and with `personality` (its tokens) when given.
+	ship_reactivate(i, government, personality) {
+		str("government", government); str("personality", personality);
+		const s = this.ship(i);
+		if (this.landed || s === NO_SHIP || s.player || !this.is_disabled(i)) return false;
+		if (government !== "" && !this.governments.has(government)) return false;
+		s.disabled = false;
+		s.derelict = false;
+		s.hull = Math.min(s.maxHull, Math.max(s.hull, s.maxHull * 0.25));
+		if (government !== "") s.government = government;
+		if (personality !== "") s.personality = personality.split(/\s+/).filter((t) => t);
+		return true;
+	}
+
+	// Mod API 12: what is installed, weapon stats, and where the player's ships
+	// are. A fleet ship with no `system` is with the player (landed on the
+	// player's planet, or in space in the player's system); one with `system`
+	// (and `planet`, "" for in space) is there, as a parked ship is.
+	installed(ship) {
+		const s = this.fleetShip(ship);
+		return s ? Object.keys(s.outfits).filter((o) => s.outfits[o] > 0).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)) : [];
+	}
+	ship_outfit_kinds(ship) { return this.installed(ship).length; }
+	ship_outfit_at(ship, k) { int("k", k); return this.installed(ship)[k] ?? ""; }
+	// As the engine answers: the data's values, with the range computed
+	// (range override, else velocity or velocity override times lifetime),
+	// disabled and minable damage defaulting to hull damage, and reload,
+	// burst reload and burst count at least 1. Submunitions are not modelled.
+	outfit_weapon_attribute(outfit, key) {
+		str("outfit", outfit); str("key", key);
+		const o = this.outfit(outfit);
+		if (!o?.weapon) return 0;
+		const w = o.weaponStats ?? {};
+		const stat = (k) => w[k] ?? 0;
+		if (key === "range") return stat("range override") > 0 ? stat("range override") : (stat("velocity override") > 0 ? stat("velocity override") : stat("velocity")) * stat("lifetime");
+		if ((key === "disabled damage" || key === "minable damage") && !(key in w)) return stat("hull damage");
+		if ((key === "relative disabled damage" || key === "relative minable damage") && !(key in w)) return stat("relative hull damage");
+		if (key === "reload" || key === "burst reload" || key === "burst count") return Math.max(1, stat(key));
+		if (key === "arc" && !(key in w)) return 360;
+		if (key === "penetration count" && !(key in w)) return 1;
+		return stat(key);
+	}
+	fleet_ship_planet(ship) {
+		const s = this.fleetShip(ship);
+		if (!s) return "";
+		return s.system !== undefined ? (s.planet ?? "") : this.planet();
+	}
+	fleet_ship_system(ship) {
+		const s = this.fleetShip(ship);
+		if (!s) return "";
+		return s.system ?? this.here_;
+	}
 }

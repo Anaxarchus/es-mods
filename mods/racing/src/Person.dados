@@ -1,0 +1,173 @@
+class Person
+
+// One person of the staff pool (Staff): every team, the player's included,
+// hires from the same pool, by role. Two hidden stats, drawn once (about a
+// normal draw x 0.45, within -1 to 1, drifting a little each season):
+//   skill  how good they are at the job (pace, setup, pit stops, R&D yield,
+//          sponsor deals), and how well they handle a crisis;
+//   trait  pilots: aggression (overtakes, and crashes); others: steadiness
+//          (less spread in what they deliver).
+// A third, the peak: the skill they grow toward (Bio; drawn when they join).
+// None is shown. What is shown is the record: races worked, wins,
+// podiums, points, titles, retirements, the role's own measure (Staff.metric)
+// and the crises they handled (good / bad); and a bio and the scouts'
+// potential (Bio), hints with noise in them. Saved as one "p|" line.
+
+int PILOT = 0
+int ENGINEER = 1
+int RESEARCH = 2
+int PIT = 3
+int COMMERCIAL = 4
+
+int id = 0
+string name = ""
+int role = 0
+float skill = 0.0
+float trait = 0.0
+// The day the career began and the day it ends.
+int joined = 0
+int retires = 0
+// The team (id; 0 free), the weekly salary, and the last season of the contract.
+int team = 0
+float salary = 0.0
+int contract_end = 0
+// The record (career).
+int races = 0
+int wins = 0
+int podiums = 0
+int points = 0
+int dnfs = 0
+int crashes = 0
+int titles = 0
+// The role's measure (Staff.metric): its observations summed.
+int m_n = 0
+float m_sum = 0.0
+// The score the market prices on (Staff.rating): observations summed.
+int s_n = 0
+float s_sum = 0.0
+// Crises handled ("let the chief handle it"; Events).
+int ev_n = 0
+int ev_good = 0
+int ev_bad = 0
+// The highest league worked in (0 B .. 2 S), and the teams worked for.
+int best_league = 0
+int stints = 0
+// A rival's offer for one of the player's staff: its team, the weekly salary,
+// and the day it lapses (0 none).
+int offer_team = 0
+float offer_salary = 0.0
+int offer_until = 0
+// The skill they grow toward, and the skill when they joined (their bio is
+// told from it). Bio.UNSET until Bio.ensure gives them one.
+float peak = -9.0
+float skill0 = 0.0
+// Lore (Lore): fame (0 .. 100), the traits earned (Lore's indices, at most
+// three), the count of each trait's feats, and the notable performances
+// ("season:round:league:circuit:code:a:b:team").
+float fame = 0.0
+[]int traits = []
+[]int progress = []
+[]string notes = []
+// The contract (Staff): the season it was signed (the salary is locked from
+// then to contract_end), and the seasons served at the team (loyalty).
+int signed = 0
+int loyal = 0
+// The drivers' championship (pilots): this season's tally (`d_season`, in
+// league `d_league`): points, wins, podiums, starts and the best finish.
+int d_season = 0
+int d_league = 0
+int d_points = 0
+int d_wins = 0
+int d_podiums = 0
+int d_starts = 0
+int d_best = 0
+// Against the teammate this season (pilots): who (a new teammate starts it
+// again), races together, ahead on the grid, ahead at the flag.
+int h_mate = 0
+int h_n = 0
+int h_quali = 0
+int h_race = 0
+// Read from a save before lore and contracts (World.decode migrates it).
+bool legacy = false
+
+bool free():
+    return team == 0
+
+float mean_metric():
+    return m_sum / float(m_n) if m_n > 0 else 0.0
+
+string encode():
+    []string f = [string(id), name, string(role), string(skill), string(trait), string(joined), string(retires), string(team), string(salary), string(contract_end), string(races), string(wins), string(podiums), string(points), string(dnfs), string(crashes), string(titles), string(m_n), string(m_sum), string(s_n), string(s_sum), string(ev_n), string(ev_good), string(ev_bad), string(best_league), string(stints), string(offer_team), string(offer_salary), string(offer_until), string(peak), string(skill0), string(fame), ints(traits), ints(progress), notes.join(";"), string(signed), string(loyal), string(d_season), string(d_league), string(d_points), string(d_wins), string(d_podiums), string(d_starts), string(d_best), string(h_mate), string(h_n), string(h_quali), string(h_race)]
+    return f.join("|")
+
+string ints([]int v):
+    []string s = []
+    for x in v:
+        s.append(string(x))
+    return s.join(",")
+
+[]int read_ints(string s):
+    []int out = []
+    if s != "":
+        for part in s.split(","):
+            out.append(part.to_int())
+    return out
+
+void decode(string line):
+    []string f = line.split("|")
+    id = f[0].to_int()
+    name = f[1]
+    role = f[2].to_int()
+    skill = f[3].to_float()
+    trait = f[4].to_float()
+    joined = f[5].to_int()
+    retires = f[6].to_int()
+    team = f[7].to_int()
+    salary = f[8].to_float()
+    contract_end = f[9].to_int()
+    races = f[10].to_int()
+    wins = f[11].to_int()
+    podiums = f[12].to_int()
+    points = f[13].to_int()
+    dnfs = f[14].to_int()
+    crashes = f[15].to_int()
+    titles = f[16].to_int()
+    m_n = f[17].to_int()
+    m_sum = f[18].to_float()
+    s_n = f[19].to_int()
+    s_sum = f[20].to_float()
+    ev_n = f[21].to_int()
+    ev_good = f[22].to_int()
+    ev_bad = f[23].to_int()
+    best_league = f[24].to_int()
+    stints = f[25].to_int()
+    offer_team = f[26].to_int()
+    offer_salary = f[27].to_float()
+    offer_until = f[28].to_int()
+    // A save from before bios has no peak: Bio.ensure draws it on loading.
+    peak = f[29].to_float() if f.len() > 30 else -9.0
+    skill0 = f[30].to_float() if f.len() > 30 else 0.0
+    // A save from before lore and contracts: no fame, traits or history; its
+    // contract is made a one-season one at its salary (World.decode).
+    legacy = f.len() <= 36
+    if !legacy:
+        fame = f[31].to_float()
+        traits = read_ints(f[32])
+        progress = read_ints(f[33])
+        notes = f[34].split(";") if f[34] != "" else []
+        signed = f[35].to_int()
+        loyal = f[36].to_int()
+    // A save from before two cars has no drivers' tally (World.decode gives
+    // the team's pilot the team's season).
+    if f.len() > 47:
+        d_season = f[37].to_int()
+        d_league = f[38].to_int()
+        d_points = f[39].to_int()
+        d_wins = f[40].to_int()
+        d_podiums = f[41].to_int()
+        d_starts = f[42].to_int()
+        d_best = f[43].to_int()
+        h_mate = f[44].to_int()
+        h_n = f[45].to_int()
+        h_quali = f[46].to_int()
+        h_race = f[47].to_int()

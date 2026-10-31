@@ -711,7 +711,7 @@ test("Mod API 10, when the game has it: on_save saves the market, the cadence is
 	const mod = new Corporations();
 	mod.on_load(game);
 	mod.on_enter(game, "Sol");
-	assert.deepEqual(heard, ["diplomacy.*"], "it listens for Diplomacy's events");
+	assert.deepEqual(heard, ["diplomacy.*", "corporations.roster_wanted", "corporations.book"], "it listens for Diplomacy's events (and, 0.5, its own roster and booking requests)");
 	let saves = 0;
 	const setData = game.set_data.bind(game);
 	game.set_data = (k, v) => { if (k === "state") saves++; setData(k, v); };
